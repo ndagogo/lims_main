@@ -1,0 +1,36 @@
+<form method="get" class="row g-2 align-items-end mb-3">
+  <div class="col-md-{{ search_cols|default:'5' }}"><label class="form-label">Search</label><input class="form-control" name="q" value="{{ query }}" placeholder="{{ search_placeholder|default:'Search' }}"></div>
+  {% if show_centre %}
+  <div class="col-md-3">
+    <label class="form-label">Centre</label>
+    <select class="form-select" name="centre">
+      <option value="">All centres</option>
+      {% for centre in centres %}<option value="{{ centre.pk }}" {% if centre_id == centre.pk|stringformat:"s" %}selected{% endif %}>{{ centre.code }} — {{ centre.name }}</option>{% endfor %}
+    </select>
+  </div>
+  {% endif %}
+  {% if show_kind %}
+  <div class="col-md-2">
+    <label class="form-label">Kind</label>
+    <select class="form-select" name="kind">
+      <option value="">All</option>
+      {% for value, label in kinds %}<option value="{{ value }}" {% if kind == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </div>
+  {% endif %}
+  <div class="col-md-2">
+    <label class="form-label">Status</label>
+    <select class="form-select" name="status">
+      <option value="all" {% if status == 'all' %}selected{% endif %}>All</option>
+      <option value="active" {% if status == 'active' %}selected{% endif %}>Active</option>
+      <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive</option>
+    </select>
+  </div>
+  <div class="col-md-2">
+    <label class="form-label">Rows</label>
+    <select class="form-select" name="per">
+      {% for size in page_sizes %}<option value="{{ size }}" {% if size == page.paginator.per_page %}selected{% endif %}>{{ size }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-md-2"><button class="btn btn-outline-dark w-100" type="submit">Filter</button></div>
+</form>

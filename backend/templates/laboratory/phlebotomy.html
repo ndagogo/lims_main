@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Phlebotomy | HFDN{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="muted small">PHLEBOTOMY</div>
+  <h1 class="h3">Phlebotomy dashboard</h1>
+  <p class="muted">Only visits the paypoint has paid in full appear here. Result entry, review, and release stay with the laboratory.</p>
+</div>
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card p-4">
+      <h2 class="h5">Waiting for collection</h2>
+      {% for order in pending_orders %}
+        <form method="post" class="border-bottom py-3">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="collect">
+          <input type="hidden" name="order" value="{{ order.pk }}">
+          <div class="d-flex flex-wrap justify-content-between gap-2 align-items-center">
+            <div>
+              <div class="fw-semibold">{{ order.visit.patient.first_name }} {{ order.visit.patient.last_name }}</div>
+              <div class="small muted">{{ order.visit.visit_id }} · {{ order.test.name }} · {{ order.visit.centre.code }}</div>
+            </div>
+            <button class="btn btn-primary btn-sm" type="submit">Collect</button>
+          </div>
+        </form>
+      {% empty %}
+        <p class="muted mb-0">No paid orders are waiting for collection.</p>
+      {% endfor %}
+      {% include "includes/pagination.html" with page=pending_orders %}
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card p-4">
+      <h2 class="h5">Collected, not yet received by the bench</h2>
+      {% for sample in collected_samples %}
+        <form method="post" class="border-bottom py-3">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="recollect">
+          <input type="hidden" name="sample" value="{{ sample.pk }}">
+          <div class="fw-semibold">{{ sample.sample_id }}</div>
+          <div class="small muted mb-2">{{ sample.order.test.name }} · {{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }}</div>
+          <input class="form-control form-control-sm mb-2" name="reason" placeholder="Reason if this sample must be recollected">
+          <button class="btn btn-outline-dark btn-sm" type="submit">Recollect</button>
+        </form>
+      {% empty %}
+        <p class="muted mb-0">No collected samples are waiting to leave phlebotomy.</p>
+      {% endfor %}
+      {% include "includes/pagination.html" with page=collected_samples %}
+    </div>
+  </div>
+</div>
+{% endblock %}

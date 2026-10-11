@@ -1,0 +1,470 @@
+{% extends "base.html" %}
+{% block title %}Patient registration | HFDN{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="muted small">PATIENT MANAGEMENT</div>
+  <h1 class="h3">Patient registration</h1>
+  <p class="muted">Search a UHID or phone number before creating a record. Add every test, then save. The visit is processed onto the cashier’s outstanding dues.</p>
+</div>
+<div class="card p-4 mb-4">
+  <h2 class="h5">Find an existing patient</h2>
+  <form method="get" class="row g-2">
+    <input type="hidden" name="vq" value="{{ visit_filters.q }}">
+    <input type="hidden" name="vcentre" value="{{ visit_filters.centre }}">
+    <input type="hidden" name="vstatus" value="{{ visit_filters.status }}">
+    <input type="hidden" name="vchannel" value="{{ visit_filters.channel }}">
+    <input type="hidden" name="vpay" value="{{ visit_filters.pay }}">
+    <input type="hidden" name="vfrom" value="{{ visit_filters.start }}">
+    <input type="hidden" name="vto" value="{{ visit_filters.end }}">
+    <input type="hidden" name="per" value="{{ request.GET.per }}">
+    <div class="col-md-8"><input class="form-control" name="q" value="{{ query }}" placeholder="UHID, phone, or name"></div>
+    <div class="col-md-4"><button class="btn btn-outline-dark" type="submit">Search</button></div>
+  </form>
+  {% if query %}
+    <div class="table-responsive mt-3">
+      <table class="table align-middle">
+        <thead><tr><th>UHID</th><th>Patient</th><th>Phone</th><th></th></tr></thead>
+        <tbody>
+          {% for patient in matches %}
+            <tr>
+              <td class="fw-semibold">{{ patient.uhid }}</td>
+              <td>{{ patient.title }} {{ patient.first_name }} {{ patient.last_name }}</td>
+              <td>{{ patient.phone_country_code }} {{ patient.phone_number }}</td>
+              <td class="text-nowrap">
+                <a class="btn btn-sm btn-primary" href="?q={{ query }}&patient={{ patient.pk }}&vq={{ visit_filters.q|urlencode }}&vcentre={{ visit_filters.centre }}&vstatus={{ visit_filters.status }}&vchannel={{ visit_filters.channel }}&vpay={{ visit_filters.pay }}&vfrom={{ visit_filters.start }}&vto={{ visit_filters.end }}&per={{ request.GET.per }}">Open a visit</a>
+                <a class="btn btn-sm btn-outline-dark" href="{% url 'patient-timeline' patient.pk %}">Timeline</a>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="4" class="muted py-3">No patient in your centres matches that search.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% include "includes/pagination.html" with page=matches %}
+  {% endif %}
+</div>
+{% if selected_patient %}
+<div class="card p-4 mb-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div>
+      <h2 class="h5">Another visit for {{ selected_patient.uhid }}</h2>
+      <p class="muted mb-0">{{ selected_patient.title }} {{ selected_patient.first_name }} {{ selected_patient.last_name }} · {{ selected_patient.phone_country_code }} {{ selected_patient.phone_number }}</p>
+    </div>
+    <a class="btn btn-sm btn-outline-dark" href="{% url 'patient-timeline' selected_patient.pk %}">View timeline</a>
+  </div>
+  <form method="post" enctype="multipart/form-data" class="row g-3 registration-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="new_visit">
+    <input type="hidden" name="patient" value="{{ selected_patient.pk }}">
+    <div class="col-md-4"><label class="form-label">Centre</label><select name="centre" class="form-select centre-select" required>{% for centre in centres %}<option value="{{ centre.pk }}">{{ centre.code }} — {{ centre.name }}</option>{% endfor %}</select></div>
+    {% include "patients/_notification_prefs.html" with prefix="return" patient=selected_patient %}
+    {% include "patients/_visit_fields.html" %}
+    {% include "patients/_tests.html" with prefix="return" %}
+    <div class="col-md-4"><label class="form-label">Supporting document</label><input name="document" type="file" accept=".pdf,.jpg,.jpeg,.png" class="form-control"></div>
+    <div class="col-md-4"><label class="form-label">Document type</label><select name="document_type" class="form-select"><option value="REGISTRATION">Registration form</option><option value="REFERRAL">Referral form</option><option value="OTHER">Other</option></select></div>
+    <div class="col-12"><button class="btn btn-primary" type="submit">Save (Processed)</button></div>
+  </form>
+</div>
+{% endif %}
+<div class="card p-4 mb-4">
+  <h2 class="h5 mb-3">New patient and first visit</h2>
+  <form method="post" enctype="multipart/form-data" class="row g-3 registration-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="register">
+    <div class="col-md-4"><label class="form-label">Registration centre</label><select name="centre" class="form-select centre-select" required><option value="">Choose centre</option>{% for centre in centres %}<option value="{{ centre.pk }}">{{ centre.code }} — {{ centre.name }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">Title</label><select name="title" class="form-select">{% for value, label in titles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label">First name</label><input name="first_name" class="form-control" required maxlength="100"></div>
+    <div class="col-md-3"><label class="form-label">Last name</label><input name="last_name" class="form-control" required maxlength="100"></div>
+    <div class="col-md-4"><label class="form-label">Other names</label><input name="other_names" class="form-control" maxlength="100"></div>
+    <div class="col-md-4"><label class="form-label">Gender</label><select name="sex" class="form-select">{% for value, label in sexes %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Date of birth</label><input name="date_of_birth" type="date" class="form-control dob-input"></div>
+    <div class="col-md-4">
+      <label class="form-label">Age from date of birth</label>
+      <div class="row g-2">
+        <div class="col-4"><input class="form-control age-years" placeholder="Years" readonly tabindex="-1"></div>
+        <div class="col-4"><input class="form-control age-months" placeholder="Months" readonly tabindex="-1"></div>
+        <div class="col-4"><input class="form-control age-days" placeholder="Days" readonly tabindex="-1"></div>
+      </div>
+    </div>
+    <div class="col-md-2"><label class="form-label">Code</label><select name="phone_country_code" class="form-select">{% for code in phone_codes %}<option {% if code == '+234' %}selected{% endif %}>{{ code }}</option>{% endfor %}</select></div>
+    <div class="col-md-4">
+      <label class="form-label">Mobile</label>
+      <input name="phone_number" class="form-control phone-10" type="tel" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" required placeholder="8012345678" title="Enter exactly 10 digits after +234">
+      <div class="form-text">Exactly 10 digits (Nigerian local number after +234).</div>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Alternate mobile</label>
+      <input name="alt_phone" class="form-control phone-10" type="tel" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="Optional 10 digits" title="Enter exactly 10 digits if provided">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Email</label>
+      <input name="email" type="email" class="form-control" inputmode="email" autocomplete="email" placeholder="name@example.com" title="Enter a valid email address">
+      <div class="invalid-feedback email-feedback">Enter a valid email address.</div>
+    </div>
+    {% include "patients/_notification_prefs.html" with prefix="new" %}
+    <div class="col-md-6"><label class="form-label">Address</label><input name="address" class="form-control"></div>
+    <div class="col-md-3"><label class="form-label">City</label><input name="city" class="form-control" maxlength="80"></div>
+    <div class="col-md-3"><label class="form-label">State</label><select name="state" class="form-select">{% for value, label in states %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Race</label><select name="race" class="form-select">{% for value, label in races %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Health card number</label><input name="health_card_number" class="form-control" maxlength="40"></div>
+    <div class="col-md-4"><label class="form-label">Passport number</label><input name="passport_number" class="form-control" maxlength="40"></div>
+    {% include "patients/_visit_fields.html" %}
+    {% include "patients/_tests.html" with prefix="new" %}
+    <div class="col-md-4"><label class="form-label">Clinical history or registration form</label><input name="document" type="file" accept=".pdf,.jpg,.jpeg,.png" class="form-control"><div class="form-text">PDF, JPEG, or PNG, maximum 10 MB.</div></div>
+    <div class="col-md-4"><label class="form-label">Document type</label><select name="document_type" class="form-select"><option value="REGISTRATION">Registration form</option><option value="REFERRAL">Referral form</option><option value="OTHER">Other</option></select></div>
+    <div class="col-12"><button class="btn btn-primary" type="submit">Save (Processed)</button></div>
+  </form>
+</div>
+<div class="card p-4">
+  <h2 class="h5">Recent visits you can see</h2>
+  <form method="get" class="row g-2 align-items-end mb-3">
+    <input type="hidden" name="q" value="{{ query }}">
+    {% if selected_patient %}<input type="hidden" name="patient" value="{{ selected_patient.pk }}">{% endif %}
+    <div class="col-lg-4">
+      <label class="form-label">Search</label>
+      <input class="form-control" name="vq" value="{{ visit_filters.q }}" placeholder="Visit, UHID, name, phone, doctor, or HMO">
+    </div>
+    <div class="col-md-4 col-lg-2">
+      <label class="form-label">Centre</label>
+      <select class="form-select" name="vcentre">
+        <option value="">All centres</option>
+        {% for centre in centres %}<option value="{{ centre.pk }}" {% if visit_filters.centre == centre.pk|stringformat:"s" %}selected{% endif %}>{{ centre.code }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4 col-lg-2">
+      <label class="form-label">Channel</label>
+      <select class="form-select" name="vchannel">
+        <option value="">Any channel</option>
+        {% for value, label in channels %}<option value="{{ value }}" {% if visit_filters.channel == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4 col-lg-2">
+      <label class="form-label">Visit status</label>
+      <select class="form-select" name="vstatus">
+        <option value="">Any status</option>
+        {% for value, label in visit_statuses %}<option value="{{ value }}" {% if visit_filters.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4 col-lg-2">
+      <label class="form-label">Paypoint</label>
+      <select class="form-select" name="vpay">
+        <option value="">Any paypoint</option>
+        {% for value, label in paypoint_statuses %}<option value="{{ value }}" {% if visit_filters.pay == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4 col-lg-2">
+      <label class="form-label">From</label>
+      <input class="form-control" type="date" name="vfrom" value="{{ visit_filters.start }}">
+    </div>
+    <div class="col-md-4 col-lg-2">
+      <label class="form-label">To</label>
+      <input class="form-control" type="date" name="vto" value="{{ visit_filters.end }}">
+    </div>
+    <div class="col-md-4 col-lg-2">
+      <label class="form-label">Rows</label>
+      <select class="form-select" name="per">
+        {% for size in page_sizes %}<option value="{{ size }}" {% if size == visits.paginator.per_page %}selected{% endif %}>{{ size }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4 col-lg-2"><button class="btn btn-outline-dark w-100" type="submit">Apply filter</button></div>
+    <div class="col-md-4 col-lg-2"><a class="btn btn-link" href="{% url 'patient-registration' %}{% if query %}?q={{ query|urlencode }}{% if selected_patient %}&patient={{ selected_patient.pk }}{% endif %}{% endif %}">Clear</a></div>
+  </form>
+  {% if visits %}
+  <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end mb-3">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="attach_document">
+    <div class="col-md-4"><label class="form-label">Visit</label><select name="visit" class="form-select" required>{% for visit in visits %}<option value="{{ visit.pk }}">{{ visit.visit_id }} — {{ visit.patient.first_name }} {{ visit.patient.last_name }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label">Document type</label><select name="document_type" class="form-select"><option value="REGISTRATION">Registration form</option><option value="REFERRAL">Referral form</option><option value="OTHER">Other</option></select></div>
+    <div class="col-md-3"><label class="form-label">File</label><input name="document" type="file" accept=".pdf,.jpg,.jpeg,.png" class="form-control" required></div>
+    <div class="col-md-2"><button class="btn btn-outline-dark" type="submit">File on visit</button></div>
+  </form>
+  {% endif %}
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>Visit</th><th>UHID</th><th>Patient</th><th>Centre</th><th>Referral</th><th>Paypoint</th><th>Documents</th><th></th></tr></thead>
+      <tbody>
+        {% for visit in visits %}
+          <tr>
+            <td>{{ visit.visit_id }}</td>
+            <td>{{ visit.patient.uhid }}</td>
+            <td>{{ visit.patient.first_name }} {{ visit.patient.last_name }}</td>
+            <td>{{ visit.centre.code }}</td>
+            <td>
+              {% if visit.referral_attribution %}
+                {{ visit.referral_attribution.doctor.first_name }} {{ visit.referral_attribution.doctor.last_name }}
+                {% for institution in visit.referral_attribution.institutions.all %} · {{ institution.name }}{% endfor %}
+              {% elif visit.client_name %}
+                {{ visit.get_referral_source_display }} · {{ visit.client_name }}
+              {% else %}{{ visit.get_referral_source_display }}{% endif %}
+            </td>
+            <td>
+              {{ visit.status }}
+              {% for invoice in visit.invoices.all %} · {{ invoice.invoice_number }} {{ invoice.get_status_display }}{% endfor %}
+            </td>
+            <td>
+              {% for document in visit.documents.all %}
+                <a href="{% url 'patient-document-download' document.pk %}">{{ document.get_document_type_display }}</a>{% if not forloop.last %}, {% endif %}
+              {% empty %}None{% endfor %}
+            </td>
+            <td><a class="btn btn-sm btn-outline-dark" href="{% url 'patient-timeline' visit.patient_id %}">Timeline</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="muted py-4 text-center">No visits match this filter.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=visits %}
+</div>
+{{ channel_catalog|json_script:"channel-catalog" }}
+{{ test_catalog|json_script:"test-catalog" }}
+<script>
+const channelCatalog = JSON.parse(document.getElementById('channel-catalog').textContent);
+
+function fillSelect(select, rows, placeholder) {
+  const current = select.value;
+  select.replaceChildren();
+  const blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = placeholder;
+  select.appendChild(blank);
+  rows.forEach((row) => {
+    const option = document.createElement('option');
+    option.value = row.id;
+    option.textContent = row.name;
+    if (row.id === current) option.selected = true;
+    select.appendChild(option);
+  });
+}
+
+function fillDoctorSelect(form) {
+  const centre = form.querySelector('.centre-select');
+  const doctor = form.querySelector('.doctor-select');
+  const search = form.querySelector('.doctor-search');
+  const institutions = form.querySelector('.institution-select');
+  if (!doctor) return;
+  const centreId = centre ? centre.value : '';
+  const query = search ? search.value.trim().toLowerCase() : '';
+  let doctors = centreId ? channelCatalog.doctors.filter((row) => row.centre === centreId) : [];
+  if (query) {
+    doctors = doctors.filter((row) => row.name.toLowerCase().includes(query));
+  }
+  fillSelect(doctor, doctors, centreId ? (query ? 'No matching doctor' : 'Choose a doctor') : 'Choose the centre first');
+  if (!doctors.length && centreId) {
+    doctor.options[0].textContent = query ? 'No matching doctor' : 'Choose a doctor';
+  }
+  if (institutions) {
+    const chosen = channelCatalog.doctors.find((row) => row.id === doctor.value);
+    const places = chosen ? chosen.institutions : [];
+    const previous = new Set([...institutions.selectedOptions].map((option) => option.value));
+    institutions.replaceChildren();
+    places.forEach((place) => {
+      const option = document.createElement('option');
+      option.value = place.id;
+      option.textContent = place.name;
+      option.selected = previous.has(place.id);
+      institutions.appendChild(option);
+    });
+  }
+}
+
+function syncRegistration(form) {
+  const centre = form.querySelector('.centre-select');
+  const channel = form.querySelector('.channel-select');
+  const client = form.querySelector('.client-select');
+  const clientLabel = form.querySelector('.client-label');
+  const doctorBox = form.querySelector('.when-doctor');
+  const clientBox = form.querySelector('.when-client');
+  const channelValue = channel ? channel.value : 'SELF';
+  const centreId = centre ? centre.value : '';
+  if (doctorBox) doctorBox.classList.toggle('d-none', channelValue !== 'DOCTOR');
+  if (clientBox) clientBox.classList.toggle('d-none', channelValue !== 'CORPORATE' && channelValue !== 'HMO');
+  fillDoctorSelect(form);
+  if (client) {
+    const rows = centreId ? channelCatalog.clients.filter((row) => row.centre === centreId && row.kind === channelValue) : [];
+    const label = channelValue === 'HMO' ? 'Choose an HMO' : 'Choose a corporate client';
+    fillSelect(client, rows, centreId ? label : 'Choose the centre first');
+    if (clientLabel) clientLabel.textContent = channelValue === 'HMO' ? 'HMO' : 'Corporate client';
+  }
+  const dob = form.querySelector('.dob-input');
+  if (!dob) return;
+  const years = form.querySelector('.age-years');
+  const months = form.querySelector('.age-months');
+  const days = form.querySelector('.age-days');
+  if (!dob.value) { years.value = ''; months.value = ''; days.value = ''; return; }
+  const born = new Date(dob.value + 'T00:00:00');
+  const today = new Date();
+  let year = today.getFullYear() - born.getFullYear();
+  let month = today.getMonth() - born.getMonth();
+  let day = today.getDate() - born.getDate();
+  if (day < 0) { month -= 1; day += new Date(today.getFullYear(), today.getMonth(), 0).getDate(); }
+  if (month < 0) { year -= 1; month += 12; }
+  years.value = String(Math.max(year, 0));
+  months.value = String(Math.max(month, 0));
+  days.value = String(Math.max(day, 0));
+}
+
+function digitsOnly(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+document.querySelectorAll('.registration-form').forEach((form) => {
+  form.addEventListener('change', () => syncRegistration(form));
+  form.addEventListener('input', (event) => {
+    if (event.target.classList.contains('phone-10')) {
+      event.target.value = digitsOnly(event.target.value).slice(0, 10);
+    }
+    syncRegistration(form);
+  });
+  const doctorSearch = form.querySelector('.doctor-search');
+  if (doctorSearch) {
+    doctorSearch.addEventListener('input', () => fillDoctorSelect(form));
+  }
+  form.addEventListener('submit', (event) => {
+    const email = form.querySelector('input[name="email"]');
+    if (email && email.value.trim()) {
+      if (!email.checkValidity()) {
+        event.preventDefault();
+        email.classList.add('is-invalid');
+        email.reportValidity();
+        return;
+      }
+      email.classList.remove('is-invalid');
+    }
+    const phones = form.querySelectorAll('.phone-10');
+    for (const phone of phones) {
+      if (!phone.value && !phone.required) continue;
+      if (!/^\d{10}$/.test(phone.value)) {
+        event.preventDefault();
+        phone.setCustomValidity('Enter exactly 10 digits.');
+        phone.reportValidity();
+        return;
+      }
+      phone.setCustomValidity('');
+    }
+  });
+  syncRegistration(form);
+});
+
+const testCatalog = JSON.parse(document.getElementById('test-catalog').textContent);
+
+function formatNaira(value) {
+  return '₦' + Number(value).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function initTestPicker(picker) {
+  const tariff = picker.querySelector('.tariff-select');
+  const kind = picker.querySelector('.request-type');
+  const search = picker.querySelector('.test-search');
+  const results = picker.querySelector('.test-results');
+  const added = picker.querySelector('.test-added');
+  const empty = picker.querySelector('.test-empty');
+  const note = picker.querySelector('.test-note');
+
+  function fieldName(requestKind) {
+    return requestKind === 'laboratory' ? 'lab_tests' : 'imaging_tests';
+  }
+
+  function takenKeys() {
+    return new Set([...added.querySelectorAll('input')].map((input) => input.name + ':' + input.value));
+  }
+
+  function refreshResults() {
+    results.replaceChildren();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    if (!tariff.value) {
+      placeholder.textContent = 'Choose a tariff first';
+      results.appendChild(placeholder);
+      return;
+    }
+    const query = search.value.trim().toLowerCase();
+    const taken = takenKeys();
+    const rows = testCatalog.filter((row) => {
+      if (row.tariff !== tariff.value || row.kind !== kind.value) return false;
+      if (taken.has(fieldName(row.kind) + ':' + row.id)) return false;
+      if (!query) return true;
+      return row.name.toLowerCase().includes(query) || row.code.toLowerCase().includes(query);
+    }).slice(0, 40);
+    if (!rows.length) {
+      placeholder.textContent = query ? 'No matching tests' : 'No tests are priced on this tariff';
+      results.appendChild(placeholder);
+      return;
+    }
+    rows.forEach((row) => {
+      const option = document.createElement('option');
+      option.value = row.id;
+      option.dataset.price = row.price;
+      option.dataset.code = row.code;
+      option.dataset.name = row.name;
+      option.textContent = row.code + ' — ' + row.name + ' — ' + formatNaira(row.price);
+      results.appendChild(option);
+    });
+  }
+
+  function showEmpty() {
+    empty.hidden = added.children.length > 0;
+  }
+
+  function addSelected() {
+    const option = results.selectedOptions[0];
+    if (!option || !option.value) return;
+    const requestKind = kind.value;
+    const item = document.createElement('li');
+    item.className = 'list-group-item d-flex justify-content-between align-items-center gap-2';
+    const label = document.createElement('span');
+    label.textContent = option.dataset.code + ' — ' + option.dataset.name + ' — ' + (requestKind === 'laboratory' ? 'Laboratory' : 'Radiology') + ' — ' + formatNaira(option.dataset.price);
+    const hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.name = fieldName(requestKind);
+    hidden.value = option.value;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-sm btn-outline-danger';
+    remove.textContent = 'Remove';
+    remove.addEventListener('click', () => {
+      item.remove();
+      showEmpty();
+      refreshResults();
+    });
+    item.append(label, hidden, remove);
+    added.appendChild(item);
+    showEmpty();
+    refreshResults();
+  }
+
+  function repriceAdded() {
+    note.textContent = '';
+    [...added.children].forEach((item) => {
+      const hidden = item.querySelector('input');
+      const requestKind = hidden.name === 'lab_tests' ? 'laboratory' : 'radiology';
+      const row = testCatalog.find((entry) => entry.tariff === tariff.value && entry.kind === requestKind && entry.id === hidden.value);
+      if (!row) {
+        item.remove();
+        note.textContent = 'Tests that are not priced on this tariff were removed.';
+        return;
+      }
+      item.querySelector('span').textContent = row.code + ' — ' + row.name + ' — ' + (requestKind === 'laboratory' ? 'Laboratory' : 'Radiology') + ' — ' + formatNaira(row.price);
+    });
+    showEmpty();
+    refreshResults();
+  }
+
+  tariff.addEventListener('change', repriceAdded);
+  kind.addEventListener('change', refreshResults);
+  search.addEventListener('input', refreshResults);
+  search.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    if (!results.value && results.options[0] && results.options[0].value) results.selectedIndex = 0;
+    addSelected();
+  });
+  picker.querySelector('.test-add').addEventListener('click', addSelected);
+  results.addEventListener('dblclick', addSelected);
+  refreshResults();
+}
+
+document.querySelectorAll('.test-picker').forEach(initTestPicker);
+</script>
+{% endblock %}

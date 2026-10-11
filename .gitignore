@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.so
+.Python
+.venv/
+venv/
+env/
+backend/.venv/
+
+# Environment and secrets — never commit real values
+.env
+.env.*
+!.env.example
+!**/.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+**/secrets/
+.secret*
+*_secret*
+*_secrets*
+
+# Django runtime / local data
+*.sqlite3
+backend/db.sqlite3
+db.sqlite3
+media/
+backend/media/
+staticfiles/
+backend/staticfiles/
+
+# Tooling / IDE
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+
+# Flutter
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/.pub-cache/
+
+# OS / archives
+*.zip
+*.tar
+*.tar.gz

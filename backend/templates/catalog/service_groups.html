@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Service groups | Catalog | HFDN{% endblock %}
+{% block content %}
+{% include "catalog/_page_header.html" with eyebrow="LABORATORY" title="Service groups" subtitle="Name plus a single-digit code used in sample IDs. Tests pick a group from a dropdown." %}
+<div class="row g-4">
+  <div class="col-xl-7">
+    <div class="card p-4 catalog-enter">
+      {% include "catalog/_filter_bar.html" with page=directory search_placeholder="Name or code" %}
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Group</th><th>Code</th><th>Tests</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for group in directory %}
+              <tr class="{% if selected and selected.pk == group.pk %}table-active{% endif %}">
+                <td><a class="fw-semibold text-decoration-none" href="?group={{ group.pk }}&q={{ query|urlencode }}&status={{ status }}&per={{ directory.paginator.per_page }}&page={{ directory.number }}">{{ group.name }}</a></td>
+                <td><span class="badge text-bg-light border">{{ group.code }}</span></td>
+                <td>{{ group.test_count }}</td>
+                <td>{% include "catalog/_active_badge.html" with is_active=group.is_active %}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="4" class="text-center muted py-4">No service groups match that filter.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+  </div>
+  <div class="col-xl-5">
+    <div class="card p-4 mb-4 catalog-enter">
+      <h2 class="h5">Create service group</h2>
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create">
+        <input type="hidden" name="is_active_submitted" value="1">
+        <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" required></div>
+        <div class="col-md-4"><label class="form-label">Digit</label><input class="form-control" name="code" maxlength="1" required></div>
+        <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="group-active" checked><label class="form-check-label" for="group-active">Active</label></div></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create group</button></div>
+      </form>
+    </div>
+    {% if selected %}
+      <div class="card p-4 catalog-enter">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <h2 class="h5 mb-1">{{ selected.name }}</h2>
+            <div class="muted small">Digit {{ selected.code }}</div>
+          </div>
+          {% include "catalog/_active_badge.html" with is_active=selected.is_active %}
+        </div>
+        {% include "catalog/_soft_actions.html" with pk_name="group" pk_value=selected.pk is_active=selected.is_active delete_action="delete" confirm_label=selected.name %}
+        <form method="post" class="row g-2 mt-3">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update">
+          <input type="hidden" name="group" value="{{ selected.pk }}">
+          <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ selected.name }}" required></div>
+          <div class="col-md-4"><label class="form-label">Digit</label><input class="form-control" name="code" value="{{ selected.code }}" maxlength="1" required></div>
+          <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="edit-group-active" {% if selected.is_active %}checked{% endif %}><label class="form-check-label" for="edit-group-active">Active</label></div></div>
+          <div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Save group</button></div>
+        </form>
+      </div>
+    {% else %}
+      <div class="card p-4 catalog-enter">
+        <h2 class="h5">Select a group</h2>
+        <p class="muted mb-0">Open a service group to edit its name or digit, or deactivate it.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

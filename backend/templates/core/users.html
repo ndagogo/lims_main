@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}User management | HFDN{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <div class="muted small">PLATFORM ADMINISTRATION</div>
+    <h1 class="h3 mb-1">User management</h1>
+    <p class="muted mb-0">Suspend an account, clear a lockout, set a temporary password, and grant centre privileges. A suspended user cannot sign in.</p>
+  </div>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-4"><div class="kpi"><span class="kpi-icon text-white" style="background:#0f766e"><i class="bi bi-person-check"></i></span><div><div class="kpi-label">ACTIVE</div><div class="kpi-value">{{ counts.active }}</div></div></div></div>
+  <div class="col-4"><div class="kpi"><span class="kpi-icon text-white" style="background:#9b2c2c"><i class="bi bi-person-slash"></i></span><div><div class="kpi-label">SUSPENDED</div><div class="kpi-value">{{ counts.suspended }}</div></div></div></div>
+  <div class="col-4"><div class="kpi"><span class="kpi-icon text-white" style="background:#8a5a00"><i class="bi bi-lock"></i></span><div><div class="kpi-label">LOCKED</div><div class="kpi-value">{{ counts.locked }}</div></div></div></div>
+</div>
+<div class="row g-4">
+  <div class="col-xl-7">
+    <div class="card p-4 mb-4">
+      <form method="get" class="row g-2 align-items-end mb-3">
+        <div class="col-md-5"><label class="form-label">Search</label><input class="form-control" name="q" value="{{ query }}" placeholder="Name, username, or email"></div>
+        <div class="col-md-3">
+          <label class="form-label">Status</label>
+          <select class="form-select" name="status">
+            <option value="all" {% if status == 'all' %}selected{% endif %}>All</option>
+            <option value="active" {% if status == 'active' %}selected{% endif %}>Active</option>
+            <option value="suspended" {% if status == 'suspended' %}selected{% endif %}>Suspended</option>
+            <option value="locked" {% if status == 'locked' %}selected{% endif %}>Locked</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">Rows</label>
+          <select class="form-select" name="per">
+            {% for size in page_sizes %}<option value="{{ size }}" {% if size == directory.paginator.per_page %}selected{% endif %}>{{ size }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2"><button class="btn btn-outline-dark w-100" type="submit">Filter</button></div>
+      </form>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>User</th><th>Roles</th><th>Centres</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for person in directory %}
+              <tr>
+                <td>
+                  <a class="fw-semibold text-decoration-none" href="?user={{ person.pk }}&q={{ query|urlencode }}&status={{ status }}&per={{ directory.paginator.per_page }}&upage={{ directory.number }}">{{ person.display_name|default:person.username }}</a>
+                  <div class="small muted">{{ person.username }} · {{ person.email }}</div>
+                </td>
+                <td class="small">{% for group in person.groups.all %}{{ group.name }}{% if not forloop.last %}, {% endif %}{% empty %}None{% endfor %}</td>
+                <td class="small">{% for access in person.centre_access.all %}{{ access.centre.code }}{% if not forloop.last %}, {% endif %}{% empty %}None{% endfor %}</td>
+                <td>
+                  {% if person.account_state == 'Suspended' %}<span class="badge badge-danger-soft">Suspended</span>
+                  {% elif person.account_state == 'Locked' %}<span class="badge badge-warn">Locked</span>
+                  {% else %}<span class="badge badge-soft">Active</span>{% endif %}
+                  {% if person.is_superuser %}<span class="badge text-bg-dark">Superuser</span>{% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="4" class="text-center muted py-4">No users match that filter.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+    <div class="card p-4">
+      <h2 class="h5">Create a staff account</h2>
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create">
+        <div class="col-md-4"><label class="form-label">Username</label><input class="form-control" name="username" required></div>
+        <div class="col-md-4"><label class="form-label">Email</label><input class="form-control" type="email" name="email" required></div>
+        <div class="col-md-4"><label class="form-label">Display name</label><input class="form-control" name="display_name"></div>
+        <div class="col-md-6"><label class="form-label">Temporary password</label><input class="form-control" type="password" name="password" required minlength="12" autocomplete="new-password"><div class="form-text">At least 12 characters. The user must change it at the next sign-in.</div></div>
+        <div class="col-md-6"><label class="form-label">Roles</label><select class="form-select" name="groups" multiple size="4">{% for role in roles %}<option value="{{ role.pk }}">{{ role.name }}</option>{% endfor %}</select></div>
+        <div class="col-12 d-flex flex-wrap gap-3">
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="is_staff" id="create-staff"><label class="form-check-label" for="create-staff">Django admin access</label></div>
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="is_superuser" id="create-super"><label class="form-check-label" for="create-super">Platform superuser</label></div>
+        </div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create user</button></div>
+      </form>
+    </div>
+  </div>
+  <div class="col-xl-5">
+    {% if selected %}
+      <div class="card p-4 mb-4">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <h2 class="h5 mb-1">{{ selected.display_name|default:selected.username }}</h2>
+            <div class="muted small">{{ selected.username }} · last sign-in {{ selected.last_login|date:"d M Y, H:i"|default:"never" }}</div>
+          </div>
+          {% if selected.account_state == 'Suspended' %}<span class="badge badge-danger-soft">Suspended</span>
+          {% elif selected.account_state == 'Locked' %}<span class="badge badge-warn">Locked</span>
+          {% else %}<span class="badge badge-soft">Active</span>{% endif %}
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+          {% if selected.is_active %}
+            <form method="post">{% csrf_token %}<input type="hidden" name="action" value="suspend"><input type="hidden" name="user" value="{{ selected.pk }}"><button class="btn btn-outline-danger btn-sm" type="submit">Suspend</button></form>
+          {% else %}
+            <form method="post">{% csrf_token %}<input type="hidden" name="action" value="reactivate"><input type="hidden" name="user" value="{{ selected.pk }}"><button class="btn btn-outline-success btn-sm" type="submit">Reactivate</button></form>
+          {% endif %}
+          {% if selected.locked_until %}
+            <form method="post">{% csrf_token %}<input type="hidden" name="action" value="unlock"><input type="hidden" name="user" value="{{ selected.pk }}"><button class="btn btn-outline-dark btn-sm" type="submit">Unlock</button></form>
+          {% endif %}
+        </div>
+        <form method="post" class="row g-2 mt-3">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="save_account">
+          <input type="hidden" name="user" value="{{ selected.pk }}">
+          <div class="col-md-6"><label class="form-label">Display name</label><input class="form-control" name="display_name" value="{{ selected.display_name }}"></div>
+          <div class="col-md-6"><label class="form-label">Email</label><input class="form-control" type="email" name="email" value="{{ selected.email }}" required></div>
+          <div class="col-md-6"><label class="form-label">First name</label><input class="form-control" name="first_name" value="{{ selected.first_name }}"></div>
+          <div class="col-md-6"><label class="form-label">Last name</label><input class="form-control" name="last_name" value="{{ selected.last_name }}"></div>
+          <div class="col-12 d-flex flex-wrap gap-3">
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="is_staff" id="staff-{{ selected.pk }}" {% if selected.is_staff %}checked{% endif %}><label class="form-check-label" for="staff-{{ selected.pk }}">Django admin access</label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="is_superuser" id="super-{{ selected.pk }}" {% if selected.is_superuser %}checked{% endif %}><label class="form-check-label" for="super-{{ selected.pk }}">Platform superuser</label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="must_change_password" id="change-{{ selected.pk }}" {% if selected.must_change_password %}checked{% endif %}><label class="form-check-label" for="change-{{ selected.pk }}">Must change password</label></div>
+          </div>
+          <div class="col-12"><button class="btn btn-outline-dark btn-sm" type="submit">Save account</button></div>
+        </form>
+        <form method="post" class="row g-2 mt-3">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="reset_password">
+          <input type="hidden" name="user" value="{{ selected.pk }}">
+          <div class="col-8"><input class="form-control" type="password" name="password" placeholder="Temporary password" required minlength="12" autocomplete="new-password"></div>
+          <div class="col-4"><button class="btn btn-outline-dark w-100" type="submit">Reset</button></div>
+        </form>
+      </div>
+      <div class="card p-4 mb-4">
+        <h2 class="h6">Roles</h2>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="save_roles">
+          <input type="hidden" name="user" value="{{ selected.pk }}">
+          {% for role in roles %}
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="groups" value="{{ role.pk }}" id="role-{{ role.pk }}" {% if role.pk in selected.role_ids %}checked{% endif %}><label class="form-check-label" for="role-{{ role.pk }}">{{ role.name }}</label></div>
+          {% endfor %}
+          <button class="btn btn-primary btn-sm mt-3" type="submit">Save roles</button>
+        </form>
+      </div>
+      <div class="card p-4">
+        <h2 class="h6">Centre privileges</h2>
+        {% for access in selected.centre_access.all %}
+          <div class="d-flex justify-content-between align-items-start border-bottom py-2">
+            <div>
+              <div class="fw-semibold">{{ access.centre.code }} — {{ access.centre.name }}</div>
+              <div class="small muted">
+                {% if access.can_view %}View{% endif %}
+                {% if access.can_register %} · Register{% endif %}
+                {% if access.can_edit %} · Edit{% endif %}
+                {% if access.can_approve %} · Approve{% endif %}
+                {% if access.is_default %} · Default{% endif %}
+              </div>
+            </div>
+            <form method="post">{% csrf_token %}<input type="hidden" name="action" value="remove_access"><input type="hidden" name="user" value="{{ selected.pk }}"><input type="hidden" name="access" value="{{ access.pk }}"><button class="btn btn-sm btn-outline-danger" type="submit">Remove</button></form>
+          </div>
+        {% empty %}<p class="muted">No centre grants yet.</p>{% endfor %}
+        <form method="post" class="row g-2 mt-3">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="save_access">
+          <input type="hidden" name="user" value="{{ selected.pk }}">
+          <div class="col-12"><select class="form-select" name="centre" required><option value="">Choose a centre</option>{% for centre in centres %}<option value="{{ centre.pk }}">{{ centre.code }} — {{ centre.name }}</option>{% endfor %}</select></div>
+          <div class="col-12 d-flex flex-wrap gap-3">
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="can_view" id="view-grant" checked><label class="form-check-label" for="view-grant">View</label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="can_register" id="reg-grant"><label class="form-check-label" for="reg-grant">Register</label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="can_edit" id="edit-grant"><label class="form-check-label" for="edit-grant">Edit</label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="can_approve" id="approve-grant"><label class="form-check-label" for="approve-grant">Approve</label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="is_default" id="default-grant"><label class="form-check-label" for="default-grant">Default centre</label></div>
+          </div>
+          <div class="col-12"><button class="btn btn-outline-dark btn-sm" type="submit">Save centre privileges</button></div>
+        </form>
+      </div>
+    {% else %}
+      <div class="card p-4">
+        <h2 class="h5">Select a user</h2>
+        <p class="muted mb-0">Open someone from the directory to suspend them, change their roles, or set the centres they can see.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

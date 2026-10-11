@@ -1,0 +1,37 @@
+<div class="col-12 test-picker">
+  <h3 class="h6 mb-1">Tests for this visit</h3>
+  <p class="muted">Choose the tariff, then the request type. Search the catalogue and add each test. Pathology, phlebotomy, and radiology see the visit only after the paypoint completes payment.</p>
+  <div class="row g-3 align-items-end">
+    <div class="col-md-4">
+      <label class="form-label">Tariff</label>
+      <select name="tariff" class="form-select tariff-select" required>
+        <option value="">Choose a tariff</option>
+        {% for tariff in tariffs %}<option value="{{ tariff.pk }}">{{ tariff.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Request type</label>
+      <select class="form-select request-type">
+        <option value="laboratory">Laboratory</option>
+        <option value="radiology">Radiology</option>
+      </select>
+    </div>
+    <div class="col-md-8">
+      <label class="form-label">Search tests</label>
+      <input class="form-control test-search" placeholder="Type a name or code, for example CBC or chest" autocomplete="off">
+    </div>
+    <div class="col-md-8">
+      <label class="form-label">Matching tests</label>
+      <select class="form-select test-results" size="6"></select>
+    </div>
+    <div class="col-md-4">
+      <button class="btn btn-outline-dark test-add" type="button">Add test</button>
+    </div>
+  </div>
+  <div class="mt-3">
+    <div class="fw-semibold mb-2">Added tests</div>
+    <p class="test-note small text-warning mb-2"></p>
+    <ul class="list-group test-added"></ul>
+    <p class="muted test-empty mb-0">No tests added yet.</p>
+  </div>
+</div>

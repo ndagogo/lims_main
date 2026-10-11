@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Organisation clients | HFDN{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <div class="muted small"><a class="text-decoration-none muted" href="{% url 'catalog-hub' %}">Catalog</a> · CLIENTS</div>
+    <h1 class="h3 mb-1">Organisation clients</h1>
+    <p class="muted mb-0">HMO and corporate accounts per centre.</p>
+  </div>
+</div>
+<div class="row g-4">
+  <div class="col-xl-7">
+    <div class="card p-4">
+      {% include "catalog/_filter_bar.html" with page=directory search_placeholder="Name or code" show_centre=True show_kind=True %}
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Client</th><th>Kind</th><th>Centre</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for client in directory %}
+              <tr>
+                <td>
+                  <a class="fw-semibold text-decoration-none" href="?client={{ client.pk }}&q={{ query|urlencode }}&status={{ status }}&centre={{ centre_id }}&kind={{ kind }}&per={{ directory.paginator.per_page }}&page={{ directory.number }}">{{ client.name }}</a>
+                  <div class="small muted">{{ client.code|default:"No code" }}</div>
+                </td>
+                <td class="small">{{ client.get_kind_display }}</td>
+                <td class="small">{{ client.centre.code }}</td>
+                <td>{% if client.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-danger-soft">Inactive</span>{% endif %}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="4" class="text-center muted py-4">No clients match that filter.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+  </div>
+  <div class="col-xl-5">
+    <div class="card p-4 mb-4">
+      <h2 class="h5">Create client</h2>
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create">
+        <input type="hidden" name="is_active_submitted" value="1">
+        <div class="col-md-6">
+          <label class="form-label">Centre</label>
+          <select class="form-select" name="centre" required>
+            {% for centre in centres %}<option value="{{ centre.pk }}">{{ centre.code }} — {{ centre.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Kind</label>
+          <select class="form-select" name="kind" required>
+            {% for value, label in kinds %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" required></div>
+        <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" name="code"></div>
+        <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="create-client-active" checked><label class="form-check-label" for="create-client-active">Active</label></div></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create client</button></div>
+      </form>
+    </div>
+    {% if selected %}
+      <div class="card p-4">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+          <div>
+            <h2 class="h5 mb-1">{{ selected.name }}</h2>
+            <div class="muted small">{{ selected.get_kind_display }} · {{ selected.centre.code }}</div>
+          </div>
+          {% if selected.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-danger-soft">Inactive</span>{% endif %}
+        </div>
+        {% include "catalog/_soft_actions.html" with pk_name="client" pk_value=selected.pk is_active=selected.is_active delete_action="delete" confirm_label=selected.name %}
+        <form method="post" class="row g-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update">
+          <input type="hidden" name="client" value="{{ selected.pk }}">
+          <div class="col-md-6">
+            <label class="form-label">Centre</label>
+            <select class="form-select" name="centre" required>
+              {% for centre in centres %}<option value="{{ centre.pk }}" {% if selected.centre_id == centre.pk %}selected{% endif %}>{{ centre.code }} — {{ centre.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Kind</label>
+            <select class="form-select" name="kind" required>
+              {% for value, label in kinds %}<option value="{{ value }}" {% if selected.kind == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ selected.name }}" required></div>
+          <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" name="code" value="{{ selected.code }}"></div>
+          <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="edit-client-active" {% if selected.is_active %}checked{% endif %}><label class="form-check-label" for="edit-client-active">Active</label></div></div>
+          <div class="col-12"><button class="btn btn-outline-dark btn-sm" type="submit">Save client</button></div>
+        </form>
+      </div>
+    {% else %}
+      <div class="card p-4">
+        <h2 class="h5">Select a client</h2>
+        <p class="muted mb-0">Open a client to edit details or deactivate the account.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

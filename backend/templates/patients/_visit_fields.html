@@ -1,0 +1,51 @@
+<div class="col-md-4">
+  <label class="form-label">Channel</label>
+  <select name="referral_source" class="form-select channel-select">
+    {% for value, label in channels %}<option value="{{ value }}" {% if value == 'SELF' %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+</div>
+<div class="col-md-4">
+  <label class="form-label">How they heard about us</label>
+  <select name="how_heard" class="form-select">
+    {% for value, label in how_heard %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+  </select>
+</div>
+<div class="col-md-4">
+  <label class="form-label">TRF number</label>
+  <input name="trf_number" class="form-control" maxlength="40">
+</div>
+<div class="col-12 when-doctor d-none">
+  <div class="row g-3">
+    <div class="col-md-5">
+      <label class="form-label">Referring doctor</label>
+      <input type="search" class="form-control doctor-search mb-2" placeholder="Search doctor by name" autocomplete="off">
+      <select name="referral_doctor" class="form-select doctor-select" size="6">
+        <option value="">Choose the centre first</option>
+      </select>
+      <div class="form-text">Search, then choose a doctor set up for this centre.</div>
+    </div>
+    <div class="col-md-7">
+      <label class="form-label">Referral institutions</label>
+      <select name="referral_institutions" class="form-select institution-select" multiple size="4"></select>
+      <div class="form-text">Only this doctor's institutions are listed. Choose one or more. Hold Ctrl to select more than one.</div>
+    </div>
+  </div>
+</div>
+<div class="col-12 when-client d-none">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label client-label">Client</label>
+      <select name="client" class="form-select client-select">
+        <option value="">Choose the centre first</option>
+      </select>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Employee or member number</label>
+      <input name="client_employee_number" class="form-control" maxlength="40">
+    </div>
+  </div>
+</div>
+<div class="col-md-4"><label class="form-label">Reference 1</label><input name="reference_1" class="form-control" maxlength="40"></div>
+<div class="col-md-4"><label class="form-label">Reference 2</label><input name="reference_2" class="form-control" maxlength="40"></div>
+<div class="col-md-12"><label class="form-label">Clinical history</label><textarea name="clinical_history" class="form-control" rows="2"></textarea></div>
+<div class="col-md-12"><label class="form-label">Comments</label><textarea name="comments" class="form-control" rows="2"></textarea></div>

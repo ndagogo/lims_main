@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Tariffs | Catalog | HFDN{% endblock %}
+{% block content %}
+{% include "catalog/_page_header.html" with eyebrow="TARIFFS" title="Tariffs & prices" subtitle="Create a tariff, then open it to set laboratory and imaging prices." %}
+<div class="row g-4">
+  <div class="col-xl-8">
+    <div class="card p-4 catalog-enter">
+      {% include "catalog/_filter_bar.html" with page=directory search_placeholder="Tariff name" %}
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Tariff</th><th>Lab prices</th><th>Imaging prices</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {% for tariff in directory %}
+              <tr>
+                <td><a class="fw-semibold text-decoration-none" href="{% url 'catalog-tariff-detail' tariff.pk %}">{{ tariff.name }}</a></td>
+                <td>{{ tariff.lab_price_count }}</td>
+                <td>{{ tariff.imaging_price_count }}</td>
+                <td>{% include "catalog/_active_badge.html" with is_active=tariff.is_active %}</td>
+                <td class="text-end">
+                  {% if tariff.is_active %}
+                    <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="deactivate"><input type="hidden" name="tariff" value="{{ tariff.pk }}"><button class="btn btn-sm btn-outline-warning" type="submit">Deactivate</button></form>
+                  {% else %}
+                    <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="activate"><input type="hidden" name="tariff" value="{{ tariff.pk }}"><button class="btn btn-sm btn-outline-success" type="submit">Activate</button></form>
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="5" class="text-center muted py-4">No tariffs match that filter.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+  </div>
+  <div class="col-xl-4">
+    <div class="card p-4 catalog-enter">
+      <h2 class="h5">Create tariff</h2>
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create">
+        <input type="hidden" name="is_active_submitted" value="1">
+        <div class="col-12"><label class="form-label">Name</label><input class="form-control" name="name" required></div>
+        <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="tariff-active" checked><label class="form-check-label" for="tariff-active">Active</label></div></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create tariff</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Imaging catalog | HFDN{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <div class="muted small"><a class="text-decoration-none muted" href="{% url 'catalog-hub' %}">Catalog</a> · IMAGING</div>
+    <h1 class="h3 mb-1">Imaging</h1>
+    <p class="muted mb-0">Global procedures and per-centre modalities.</p>
+  </div>
+</div>
+<div class="card p-4 mb-4">
+  {% include "catalog/_filter_bar.html" with page=procedures search_placeholder="Code, name, or AE title" show_centre=True %}
+</div>
+<div class="row g-4">
+  <div class="col-xl-6">
+    <div class="card p-4 mb-4">
+      <h2 class="h5 mb-3">Procedures</h2>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Procedure</th><th>Type</th><th>Prices</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for procedure in procedures %}
+              <tr>
+                <td>
+                  <a class="fw-semibold text-decoration-none" href="?procedure={{ procedure.pk }}&q={{ query|urlencode }}&status={{ status }}&centre={{ centre_id }}&per={{ procedures.paginator.per_page }}&ppage={{ procedures.number }}&mpage={{ modalities.number }}">{{ procedure.code }}</a>
+                  <div class="small muted">{{ procedure.name }}</div>
+                </td>
+                <td class="small">{{ procedure.modality_type }}</td>
+                <td>{{ procedure.price_count }}</td>
+                <td>{% if procedure.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-danger-soft">Inactive</span>{% endif %}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="4" class="text-center muted py-3">No procedures match.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=procedures %}
+    </div>
+    <div class="card p-4 mb-4">
+      <h2 class="h5">Create procedure</h2>
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_procedure">
+        <input type="hidden" name="is_active_submitted" value="1">
+        <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" name="code" required></div>
+        <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" required></div>
+        <div class="col-md-8">
+          <label class="form-label">Modality type</label>
+          <select class="form-select" name="modality_type" required>
+            {% for value, label in modality_types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="proc-active" checked><label class="form-check-label" for="proc-active">Active</label></div></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create procedure</button></div>
+      </form>
+    </div>
+    {% if selected_procedure %}
+      <div class="card p-4">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+          <div>
+            <h2 class="h5 mb-1">{{ selected_procedure.code }}</h2>
+            <div class="muted small">{{ selected_procedure.name }}</div>
+          </div>
+          {% if selected_procedure.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-danger-soft">Inactive</span>{% endif %}
+        </div>
+        {% include "catalog/_soft_actions.html" with pk_name="procedure" pk_value=selected_procedure.pk is_active=selected_procedure.is_active activate_action="activate_procedure" deactivate_action="deactivate_procedure" delete_action="delete_procedure" confirm_label=selected_procedure.code %}
+        <form method="post" class="row g-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update_procedure">
+          <input type="hidden" name="procedure" value="{{ selected_procedure.pk }}">
+          <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" name="code" value="{{ selected_procedure.code }}" required></div>
+          <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ selected_procedure.name }}" required></div>
+          <div class="col-md-8">
+            <label class="form-label">Modality type</label>
+            <select class="form-select" name="modality_type" required>
+              {% for value, label in modality_types %}<option value="{{ value }}" {% if selected_procedure.modality_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="edit-proc-active" {% if selected_procedure.is_active %}checked{% endif %}><label class="form-check-label" for="edit-proc-active">Active</label></div></div>
+          <div class="col-12"><button class="btn btn-outline-dark btn-sm" type="submit">Save procedure</button></div>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+  <div class="col-xl-6">
+    <div class="card p-4 mb-4">
+      <h2 class="h5 mb-3">Centre modalities</h2>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Modality</th><th>Centre</th><th>Type</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for modality in modalities %}
+              <tr>
+                <td>
+                  <a class="fw-semibold text-decoration-none" href="?modality={{ modality.pk }}&q={{ query|urlencode }}&status={{ status }}&centre={{ centre_id }}&per={{ modalities.paginator.per_page }}&ppage={{ procedures.number }}&mpage={{ modalities.number }}">{{ modality.code }}</a>
+                  <div class="small muted">{{ modality.name }}{% if modality.ae_title %} · {{ modality.ae_title }}{% endif %}</div>
+                </td>
+                <td class="small">{{ modality.centre.code }}</td>
+                <td class="small">{{ modality.modality_type }}</td>
+                <td>{% if modality.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-danger-soft">Inactive</span>{% endif %}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="4" class="text-center muted py-3">No modalities match.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=modalities %}
+    </div>
+    <div class="card p-4 mb-4">
+      <h2 class="h5">Create modality</h2>
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_modality">
+        <input type="hidden" name="is_active_submitted" value="1">
+        <div class="col-md-6">
+          <label class="form-label">Centre</label>
+          <select class="form-select" name="centre" required>
+            {% for centre in centres %}<option value="{{ centre.pk }}">{{ centre.code }} — {{ centre.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6"><label class="form-label">Code</label><input class="form-control" name="code" required></div>
+        <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" required></div>
+        <div class="col-md-4">
+          <label class="form-label">Type</label>
+          <select class="form-select" name="modality_type" required>
+            {% for value, label in modality_types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4"><label class="form-label">AE title</label><input class="form-control" name="ae_title"></div>
+        <div class="col-md-4"><label class="form-label">Host</label><input class="form-control" name="host"></div>
+        <div class="col-md-4"><label class="form-label">Port</label><input class="form-control" name="port"></div>
+        <div class="col-12"><label class="form-label">WADO URL</label><input class="form-control" name="wado_url"></div>
+        <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="mod-active" checked><label class="form-check-label" for="mod-active">Active</label></div></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create modality</button></div>
+      </form>
+    </div>
+    {% if selected_modality %}
+      <div class="card p-4">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+          <div>
+            <h2 class="h5 mb-1">{{ selected_modality.code }}</h2>
+            <div class="muted small">{{ selected_modality.name }} · {{ selected_modality.centre.code }}</div>
+          </div>
+          {% if selected_modality.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-danger-soft">Inactive</span>{% endif %}
+        </div>
+        {% include "catalog/_soft_actions.html" with pk_name="modality" pk_value=selected_modality.pk is_active=selected_modality.is_active activate_action="activate_modality" deactivate_action="deactivate_modality" delete_action="delete_modality" confirm_label=selected_modality.code %}
+        <form method="post" class="row g-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update_modality">
+          <input type="hidden" name="modality" value="{{ selected_modality.pk }}">
+          <div class="col-md-6">
+            <label class="form-label">Centre</label>
+            <select class="form-select" name="centre" required>
+              {% for centre in centres %}<option value="{{ centre.pk }}" {% if selected_modality.centre_id == centre.pk %}selected{% endif %}>{{ centre.code }} — {{ centre.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6"><label class="form-label">Code</label><input class="form-control" name="code" value="{{ selected_modality.code }}" required></div>
+          <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ selected_modality.name }}" required></div>
+          <div class="col-md-4">
+            <label class="form-label">Type</label>
+            <select class="form-select" name="modality_type" required>
+              {% for value, label in modality_types %}<option value="{{ value }}" {% if selected_modality.modality_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4"><label class="form-label">AE title</label><input class="form-control" name="ae_title" value="{{ selected_modality.ae_title }}"></div>
+          <div class="col-md-4"><label class="form-label">Host</label><input class="form-control" name="host" value="{{ selected_modality.host|default:'' }}"></div>
+          <div class="col-md-4"><label class="form-label">Port</label><input class="form-control" name="port" value="{{ selected_modality.port|default:'' }}"></div>
+          <div class="col-12"><label class="form-label">WADO URL</label><input class="form-control" name="wado_url" value="{{ selected_modality.wado_url }}"></div>
+          <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="edit-mod-active" {% if selected_modality.is_active %}checked{% endif %}><label class="form-check-label" for="edit-mod-active">Active</label></div></div>
+          <div class="col-12"><button class="btn btn-outline-dark btn-sm" type="submit">Save modality</button></div>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

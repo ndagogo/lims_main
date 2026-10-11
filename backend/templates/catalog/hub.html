@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Catalog & pricing | HFDN{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <div class="muted small">PLATFORM ADMINISTRATION</div>
+    <h1 class="h3 mb-1">Catalog & pricing</h1>
+    <p class="muted mb-0">Set up tariffs, laboratory tests, referral doctors, imaging, centres, and organisation clients. Day-to-day clinical work stays in the role workspaces.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="/">Back to dashboard</a>
+</div>
+<div class="row g-3">
+  {% for label, url_name, count, icon, blurb in entities %}
+  <div class="col-md-6 col-xl-4">
+    <a class="catalog-tile text-decoration-none d-block h-100" href="{% url url_name %}">
+      <div class="d-flex align-items-start gap-3">
+        <span class="kpi-icon text-white" style="background:#0f766e"><i class="bi {{ icon }}"></i></span>
+        <div class="flex-grow-1">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <h2 class="h6 mb-1 text-body">{{ label }}</h2>
+            <span class="badge badge-soft">{{ count }}</span>
+          </div>
+          <p class="muted small mb-0">{{ blurb }}</p>
+        </div>
+      </div>
+    </a>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

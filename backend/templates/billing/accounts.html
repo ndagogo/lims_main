@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block title %}Cashier paypoint | HFDN{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <div class="muted small">CASHIER PAYPOINT</div>
+    <h1 class="h3 mb-1">Outstanding dues</h1>
+    <p class="muted mb-0">Collect payment on ready invoices. If you submit a discount request, that invoice leaves this list until an accountant approves or rejects it.</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    {% if is_accountant %}
+      <a class="btn btn-outline-dark btn-sm" href="{% url 'accounts-reports' %}"><i class="bi bi-graph-up me-1"></i>Accountant reports</a>
+    {% endif %}
+  </div>
+</div>
+
+<form method="get" class="card p-4 mb-4">
+  <h2 class="h5">Find a patient</h2>
+  <div class="row g-2">
+    <div class="col-md-8"><input class="form-control" name="q" value="{{ due_query }}" placeholder="Name, phone, UHID, or visit"></div>
+    <div class="col-md-4"><button class="btn btn-outline-dark" type="submit">Look up</button></div>
+  </div>
+</form>
+
+<div class="card p-4 mb-4">
+  <h2 class="h5">Ready to collect</h2>
+  <p class="small muted">Invoices with a pending discount request are held until review is finished.</p>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>Patient</th><th>Visit</th><th>Tests</th><th>Balance</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for invoice in dues %}
+          <tr>
+            <td>
+              <div class="fw-semibold">{{ invoice.visit.patient.first_name }} {{ invoice.visit.patient.last_name }}</div>
+              <div class="small muted">{{ invoice.visit.patient.uhid }} · {{ invoice.visit.patient.phone_number }}</div>
+            </td>
+            <td>{{ invoice.visit.visit_id }}<div class="small muted">{{ invoice.invoice_number }} · {{ invoice.visit.centre.code }}</div></td>
+            <td>{% for item in invoice.items.all %}{{ item.description }}{% if not forloop.last %}, {% endif %}{% empty %}No tests{% endfor %}</td>
+            <td>₦{{ invoice.balance|floatformat:2 }}</td>
+            <td>
+              {{ invoice.get_status_display }}
+              {% if invoice.discount_amount %}<div class="small muted">Discount ₦{{ invoice.discount_amount|floatformat:2 }}</div>{% endif %}
+            </td>
+            <td><a class="btn btn-sm btn-primary" href="?q={{ due_query|urlencode }}&due={{ invoice.pk }}">Select</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="muted text-center py-4">No invoices ready to collect. Check discount requests below if one is waiting for approval.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=dues %}
+</div>
+
+{% if selected_due %}
+<div class="card p-4 mb-4">
+  <h2 class="h5">{{ selected_due.visit.patient.first_name }} {{ selected_due.visit.patient.last_name }}</h2>
+  <p class="muted">{{ selected_due.invoice_number }} · {{ selected_due.visit.visit_id }} · total ₦{{ selected_due.total|floatformat:2 }} · paid ₦{{ selected_due.amount_paid|floatformat:2 }} · balance ₦{{ selected_due.balance|floatformat:2 }}</p>
+  <ul>
+    {% for item in selected_due.items.all %}
+      <li>{{ item.description }} × {{ item.quantity }} — ₦{{ item.line_total|floatformat:2 }}</li>
+    {% endfor %}
+  </ul>
+
+  {% if selected_due.discount_locked %}
+    <div class="alert alert-warning mb-0">
+      <div class="fw-semibold">Discount request waiting for accountant review</div>
+      <p class="mb-1 small">{{ selected_due.pending_discount.discount_type }} {{ selected_due.pending_discount.requested_value }} — {{ selected_due.pending_discount.reason }}</p>
+      <p class="mb-0 small muted">Collection and further discount requests stay locked until this request is approved or rejected. Track it under My discount requests.</p>
+    </div>
+  {% else %}
+    <div class="row g-4">
+      <div class="col-lg-6">
+        <form method="post">
+          {% csrf_token %}
+          <h3 class="h6">Record payment</h3>
+          <input type="hidden" name="action" value="pay">
+          <input type="hidden" name="invoice" value="{{ selected_due.pk }}">
+          <label class="form-label">Amount</label>
+          <input name="amount" class="form-control mb-2" value="{{ selected_due.balance_input }}" required>
+          <label class="form-label">Method of payment</label>
+          <select name="method" class="form-select mb-2">{% for method in payment_methods %}<option>{{ method }}</option>{% endfor %}</select>
+          <label class="form-label">Reference</label>
+          <input name="reference" class="form-control mb-3" placeholder="POS slip, transfer reference, or receipt note">
+          <button class="btn btn-primary" type="submit">Record payment</button>
+        </form>
+      </div>
+      <div class="col-lg-6">
+        <form method="post">
+          {% csrf_token %}
+          <h3 class="h6">Discount request</h3>
+          <p class="small muted">Submitting a request holds this invoice until an accountant with discount approval privilege decides it.</p>
+          <input type="hidden" name="action" value="discount">
+          <input type="hidden" name="invoice" value="{{ selected_due.pk }}">
+          <select name="discount_type" class="form-select mb-2"><option value="PERCENT">Percent</option><option value="FIXED">Fixed amount</option></select>
+          <input name="requested_value" class="form-control mb-2" placeholder="Value" required>
+          <input name="reason" class="form-control mb-3" placeholder="Reason" required>
+          <button class="btn btn-outline-dark" type="submit">Submit discount request</button>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if can_approve_discount %}
+<div class="card p-4 mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h2 class="h5 mb-0">Pending discount approvals</h2>
+    <a class="btn btn-sm btn-outline-dark" href="{% url 'accounts-reports' %}">Open full accountant desk</a>
+  </div>
+  <p class="small muted">Full history of all discounts is on the accountant desk.</p>
+  {% for discount in discounts %}
+    <form method="post" class="border-top pt-3 mt-3">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="review_discount">
+      <input type="hidden" name="discount" value="{{ discount.pk }}">
+      <div class="fw-semibold">{{ discount.invoice.visit.patient.first_name }} {{ discount.invoice.visit.patient.last_name }}</div>
+      <div class="small muted mb-1">{{ discount.invoice.visit.patient.uhid }} · {{ discount.invoice.invoice_number }} · {{ discount.invoice.visit.centre.code }}</div>
+      <div class="small mb-1">
+        <strong>{{ discount.get_discount_type_display }}</strong> {{ discount.requested_value }}
+        · Est. ₦{{ discount.estimated_amount|floatformat:2 }}
+        · Invoice total ₦{{ discount.invoice.total|floatformat:2 }}
+        · by {{ discount.requested_by.username }}
+      </div>
+      <div class="mb-2"><span class="muted small">Reason:</span> {{ discount.reason }}</div>
+      <select name="decision" class="form-select form-select-sm mb-2"><option value="APPROVED">Approve</option><option value="REJECTED">Reject</option></select>
+      <input name="note" class="form-control form-control-sm mb-2" placeholder="Note">
+      <button class="btn btn-sm btn-outline-dark" type="submit">Review</button>
+    </form>
+  {% empty %}<p class="muted mb-0">No pending discount requests.</p>{% endfor %}
+  {% include "includes/pagination.html" with page=discounts %}
+</div>
+{% elif my_discount_requests is not None %}
+<div class="card p-4 mb-4">
+  <h2 class="h5">My discount requests</h2>
+  <p class="small muted">Waiting for accountant review. You cannot approve or reject from the cashier desk. After approval, the invoice returns to Ready to collect so you can take payment and print the receipt.</p>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>Invoice</th><th>Patient</th><th>Request</th><th>Status</th><th>Submitted</th><th></th></tr></thead>
+      <tbody>
+        {% for discount in my_discount_requests %}
+          <tr>
+            <td>{{ discount.invoice.invoice_number }}</td>
+            <td class="small">{{ discount.invoice.visit.patient.first_name }} {{ discount.invoice.visit.patient.last_name }}</td>
+            <td>{{ discount.discount_type }} {{ discount.requested_value }} <span class="muted small">{{ discount.reason }}</span></td>
+            <td>
+              {% if discount.status == 'PENDING' %}<span class="badge badge-warn">PENDING</span>
+              {% elif discount.status == 'APPROVED' %}<span class="badge badge-soft">APPROVED</span>
+              {% elif discount.status == 'REJECTED' %}<span class="badge badge-danger-soft">REJECTED</span>
+              {% else %}<span class="badge text-bg-light border">{{ discount.status }}</span>{% endif %}
+              {% if discount.status == 'APPROVED' and discount.applied_amount %}<div class="small muted">Applied ₦{{ discount.applied_amount|floatformat:2 }}</div>{% endif %}
+            </td>
+            <td class="small">{{ discount.created_at|date:"d M Y, H:i" }}</td>
+            <td>
+              {% if discount.status == 'APPROVED' and discount.invoice.status != 'PAID' and discount.invoice.status != 'CANCELLED' %}
+                <a class="btn btn-sm btn-primary" href="?q={{ due_query|urlencode }}&due={{ discount.invoice_id }}">Collect payment</a>
+              {% elif discount.status == 'REJECTED' and discount.invoice.status != 'PAID' and discount.invoice.status != 'CANCELLED' %}
+                <a class="btn btn-sm btn-outline-dark" href="?q={{ due_query|urlencode }}&due={{ discount.invoice_id }}">Open invoice</a>
+              {% elif discount.status == 'PENDING' %}
+                <span class="small muted">Held for review</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="muted text-center py-3">No discount requests from you yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=my_discount_requests %}
+</div>
+{% endif %}
+
+{% if is_accountant and invoices %}
+<div class="card p-4 mb-4">
+  <h2 class="h5">Invoices</h2>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>Invoice</th><th>Visit</th><th>Patient</th><th>Total</th><th>Status</th><th>Cancel</th></tr></thead>
+      <tbody>
+        {% for invoice in invoices %}
+          <tr>
+            <td>{{ invoice.invoice_number }}</td>
+            <td>{{ invoice.visit.visit_id }}</td>
+            <td>{{ invoice.visit.patient.first_name }} {{ invoice.visit.patient.last_name }}</td>
+            <td>₦{{ invoice.total|floatformat:2 }}</td>
+            <td>{{ invoice.status }}</td>
+            <td>
+              {% if can_cancel_invoice and invoice.status != 'CANCELLED' and invoice.status != 'PAID' %}
+                <form method="post" class="d-flex gap-2">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="cancel">
+                  <input type="hidden" name="invoice" value="{{ invoice.pk }}">
+                  <input name="reason" class="form-control form-control-sm" placeholder="Reason" required>
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Cancel</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}<tr><td colspan="6" class="muted text-center py-4">No invoices for your centres.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=invoices %}
+</div>
+{% endif %}
+
+<div class="card p-4">
+  <h2 class="h5">Receipts</h2>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>Receipt</th><th>Invoice</th><th>Method</th><th>Amount</th><th>Status</th>{% if can_reverse_payment %}<th>Reverse</th>{% endif %}</tr></thead>
+      <tbody>
+        {% for payment in payments %}
+          <tr>
+            <td><a href="{% url 'payment-receipt' payment.pk %}">{{ payment.receipt_number }}</a></td>
+            <td>{{ payment.invoice.invoice_number }}</td>
+            <td>{{ payment.method }}</td>
+            <td>₦{{ payment.amount|floatformat:2 }}</td>
+            <td>{{ payment.status }}</td>
+            {% if can_reverse_payment %}
+            <td>
+              {% if payment.status == 'CONFIRMED' %}
+                <form method="post" class="d-flex gap-2">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="reverse">
+                  <input type="hidden" name="payment" value="{{ payment.pk }}">
+                  <input name="reason" class="form-control form-control-sm" placeholder="Reason" required>
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Reverse</button>
+                </form>
+              {% else %}{{ payment.reversal_reason }}{% endif %}
+            </td>
+            {% endif %}
+          </tr>
+        {% empty %}<tr><td colspan="6" class="muted text-center py-4">No receipts yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=payments %}
+</div>
+{% endblock %}

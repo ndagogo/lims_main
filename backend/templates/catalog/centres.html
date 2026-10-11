@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Centres | HFDN{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <div class="muted small"><a class="text-decoration-none muted" href="{% url 'catalog-hub' %}">Catalog</a> · CENTRES</div>
+    <h1 class="h3 mb-1">Centres</h1>
+    <p class="muted mb-0">Site details, centre logo for receipts, and the sample digit used in laboratory IDs.</p>
+  </div>
+</div>
+<div class="row g-4">
+  <div class="col-xl-7">
+    <div class="card p-4">
+      {% include "catalog/_filter_bar.html" with page=directory search_placeholder="Code, name, or phone" %}
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Centre</th><th>Sample digit</th><th>Phone</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for centre in directory %}
+              <tr>
+                <td>
+                  <a class="fw-semibold text-decoration-none" href="?centre={{ centre.pk }}&q={{ query|urlencode }}&status={{ status }}&per={{ directory.paginator.per_page }}&page={{ directory.number }}">{{ centre.code }}</a>
+                  <div class="small muted">{{ centre.name }}</div>
+                </td>
+                <td>{% if centre.sample_code_config %}<span class="badge text-bg-light border">{{ centre.sample_code_config.numeric_code }}</span>{% else %}—{% endif %}</td>
+                <td class="small">{{ centre.phone|default:"—" }}</td>
+                <td>{% if centre.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-danger-soft">Inactive</span>{% endif %}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="4" class="text-center muted py-4">No centres match that filter.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+  </div>
+  <div class="col-xl-5">
+    <div class="card p-4 mb-4">
+      <h2 class="h5">Create centre</h2>
+      <form method="post" enctype="multipart/form-data" class="row g-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create">
+        <input type="hidden" name="is_active_submitted" value="1">
+        <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" name="code" required></div>
+        <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" required></div>
+        <div class="col-12"><label class="form-label">Address</label><textarea class="form-control" name="address" rows="2"></textarea></div>
+        <div class="col-md-6"><label class="form-label">Phone</label><input class="form-control" name="phone"></div>
+        <div class="col-md-6"><label class="form-label">Email</label><input class="form-control" type="email" name="email"></div>
+        <div class="col-12">
+          <label class="form-label">Centre logo</label>
+          <input class="form-control" type="file" name="logo" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
+          <div class="form-text">JPEG or PNG, max 2 MB. Appears on payment receipts.</div>
+        </div>
+        <div class="col-md-6"><label class="form-label">Timezone</label><input class="form-control" name="timezone" value="Africa/Lagos"></div>
+        <div class="col-md-3"><label class="form-label">Sample digit</label><input class="form-control" name="sample_digit" maxlength="1"></div>
+        <div class="col-md-3 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="create-centre-active" checked><label class="form-check-label" for="create-centre-active">Active</label></div></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create centre</button></div>
+      </form>
+    </div>
+    {% if selected %}
+      <div class="card p-4">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+          <div>
+            <h2 class="h5 mb-1">{{ selected.code }}</h2>
+            <div class="muted small">{{ selected.name }}</div>
+          </div>
+          {% if selected.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-danger-soft">Inactive</span>{% endif %}
+        </div>
+        {% if selected.logo %}
+          <div class="mb-3">
+            <div class="muted small mb-1">Current logo</div>
+            <img src="{{ selected.logo.url }}" alt="{{ selected.code }} logo" style="max-height:72px;max-width:180px;object-fit:contain">
+          </div>
+        {% endif %}
+        {% include "catalog/_soft_actions.html" with pk_name="centre" pk_value=selected.pk is_active=selected.is_active delete_action="delete" confirm_label=selected.code %}
+        <form method="post" enctype="multipart/form-data" class="row g-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update">
+          <input type="hidden" name="centre" value="{{ selected.pk }}">
+          <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" name="code" value="{{ selected.code }}" required></div>
+          <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ selected.name }}" required></div>
+          <div class="col-12"><label class="form-label">Address</label><textarea class="form-control" name="address" rows="2">{{ selected.address }}</textarea></div>
+          <div class="col-md-6"><label class="form-label">Phone</label><input class="form-control" name="phone" value="{{ selected.phone }}"></div>
+          <div class="col-md-6"><label class="form-label">Email</label><input class="form-control" type="email" name="email" value="{{ selected.email }}"></div>
+          <div class="col-12">
+            <label class="form-label">Centre logo</label>
+            <input class="form-control" type="file" name="logo" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
+            <div class="form-text">JPEG or PNG, max 2 MB. Leave empty to keep the current logo.</div>
+            {% if selected.logo %}
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" name="clear_logo" id="clear-centre-logo">
+                <label class="form-check-label" for="clear-centre-logo">Remove current logo</label>
+              </div>
+            {% endif %}
+          </div>
+          <div class="col-md-6"><label class="form-label">Timezone</label><input class="form-control" name="timezone" value="{{ selected.timezone }}"></div>
+          <div class="col-md-3"><label class="form-label">Sample digit</label><input class="form-control" name="sample_digit" value="{% if selected.sample_code_config %}{{ selected.sample_code_config.numeric_code }}{% endif %}" maxlength="1"></div>
+          <div class="col-md-3 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="edit-centre-active" {% if selected.is_active %}checked{% endif %}><label class="form-check-label" for="edit-centre-active">Active</label></div></div>
+          <div class="col-12"><button class="btn btn-outline-dark btn-sm" type="submit">Save centre</button></div>
+        </form>
+      </div>
+    {% else %}
+      <div class="card p-4">
+        <h2 class="h5">Select a centre</h2>
+        <p class="muted mb-0">Open a centre to edit details, upload a logo, set the sample digit, or deactivate it.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

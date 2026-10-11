@@ -1,0 +1,142 @@
+from decimal import Decimal
+from django.db import transaction
+from django.utils import timezone
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from core.access import ACCOUNTS_ROLES, require_any_role, require_workspace
+from core.models import UserCentreAccess, AuditEvent
+from core.permissions import HasCentreAccess
+from .models import Invoice, InvoiceItem, Payment, DiscountRequest
+from .serializers import InvoiceSerializer, InvoiceItemSerializer, PaymentSerializer, DiscountRequestSerializer
+
+def centre_qs(qs, user, path):
+    if user.is_superuser: return qs
+    return qs.filter(**{f'{path}__centre__user_access__user':user, f'{path}__centre__user_access__can_view':True, f'{path}__centre__is_active':True}).distinct()
+
+class InvoiceViewSet(viewsets.ModelViewSet):
+    serializer_class=InvoiceSerializer; permission_classes=[IsAuthenticated,HasCentreAccess]; search_fields=['invoice_number','visit__visit_id']; filterset_fields=['status','visit']
+    def get_queryset(self): return centre_qs(Invoice.objects.select_related('visit__centre','visit__patient').prefetch_related('items__test','payments'), self.request.user, 'visit')
+    def create(self, request, *args, **kwargs):
+        require_workspace(request.user, 'accounts')
+        visit_id=request.data.get('visit')
+        from patients.models import Visit
+        visit=Visit.objects.filter(pk=visit_id).select_related('centre').first()
+        if not visit: raise ValidationError({'visit':'Visit not found.'})
+        if not request.user.is_superuser and not UserCentreAccess.objects.filter(user=request.user,centre=visit.centre,can_register=True).exists(): raise PermissionDenied('No billing/order-entry access for this centre.')
+        invoice=Invoice.objects.create(visit=visit,payer_name=request.data.get('payer_name',''),created_by=request.user,status='UNPAID')
+        return Response(self.get_serializer(invoice).data,status=status.HTTP_201_CREATED)
+    @action(detail=True, methods=['post'])
+    def add_test(self, request, pk=None):
+        require_workspace(request.user, 'accounts')
+        invoice=self.get_object()
+        if invoice.status in ('PAID','CANCELLED'): raise ValidationError('Cannot change a paid or cancelled invoice.')
+        test_id=request.data.get('test'); tariff_id=request.data.get('tariff'); order_id=request.data.get('lab_order')
+        from laboratory.models import Test, Tariff, TestPrice, LabOrder
+        test=Test.objects.filter(pk=test_id,is_active=True).first()
+        tariff=Tariff.objects.filter(pk=tariff_id,is_active=True).first() if tariff_id else None
+        if not test: raise ValidationError({'test':'Select a valid active test.'})
+        price=TestPrice.objects.filter(test=test,tariff=tariff).first() if tariff else None
+        if not price: raise ValidationError({'price':'No price is configured for this test and tariff. Contact the System Administrator.'})
+        order=LabOrder.objects.filter(pk=order_id,visit=invoice.visit,test=test).first() if order_id else None
+        with transaction.atomic():
+            if order is None:
+                order=LabOrder.objects.create(visit=invoice.visit,test=test,tariff=tariff,price=price.price,status='ORDERED')
+            item=InvoiceItem.objects.create(invoice=invoice,test=test,tariff=tariff,lab_order=order,unit_price=price.price,outsource_price=price.outsource_price,quantity=int(request.data.get('quantity',1)))
+            if order: order.price=price.price; order.tariff=tariff; order.save(update_fields=['price','tariff','updated_at'])
+        return Response(InvoiceItemSerializer(item).data,status=201)
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        invoice=self.get_object()
+        require_any_role(request.user, ACCOUNTS_ROLES, perm='billing.cancel_invoice')
+        if invoice.status == 'CANCELLED':
+            raise ValidationError('This invoice is already cancelled.')
+        if invoice.payments.filter(status='CONFIRMED').exists():
+            raise ValidationError('Reverse each confirmed payment before cancelling this invoice.')
+        reason=(request.data.get('reason') or '').strip()
+        if not reason:
+            raise ValidationError({'reason': 'A cancellation reason is required.'})
+        invoice.status='CANCELLED'
+        invoice.cancel_reason=reason
+        invoice.cancelled_by=request.user
+        invoice.cancelled_at=timezone.now()
+        invoice.save(update_fields=['status', 'cancel_reason', 'cancelled_by', 'cancelled_at', 'updated_at'])
+        AuditEvent.objects.create(actor=request.user, action='INVOICE_CANCELLED', object_type='Invoice', object_id=str(invoice.pk), centre=invoice.visit.centre, detail={'invoice': invoice.invoice_number, 'reason': reason})
+        return Response(self.get_serializer(invoice).data)
+
+class InvoiceItemViewSet(viewsets.ModelViewSet):
+    serializer_class=InvoiceItemSerializer; permission_classes=[IsAuthenticated,HasCentreAccess]
+    def get_queryset(self): return centre_qs(InvoiceItem.objects.select_related('invoice__visit__centre','test'),self.request.user,'invoice__visit')
+    def perform_create(self, serializer):
+        require_workspace(self.request.user, 'accounts')
+        invoice=serializer.validated_data['invoice']
+        if not self.request.user.is_superuser and not UserCentreAccess.objects.filter(user=self.request.user,centre=invoice.visit.centre,can_register=True).exists(): raise PermissionDenied('No access to this invoice centre.')
+        if invoice.status in ('PAID','CANCELLED'): raise ValidationError('Cannot add items to a paid or cancelled invoice.')
+        serializer.save()
+    def perform_update(self, serializer):
+        item=self.get_object()
+        target_invoice=serializer.validated_data.get('invoice', item.invoice)
+        if target_invoice.visit.centre_id != item.invoice.visit.centre_id: raise ValidationError('Invoice item cannot be moved between centres.')
+        if item.invoice.status == 'PAID': raise ValidationError('Paid invoice items cannot be edited; use a controlled reversal workflow.')
+        serializer.save()
+    def perform_destroy(self, instance):
+        if instance.invoice.status == 'PAID': raise ValidationError('Paid invoice items cannot be deleted; use a controlled reversal workflow.')
+        instance.delete(); instance.invoice.recalculate()
+
+class PaymentViewSet(viewsets.ModelViewSet):
+    serializer_class=PaymentSerializer; permission_classes=[IsAuthenticated,HasCentreAccess]; http_method_names=['get','post','head','options']
+    def get_queryset(self): return centre_qs(Payment.objects.select_related('invoice__visit__centre'),self.request.user,'invoice__visit')
+    def perform_create(self, serializer):
+        require_workspace(self.request.user, 'accounts')
+        invoice=serializer.validated_data['invoice']; centre=invoice.visit.centre
+        if not self.request.user.is_superuser and not UserCentreAccess.objects.filter(user=self.request.user,centre=centre,can_edit=True).exists(): raise PermissionDenied('Billing permission required.')
+        serializer.save(received_by=self.request.user)
+    @action(detail=True, methods=['post'])
+    def reverse(self, request, pk=None):
+        payment=self.get_object()
+        require_any_role(request.user, ACCOUNTS_ROLES, perm='billing.reverse_payment')
+        centre=payment.invoice.visit.centre
+        if not request.user.is_superuser and not UserCentreAccess.objects.filter(user=request.user, centre=centre, can_edit=True).exists():
+            raise PermissionDenied('Billing permission required.')
+        if payment.status != 'CONFIRMED':
+            raise ValidationError('Only a confirmed payment can be reversed.')
+        reason=(request.data.get('reason') or '').strip()
+        if not reason:
+            raise ValidationError({'reason': 'A reversal reason is required.'})
+        payment.status='REVERSED'
+        payment.reversal_reason=reason
+        payment.reversed_by=request.user
+        payment.reversed_at=timezone.now()
+        payment.save()
+        AuditEvent.objects.create(actor=request.user, action='PAYMENT_REVERSED', object_type='Payment', object_id=str(payment.pk), centre=centre, detail={'receipt': payment.receipt_number, 'amount': str(payment.amount), 'reason': reason})
+        return Response(self.get_serializer(payment).data)
+
+class DiscountRequestViewSet(viewsets.ModelViewSet):
+    serializer_class=DiscountRequestSerializer; permission_classes=[IsAuthenticated,HasCentreAccess]; http_method_names=['get','post','head','options']
+    def get_queryset(self): return centre_qs(DiscountRequest.objects.select_related('invoice__visit__centre'),self.request.user,'invoice__visit')
+    def perform_create(self, serializer):
+        require_workspace(self.request.user, 'accounts')
+        invoice=serializer.validated_data['invoice']
+        if not self.request.user.is_superuser and not UserCentreAccess.objects.filter(user=self.request.user,centre=invoice.visit.centre,can_register=True).exists(): raise PermissionDenied('Cannot request a discount at this centre.')
+        serializer.save(requested_by=self.request.user)
+    @action(detail=True, methods=['post'])
+    def review(self, request, pk=None):
+        discount=self.get_object()
+        require_any_role(request.user, ACCOUNTS_ROLES, perm='billing.approve_discount')
+        if discount.status != 'PENDING': raise ValidationError('Only pending requests can be reviewed.')
+        decision=request.data.get('decision')
+        if decision not in ('APPROVED','REJECTED'): raise ValidationError({'decision':'Use APPROVED or REJECTED.'})
+        with transaction.atomic():
+            invoice=Invoice.objects.select_for_update().get(pk=discount.invoice_id)
+            if decision == 'APPROVED':
+                value=discount.requested_value
+                amount=(invoice.subtotal*value/Decimal('100')) if discount.discount_type=='PERCENT' else value
+                if amount > invoice.subtotal: raise ValidationError('Discount cannot exceed invoice subtotal.')
+                invoice.discount_amount=amount; invoice.recalculate()
+                discount.applied_amount=amount
+            discount.status=decision; discount.reviewed_by=request.user; discount.review_note=request.data.get('note','')
+            discount.save(update_fields=['status','reviewed_by','review_note','applied_amount','updated_at'])
+            AuditEvent.objects.create(actor=request.user,action=f'DISCOUNT_{decision}',object_type='DiscountRequest',object_id=str(discount.pk),centre=invoice.visit.centre,detail={'invoice':invoice.invoice_number,'amount':str(discount.applied_amount)})
+        return Response(self.get_serializer(discount).data)

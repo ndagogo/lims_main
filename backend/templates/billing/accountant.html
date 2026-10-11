@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% block title %}Accountant reports | HFDN{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <div class="muted small">ACCOUNTANT DESK</div>
+    <h1 class="h3 mb-1">Financial reports</h1>
+    <p class="muted mb-0">Collections, invoices, discounts, and visits by day, week, month, or year. Export any dataset as CSV, Excel, or PDF.</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'accounts-workspace' %}">Back to cashier paypoint</a>
+</div>
+
+<form method="get" class="card p-4 mb-4">
+  <div class="row g-3 align-items-end">
+    <div class="col-md-2">
+      <label class="form-label">Period</label>
+      <select class="form-select" name="period" id="period-select">
+        {% for value, label in period_choices %}
+          <option value="{{ value }}" {% if period == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">From</label>
+      <input class="form-control" type="date" name="start" value="{{ start_date }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">To</label>
+      <input class="form-control" type="date" name="end" value="{{ end_date }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Centre</label>
+      <select class="form-select" name="centre">
+        <option value="">All my centres</option>
+        {% for centre in centres %}
+          <option value="{{ centre.pk }}" {% if centre_id == centre.pk|stringformat:"s" %}selected{% endif %}>{{ centre.code }} — {{ centre.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3"><button class="btn btn-primary w-100" type="submit">Refresh report</button></div>
+  </div>
+  <div class="muted small mt-2">Showing <strong>{{ period_label }}</strong> ({{ start_date }} → {{ end_date }})</div>
+</form>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-xl-3"><div class="kpi"><span class="kpi-icon text-white" style="background:#0f766e"><i class="bi bi-cash-stack"></i></span><div><div class="kpi-label">COLLECTIONS</div><div class="kpi-value">₦{{ kpis.collections|floatformat:2 }}</div></div></div></div>
+  <div class="col-6 col-xl-3"><div class="kpi"><span class="kpi-icon text-white" style="background:#1b314d"><i class="bi bi-receipt"></i></span><div><div class="kpi-label">INVOICED</div><div class="kpi-value">₦{{ kpis.invoice_billed|floatformat:2 }}</div></div></div></div>
+  <div class="col-6 col-xl-3"><div class="kpi"><span class="kpi-icon text-white" style="background:#8a5a00"><i class="bi bi-percent"></i></span><div><div class="kpi-label">DISCOUNTS APPLIED</div><div class="kpi-value">₦{{ kpis.discount_applied|floatformat:2 }}</div></div></div></div>
+  <div class="col-6 col-xl-3"><div class="kpi"><span class="kpi-icon text-white" style="background:#9b2c2c"><i class="bi bi-exclamation-circle"></i></span><div><div class="kpi-label">OUTSTANDING</div><div class="kpi-value">₦{{ kpis.outstanding|floatformat:2 }}</div></div></div></div>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">PAYMENTS</div><div class="h4 mb-0">{{ kpis.payment_count }}</div></div></div>
+  <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">INVOICES</div><div class="h4 mb-0">{{ kpis.invoice_count }}</div></div></div>
+  <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">VISITS</div><div class="h4 mb-0">{{ kpis.visit_count }}</div></div></div>
+  <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">PENDING DISCOUNTS</div><div class="h4 mb-0">{{ kpis.pending_discounts }}</div></div></div>
+</div>
+
+<div class="card p-4 mb-4">
+  <h2 class="h5">Export</h2>
+  <p class="muted small">Choose a dataset, then download CSV, Excel, or PDF for the period above.</p>
+  <div class="row g-2 align-items-end">
+    <div class="col-md-4">
+      <label class="form-label">Dataset</label>
+      <select class="form-select" id="export-dataset">
+        {% for value, label in datasets %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-8 d-flex flex-wrap gap-2">
+      <a class="btn btn-outline-dark export-link" data-format="csv" href="#">CSV</a>
+      <a class="btn btn-outline-dark export-link" data-format="xlsx" href="#">Excel</a>
+      <a class="btn btn-outline-dark export-link" data-format="pdf" href="#">PDF</a>
+    </div>
+  </div>
+</div>
+
+{% if can_approve_discount %}
+<div class="card p-4 mb-4">
+  <h2 class="h5">Pending discount approvals</h2>
+  <p class="muted small">Review full request details before approving or rejecting.</p>
+  {% for discount in pending_discounts %}
+    <form method="post" class="border-top pt-3 mt-3">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="review_discount">
+      <input type="hidden" name="discount" value="{{ discount.pk }}">
+      <div class="row g-2 mb-2">
+        <div class="col-md-6">
+          <div class="fw-semibold">{{ discount.invoice.visit.patient.first_name }} {{ discount.invoice.visit.patient.last_name }}</div>
+          <div class="small muted">{{ discount.invoice.visit.patient.uhid }} · Visit {{ discount.invoice.visit.visit_id }} · {{ discount.invoice.visit.centre.code }}</div>
+        </div>
+        <div class="col-md-6 text-md-end">
+          <div class="small">Invoice {{ discount.invoice.invoice_number }}</div>
+          <div class="small muted">Subtotal ₦{{ discount.invoice.subtotal|floatformat:2 }} · Current total ₦{{ discount.invoice.total|floatformat:2 }}</div>
+        </div>
+      </div>
+      <div class="small mb-2">
+        <strong>{{ discount.get_discount_type_display }}</strong> {{ discount.requested_value }}
+        · Estimated discount ₦{{ discount.estimated_amount|floatformat:2 }}
+        · Requested by {{ discount.requested_by.display_name|default:discount.requested_by.username }}
+        · {{ discount.created_at|date:"d M Y, H:i" }}
+      </div>
+      <div class="mb-3"><span class="muted small">Reason</span><div>{{ discount.reason }}</div></div>
+      <div class="row g-2">
+        <div class="col-md-3">
+          <select name="decision" class="form-select form-select-sm"><option value="APPROVED">Approve</option><option value="REJECTED">Reject</option></select>
+        </div>
+        <div class="col-md-6"><input name="note" class="form-control form-control-sm" placeholder="Review note"></div>
+        <div class="col-md-3"><button class="btn btn-sm btn-primary w-100" type="submit">Save decision</button></div>
+      </div>
+    </form>
+  {% empty %}
+    <p class="muted mb-0">No pending discount requests.</p>
+  {% endfor %}
+  {% include "includes/pagination.html" with page=pending_discounts %}
+</div>
+{% endif %}
+
+<div class="card p-4 mb-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+    <div>
+      <h2 class="h5 mb-1">Discount history</h2>
+      <p class="muted small mb-0">All discount requests across statuses for centres you can see.</p>
+    </div>
+    <form method="get" class="d-flex gap-2 align-items-end">
+      <input type="hidden" name="period" value="{{ period }}">
+      <input type="hidden" name="start" value="{{ start_date }}">
+      <input type="hidden" name="end" value="{{ end_date }}">
+      <input type="hidden" name="centre" value="{{ centre_id }}">
+      <div>
+        <label class="form-label mb-0 small">Status</label>
+        <select class="form-select form-select-sm" name="dstatus" onchange="this.form.submit()">
+          <option value="">All</option>
+          <option value="PENDING" {% if discount_status_filter == 'PENDING' %}selected{% endif %}>Pending</option>
+          <option value="APPROVED" {% if discount_status_filter == 'APPROVED' %}selected{% endif %}>Approved</option>
+          <option value="REJECTED" {% if discount_status_filter == 'REJECTED' %}selected{% endif %}>Rejected</option>
+          <option value="CANCELLED" {% if discount_status_filter == 'CANCELLED' %}selected{% endif %}>Cancelled</option>
+        </select>
+      </div>
+    </form>
+  </div>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Patient</th>
+          <th>Invoice</th>
+          <th>Request</th>
+          <th>Reason</th>
+          <th>Status</th>
+          <th>By</th>
+          <th>When</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for discount in discount_history %}
+          <tr>
+            <td>
+              {{ discount.invoice.visit.patient.first_name }} {{ discount.invoice.visit.patient.last_name }}
+              <div class="small muted">{{ discount.invoice.visit.patient.uhid }} · {{ discount.invoice.visit.centre.code }}</div>
+            </td>
+            <td>
+              {{ discount.invoice.invoice_number }}
+              <div class="small muted">₦{{ discount.invoice.total|floatformat:2 }}</div>
+            </td>
+            <td>
+              {{ discount.get_discount_type_display }} {{ discount.requested_value }}
+              <div class="small muted">
+                {% if discount.status == 'APPROVED' %}Applied ₦{{ discount.applied_amount|floatformat:2 }}
+                {% else %}Est. ₦{{ discount.estimated_amount|floatformat:2 }}{% endif %}
+              </div>
+            </td>
+            <td class="small">{{ discount.reason }}</td>
+            <td>
+              {% if discount.status == 'PENDING' %}<span class="badge badge-warn">PENDING</span>
+              {% elif discount.status == 'APPROVED' %}<span class="badge badge-soft">APPROVED</span>
+              {% elif discount.status == 'REJECTED' %}<span class="badge badge-danger-soft">REJECTED</span>
+              {% else %}<span class="badge text-bg-light border">{{ discount.status }}</span>{% endif %}
+              {% if discount.review_note %}<div class="small muted">{{ discount.review_note }}</div>{% endif %}
+            </td>
+            <td class="small">
+              {{ discount.requested_by.username }}
+              {% if discount.reviewed_by %}<div class="muted">Reviewed {{ discount.reviewed_by.username }}</div>{% endif %}
+            </td>
+            <td class="small">{{ discount.created_at|date:"d M Y, H:i" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="muted text-center py-3">No discount requests match this filter.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=discount_history %}
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-lg-6">
+    <div class="card p-4 h-100">
+      <h2 class="h5">Collections by method</h2>
+      {% for row in payments_by_method %}
+        <div class="status-pill"><span>{{ row.method }} <span class="muted small">({{ row.count }})</span></span><span>₦{{ row.total|floatformat:2 }}</span></div>
+      {% empty %}<p class="muted mb-0">No confirmed payments in this period.</p>{% endfor %}
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-4 h-100">
+      <h2 class="h5">Collections by centre</h2>
+      {% for row in payments_by_centre %}
+        <div class="status-pill"><span>{{ row.centre }} — {{ row.name }}</span><span>₦{{ row.total|floatformat:2 }}</span></div>
+      {% empty %}<p class="muted mb-0">No centre collections in this period.</p>{% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-lg-6">
+    <div class="card p-4 h-100">
+      <h2 class="h5">Invoices by status</h2>
+      {% for row in invoices_by_status %}
+        <div class="status-pill"><span>{{ row.status }} ({{ row.count }})</span><span>₦{{ row.total|floatformat:2 }}</span></div>
+      {% empty %}<p class="muted mb-0">No invoices in this period.</p>{% endfor %}
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-4 h-100">
+      <h2 class="h5">Discounts by status</h2>
+      {% for row in discounts_by_status %}
+        <div class="status-pill"><span>{{ row.status }} ({{ row.count }})</span><span>₦{{ row.applied|floatformat:2 }}</span></div>
+      {% empty %}<p class="muted mb-0">No discount activity in this period.</p>{% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="card p-4 mb-4">
+  <h2 class="h5">Daily collections</h2>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>Date</th><th>Payments</th><th>Amount</th></tr></thead>
+      <tbody>
+        {% for row in daily_collections %}
+          <tr><td>{{ row.date }}</td><td>{{ row.count }}</td><td>₦{{ row.total|floatformat:2 }}</td></tr>
+        {% empty %}
+          <tr><td colspan="3" class="muted text-center py-3">No daily totals yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card p-4">
+  <h2 class="h5">Payment detail</h2>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>Receipt</th><th>Patient</th><th>Centre</th><th>Method</th><th>Amount</th><th>When</th></tr></thead>
+      <tbody>
+        {% for row in payment_rows %}
+          <tr>
+            <td>{{ row.receipt }}</td>
+            <td>{{ row.patient }}<div class="small muted">{{ row.invoice }}</div></td>
+            <td>{{ row.centre }}</td>
+            <td>{{ row.method }}</td>
+            <td>₦{{ row.amount|floatformat:2 }}</td>
+            <td class="small">{{ row.created_at }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="muted text-center py-3">No payments in this period.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const dataset = document.getElementById('export-dataset');
+  function hrefFor(format) {
+    const q = new URLSearchParams(params);
+    q.set('format', format);
+    q.set('dataset', dataset.value);
+    if (!q.get('period')) q.set('period', '{{ period }}');
+    return '{% url "accounts-export" %}?' + q.toString();
+  }
+  function refresh() {
+    document.querySelectorAll('.export-link').forEach(function (link) {
+      link.href = hrefFor(link.getAttribute('data-format'));
+    });
+  }
+  dataset.addEventListener('change', refresh);
+  refresh();
+})();
+</script>
+{% endblock %}

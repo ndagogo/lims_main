@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Radiology | HFDN{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="muted small">RADIOLOGY</div>
+  <h1 class="h3">Radiology worklist</h1>
+  <p class="muted">Paid studies arrive from reception. Assign a radiographer, acquire the exam, then draft and finalise the report. Image viewing stays with the PACS.</p>
+</div>
+<div class="row g-2 mb-4">
+  {% for key, count in order_counts.items %}
+    <div class="col-6 col-md-4 col-xl-2"><div class="card p-3"><div class="muted small">{{ key }}</div><div class="h4 mb-0">{{ count }}</div></div></div>
+  {% endfor %}
+</div>
+<div class="card p-4 mb-4">
+  <h2 class="h5">Orders and exams</h2>
+  {% for order in orders %}
+    <div class="border-top py-3">
+      <div class="fw-semibold">{{ order.visit.visit_id }} — {{ order.modality.name }} — {{ order.get_status_display }}</div>
+      <div class="small muted">{{ order.visit.patient.first_name }} {{ order.visit.patient.last_name }} — {{ order.get_priority_display }}</div>
+      {% if order.status != 'COMPLETED' and order.status != 'CANCELLED' %}
+        <form method="post" class="row g-2 mt-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="assign">
+          <input type="hidden" name="order" value="{{ order.pk }}">
+          <div class="col-md-6"><select name="radiographer" class="form-select form-select-sm" required><option value="">Assign radiographer</option>{% for person in staff %}<option value="{{ person.pk }}">{{ person.username }}</option>{% endfor %}</select></div>
+          <div class="col-md-3"><button class="btn btn-sm btn-outline-dark" type="submit">Assign</button></div>
+        </form>
+      {% endif %}
+      {% if order.exam %}
+        <div class="small mt-2">Exam {{ order.exam.get_status_display }} — assigned {{ order.exam.assigned_radiographer|default:"nobody" }}</div>
+        {% if order.exam.status == 'ASSIGNED' %}
+          <form method="post" class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="start"><input type="hidden" name="exam" value="{{ order.exam.pk }}"><button class="btn btn-sm btn-primary" type="submit">Start exam</button></form>
+        {% elif order.exam.status == 'IN_PROGRESS' %}
+          <form method="post" class="row g-2 mt-1">{% csrf_token %}<input type="hidden" name="action" value="end"><input type="hidden" name="exam" value="{{ order.exam.pk }}"><div class="col-md-8"><input name="acquisition_notes" class="form-control form-control-sm" placeholder="Acquisition notes"></div><div class="col-md-3"><button class="btn btn-sm btn-primary" type="submit">End exam</button></div></form>
+        {% elif order.exam.status == 'ACQUIRED' %}
+          {% if not order.exam.report %}
+            <form method="post" class="row g-2 mt-1">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="draft">
+              <input type="hidden" name="exam" value="{{ order.exam.pk }}">
+              <div class="col-md-4"><textarea name="findings" class="form-control" rows="2" placeholder="Findings" required></textarea></div>
+              <div class="col-md-4"><textarea name="impression" class="form-control" rows="2" placeholder="Impression" required></textarea></div>
+              <div class="col-md-4"><textarea name="recommendations" class="form-control" rows="2" placeholder="Recommendations"></textarea></div>
+              <div class="col-12"><button class="btn btn-sm btn-primary" type="submit">Save draft report</button></div>
+            </form>
+          {% endif %}
+        {% endif %}
+      {% endif %}
+    </div>
+  {% empty %}<p class="muted mb-0">No paid imaging studies are waiting.</p>{% endfor %}
+  {% include "includes/pagination.html" with page=orders %}
+</div>
+<div class="card p-4">
+  <h2 class="h5">Reports</h2>
+  {% for report in reports %}
+    <div class="border-top py-3">
+      <div class="fw-semibold">{{ report.exam.order.visit.visit_id }} — {{ report.get_status_display }} — version {{ report.version }}</div>
+      <div class="small muted">{{ report.exam.order.visit.patient.first_name }} {{ report.exam.order.visit.patient.last_name }} — {{ report.author }}</div>
+      {% if report.status == 'DRAFT' %}
+        <form method="post" class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="finalize"><input type="hidden" name="report" value="{{ report.pk }}"><button class="btn btn-sm btn-success" type="submit">Finalise</button></form>
+      {% elif report.status == 'FINAL' or report.status == 'AMENDED' %}
+        <form method="post" class="row g-2 mt-1">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="override">
+          <input type="hidden" name="report" value="{{ report.pk }}">
+          <div class="col-md-4"><textarea name="findings" class="form-control" rows="2" placeholder="Amended findings">{{ report.findings }}</textarea></div>
+          <div class="col-md-4"><textarea name="impression" class="form-control" rows="2" placeholder="Amended impression">{{ report.impression }}</textarea></div>
+          <div class="col-md-4"><input name="reason" class="form-control" placeholder="Reason" required></div>
+          <div class="col-12"><button class="btn btn-sm btn-outline-danger" type="submit">Amend final report</button></div>
+        </form>
+      {% endif %}
+      {% if report.exam.order.modality.wado_url %}<div class="small mt-2">PACS: {{ report.exam.order.modality.wado_url }}</div>{% endif %}
+    </div>
+  {% empty %}<p class="muted mb-0">No reports yet.</p>{% endfor %}
+  {% include "includes/pagination.html" with page=reports %}
+</div>
+{% endblock %}

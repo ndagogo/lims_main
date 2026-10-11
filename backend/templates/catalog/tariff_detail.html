@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}{{ tariff.name }} | Tariffs | HFDN{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <div class="muted small"><a class="text-decoration-none muted" href="{% url 'catalog-hub' %}">Catalog</a> · <a class="text-decoration-none muted" href="{% url 'catalog-tariffs' %}">Tariffs</a></div>
+    <h1 class="h3 mb-1">{{ tariff.name }}</h1>
+    <p class="muted mb-0">Manage laboratory and imaging prices on this tariff.</p>
+  </div>
+  {% if tariff.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-danger-soft">Inactive</span>{% endif %}
+</div>
+
+<div class="card p-4 mb-4">
+  <form method="post" class="row g-3 align-items-end">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="update_tariff">
+    <div class="col-md-6"><label class="form-label">Tariff name</label><input class="form-control" name="name" value="{{ tariff.name }}" required></div>
+    <div class="col-md-3"><div class="form-check mt-4"><input class="form-check-input" type="checkbox" name="is_active" id="detail-active" {% if tariff.is_active %}checked{% endif %}><label class="form-check-label" for="detail-active">Active</label></div></div>
+    <div class="col-md-3"><button class="btn btn-outline-dark w-100" type="submit">Save tariff</button></div>
+  </form>
+  {% url 'catalog-tariffs' as tariffs_url %}
+  {% include "catalog/_soft_actions.html" with pk_name="tariff" pk_value=tariff.pk is_active=tariff.is_active form_action=tariffs_url delete_action="delete" confirm_label=tariff.name %}
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card p-4 h-100">
+      <h2 class="h5 mb-3">Laboratory prices</h2>
+      <form method="post" class="row g-2 align-items-end mb-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="save_lab_price">
+        <div class="col-md-5">
+          <label class="form-label">Test</label>
+          <select class="form-select" name="test" required>
+            <option value="">Choose a test</option>
+            {% for test in available_tests %}<option value="{{ test.pk }}">{{ test.code }} — {{ test.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label">Price</label><input class="form-control" name="price" required></div>
+        <div class="col-md-2"><label class="form-label">Outsource</label><input class="form-control" name="outsource_price" value="0"></div>
+        <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Add</button></div>
+      </form>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Test</th><th>Price</th><th>Outsource</th><th></th></tr></thead>
+          <tbody>
+            {% for row in lab_prices %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ row.test.code }}</div>
+                  <div class="small muted">{{ row.test.name }}</div>
+                  <form method="post" class="row g-1 mt-1">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="save_lab_price">
+                    <input type="hidden" name="price_id" value="{{ row.pk }}">
+                    <input type="hidden" name="test" value="{{ row.test_id }}">
+                    <div class="col-5"><input class="form-control form-control-sm" name="price" value="{{ row.price }}"></div>
+                    <div class="col-4"><input class="form-control form-control-sm" name="outsource_price" value="{{ row.outsource_price }}"></div>
+                    <div class="col-3"><button class="btn btn-sm btn-outline-dark w-100" type="submit">Save</button></div>
+                  </form>
+                </td>
+                <td>₦{{ row.price }}</td>
+                <td>₦{{ row.outsource_price }}</td>
+                <td class="text-end">
+                  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="delete_lab_price"><input type="hidden" name="price" value="{{ row.pk }}"><button class="btn btn-sm btn-outline-danger" type="submit">Remove</button></form>
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="4" class="text-center muted py-3">No laboratory prices yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=lab_prices %}
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-4 h-100">
+      <h2 class="h5 mb-3">Imaging prices</h2>
+      <form method="post" class="row g-2 align-items-end mb-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="save_imaging_price">
+        <div class="col-md-6">
+          <label class="form-label">Procedure</label>
+          <select class="form-select" name="procedure" required>
+            <option value="">Choose a procedure</option>
+            {% for procedure in available_procedures %}<option value="{{ procedure.pk }}">{{ procedure.code }} — {{ procedure.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3"><label class="form-label">Price</label><input class="form-control" name="price" required></div>
+        <div class="col-md-3"><button class="btn btn-primary w-100" type="submit">Add</button></div>
+      </form>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Procedure</th><th>Price</th><th></th></tr></thead>
+          <tbody>
+            {% for row in imaging_prices %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ row.procedure.code }}</div>
+                  <div class="small muted">{{ row.procedure.name }}</div>
+                  <form method="post" class="row g-1 mt-1">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="save_imaging_price">
+                    <input type="hidden" name="price_id" value="{{ row.pk }}">
+                    <input type="hidden" name="procedure" value="{{ row.procedure_id }}">
+                    <div class="col-7"><input class="form-control form-control-sm" name="price" value="{{ row.price }}"></div>
+                    <div class="col-5"><button class="btn btn-sm btn-outline-dark w-100" type="submit">Save</button></div>
+                  </form>
+                </td>
+                <td>₦{{ row.price }}</td>
+                <td class="text-end">
+                  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="delete_imaging_price"><input type="hidden" name="price" value="{{ row.pk }}"><button class="btn btn-sm btn-outline-danger" type="submit">Remove</button></form>
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="3" class="text-center muted py-3">No imaging prices yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=imaging_prices %}
+    </div>
+  </div>
+</div>
+{% endblock %}

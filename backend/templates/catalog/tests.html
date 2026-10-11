@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Laboratory tests | Catalog | HFDN{% endblock %}
+{% block content %}
+{% include "catalog/_page_header.html" with eyebrow="LABORATORY" title="Laboratory tests" subtitle="Codes, departments, service groups, specimen, and basic parameters." %}
+<div class="row g-4">
+  <div class="col-xl-7">
+    <div class="card p-4 mb-4 catalog-enter">
+      {% include "catalog/_filter_bar.html" with page=directory search_placeholder="Code, name, or department" %}
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Test</th><th>Department</th><th>Group</th><th>Params</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for test in directory %}
+              <tr class="{% if selected and selected.pk == test.pk %}table-active{% endif %}">
+                <td>
+                  <a class="fw-semibold text-decoration-none" href="?test={{ test.pk }}&q={{ query|urlencode }}&status={{ status }}&per={{ directory.paginator.per_page }}&page={{ directory.number }}">{{ test.code }}</a>
+                  <div class="small muted">{{ test.name }}</div>
+                </td>
+                <td class="small">{{ test.department }} <span class="muted">({{ test.department_code }})</span></td>
+                <td class="small">{% if test.service_group %}{{ test.service_group.name }} · {{ test.service_group.code }}{% else %}—{% endif %}</td>
+                <td>{{ test.param_count }}</td>
+                <td>{% include "catalog/_active_badge.html" with is_active=test.is_active %}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="5" class="text-center muted py-4">No tests match that filter.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+    <div class="card p-4 catalog-enter">
+      <h2 class="h5">Create test</h2>
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create">
+        <input type="hidden" name="is_active_submitted" value="1">
+        <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" name="code" required></div>
+        <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" required></div>
+        <div class="col-md-5"><label class="form-label">Department</label><input class="form-control" name="department" value="PATHOLOGY"></div>
+        <div class="col-md-2"><label class="form-label">Dept digit</label><input class="form-control" name="department_code" value="1" maxlength="1"></div>
+        <div class="col-md-5">
+          <label class="form-label">Service group</label>
+          <select class="form-select" name="service_group">
+            <option value="">None</option>
+            {% for group in service_groups %}<option value="{{ group.pk }}">{{ group.name }} ({{ group.code }})</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-8"><label class="form-label">Specimen</label><input class="form-control" name="specimen"></div>
+        <div class="col-md-4 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="create-test-active" checked><label class="form-check-label" for="create-test-active">Active</label></div></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create test</button></div>
+      </form>
+    </div>
+  </div>
+  <div class="col-xl-5">
+    {% if selected %}
+      <div class="card p-4 mb-4 catalog-enter">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <h2 class="h5 mb-1">{{ selected.code }}</h2>
+            <div class="muted small">{{ selected.name }}</div>
+          </div>
+          {% include "catalog/_active_badge.html" with is_active=selected.is_active %}
+        </div>
+        {% include "catalog/_soft_actions.html" with pk_name="test" pk_value=selected.pk is_active=selected.is_active delete_action="delete" confirm_label=selected.code %}
+        <form method="post" class="row g-2 mt-3">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update">
+          <input type="hidden" name="test" value="{{ selected.pk }}">
+          <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" name="code" value="{{ selected.code }}" required></div>
+          <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ selected.name }}" required></div>
+          <div class="col-md-6"><label class="form-label">Department</label><input class="form-control" name="department" value="{{ selected.department }}"></div>
+          <div class="col-md-3"><label class="form-label">Dept digit</label><input class="form-control" name="department_code" value="{{ selected.department_code }}" maxlength="1"></div>
+          <div class="col-md-3 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="edit-test-active" {% if selected.is_active %}checked{% endif %}><label class="form-check-label" for="edit-test-active">Active</label></div></div>
+          <div class="col-12">
+            <label class="form-label">Service group</label>
+            <select class="form-select" name="service_group">
+              <option value="">None</option>
+              {% for group in service_groups %}<option value="{{ group.pk }}" {% if selected.service_group_id == group.pk %}selected{% endif %}>{{ group.name }} ({{ group.code }})</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-12"><label class="form-label">Specimen</label><input class="form-control" name="specimen" value="{{ selected.specimen }}"></div>
+          <div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Save test</button></div>
+        </form>
+      </div>
+      <div class="card p-4 catalog-enter">
+        <h2 class="h6">Parameters</h2>
+        {% for param in selected.parameters.all %}
+          <div class="border-bottom py-2">
+            <div class="d-flex justify-content-between">
+              <div><span class="fw-semibold">{{ param.code }}</span> · {{ param.name }}</div>
+              <form method="post">{% csrf_token %}<input type="hidden" name="action" value="delete_parameter"><input type="hidden" name="test" value="{{ selected.pk }}"><input type="hidden" name="parameter" value="{{ param.pk }}"><button class="btn btn-sm btn-outline-danger" type="submit">Remove</button></form>
+            </div>
+            <div class="small muted">{{ param.get_result_type_display }}{% if param.unit %} · {{ param.unit }}{% endif %}{% if param.reference_range %} · {{ param.reference_range }}{% endif %}</div>
+          </div>
+        {% empty %}<p class="muted">No parameters yet.</p>{% endfor %}
+        <form method="post" class="row g-2 mt-3">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="save_parameter">
+          <input type="hidden" name="test" value="{{ selected.pk }}">
+          <input type="hidden" name="is_required_submitted" value="1">
+          <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" name="param_code" required></div>
+          <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="param_name" required></div>
+          <div class="col-md-4">
+            <label class="form-label">Result type</label>
+            <select class="form-select" name="result_type">
+              {% for value, label in result_types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4"><label class="form-label">Unit</label><input class="form-control" name="unit"></div>
+          <div class="col-md-4"><label class="form-label">Order</label><input class="form-control" name="display_order" value="0"></div>
+          <div class="col-12"><label class="form-label">Reference range</label><input class="form-control" name="reference_range"></div>
+          <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_required" id="param-required" checked><label class="form-check-label" for="param-required">Required</label></div></div>
+          <div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Add parameter</button></div>
+        </form>
+      </div>
+    {% else %}
+      <div class="card p-4 catalog-enter">
+        <h2 class="h5">Select a test</h2>
+        <p class="muted mb-0">Open a test from the directory to edit it, deactivate it, or manage parameters.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,25 @@
+{# Soft activate/deactivate + optional hard delete.
+   Expects: pk_name, pk_value, is_active
+   Optional: form_action, activate_action, deactivate_action, delete_action, confirm_label #}
+<div class="d-flex flex-wrap gap-2 mt-3">
+  {% if is_active %}
+    <form method="post" {% if form_action %}action="{{ form_action }}"{% endif %}>{% csrf_token %}
+      <input type="hidden" name="action" value="{{ deactivate_action|default:'deactivate' }}">
+      <input type="hidden" name="{{ pk_name }}" value="{{ pk_value }}">
+      <button class="btn btn-outline-warning btn-sm" type="submit">Deactivate</button>
+    </form>
+  {% else %}
+    <form method="post" {% if form_action %}action="{{ form_action }}"{% endif %}>{% csrf_token %}
+      <input type="hidden" name="action" value="{{ activate_action|default:'activate' }}">
+      <input type="hidden" name="{{ pk_name }}" value="{{ pk_value }}">
+      <button class="btn btn-outline-success btn-sm" type="submit">Activate</button>
+    </form>
+  {% endif %}
+  {% if delete_action %}
+    <form method="post" {% if form_action %}action="{{ form_action }}"{% endif %} onsubmit="return confirm('Delete {{ confirm_label }}? Only unused rows can be removed.');">{% csrf_token %}
+      <input type="hidden" name="action" value="{{ delete_action }}">
+      <input type="hidden" name="{{ pk_name }}" value="{{ pk_value }}">
+      <button class="btn btn-outline-danger btn-sm" type="submit">Delete</button>
+    </form>
+  {% endif %}
+</div>

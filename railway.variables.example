@@ -1,0 +1,45 @@
+# =============================================================================
+# RAILWAY SERVICE VARIABLES (reference only — do not use as a local .env file)
+# Paste these into Railway → your Django service → Variables.
+# Generate secrets in the Railway UI; never commit real production values.
+# =============================================================================
+
+# Required
+DJANGO_DEBUG=False
+DJANGO_SECRET_KEY=<generate-a-long-random-unique-secret-in-railway>
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+DJANGO_ALLOWED_HOSTS=healthcheck.railway.app,${{RAILWAY_PUBLIC_DOMAIN}}
+SECURE_SSL_REDIRECT=True
+LOG_LEVEL=INFO
+
+# Uploads: either mount a volume at /app/media OR configure private S3
+MEDIA_ROOT=/app/media
+
+# Optional tuning
+WEB_CONCURRENCY=2
+GUNICORN_TIMEOUT=120
+
+# Notifications (set when providers are ready)
+NOTIFICATION_LOG_PROVIDER=false
+# SMS_PROVIDER_URL=
+# SMS_PROVIDER_TOKEN=
+# WHATSAPP_PROVIDER_URL=
+# WHATSAPP_PROVIDER_TOKEN=
+# EMAIL_HOST=
+# EMAIL_PORT=587
+# EMAIL_HOST_USER=
+# EMAIL_HOST_PASSWORD=
+# EMAIL_USE_TLS=true
+# DEFAULT_FROM_EMAIL=results@your-domain.com
+# PATIENT_PORTAL_URL=https://www.your-domain.com/patients
+# CRITICAL_ALERT_EMAIL=ops@your-domain.com
+
+# Optional S3-compatible storage (recommended if replicas > 1)
+# AWS_STORAGE_BUCKET_NAME=
+# AWS_S3_REGION_NAME=
+# AWS_ACCESS_KEY_ID=
+# AWS_SECRET_ACCESS_KEY=
+
+# Optional custom domain
+# CSRF_TRUSTED_ORIGINS=https://app.your-domain.com
+# CORS_ALLOWED_ORIGINS=https://app.your-domain.com

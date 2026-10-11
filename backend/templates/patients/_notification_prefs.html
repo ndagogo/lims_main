@@ -1,0 +1,21 @@
+<div class="col-12">
+  <label class="form-label">How should we notify this patient?</label>
+  <div class="border rounded p-3 bg-light">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="notify_sms" value="1" id="{{ prefix|default:'new' }}-notify-sms" {% if patient.notify_sms or not patient %}checked{% endif %}>
+      <label class="form-check-label" for="{{ prefix|default:'new' }}-notify-sms">SMS</label>
+    </div>
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="notify_email" value="1" id="{{ prefix|default:'new' }}-notify-email" {% if patient.notify_email %}checked{% endif %}>
+      <label class="form-check-label" for="{{ prefix|default:'new' }}-notify-email">Email</label>
+    </div>
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="notify_whatsapp" value="1" id="{{ prefix|default:'new' }}-notify-whatsapp" {% if patient.notify_whatsapp %}checked{% endif %}>
+      <label class="form-check-label" for="{{ prefix|default:'new' }}-notify-whatsapp">WhatsApp</label>
+    </div>
+    <div class="form-text mt-2 mb-0">
+      Used for registration confirmation, result-ready alerts, and similar updates.
+      Email requires an email address above. If nothing is selected, SMS is used by default.
+    </div>
+  </div>
+</div>

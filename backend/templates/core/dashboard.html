@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+{% block title %}Operations | HFDN{% endblock %}
+{% block content %}
+<div class="hero-band">
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+      <div class="muted small">{{ workspace_title|upper }} · LAST {{ summary.period_days }} DAYS</div>
+      <h1 class="h3 mb-1 text-white">Hello, {{ greeting_name|default:request.user.username }}</h1>
+      <div class="muted">Figures follow the centres you can view, and only the work your role is allowed to open.</div>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      {% for key, label, url, icon in workspace_nav %}
+        <a class="btn {% if forloop.first %}btn-primary{% else %}btn-outline-light{% endif %}" href="{{ url }}">{{ label }}</a>
+      {% endfor %}
+      {% if is_platform_admin %}
+        <a class="btn btn-primary" href="{% url 'catalog-hub' %}"><i class="bi bi-journal-bookmark me-1"></i>Open catalog</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if not allowed_workspaces and not is_platform_admin %}
+  <div class="card p-4"><p class="mb-0">Your account has no staff workspace yet. A platform administrator assigns a role before a dashboard opens.</p></div>
+{% endif %}
+
+{% if is_platform_admin and catalog_counts %}
+<div class="mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="section-title mb-0">Catalog setup</h2>
+    <a class="open-link" href="{% url 'catalog-hub' %}">Open catalog workspace</a>
+  </div>
+  <div class="row g-3">
+    <div class="col-6 col-md-4 col-xl-2"><a class="catalog-tile text-decoration-none d-block" href="{% url 'catalog-tariffs' %}"><div class="kpi-label">TARIFFS</div><div class="kpi-value text-body">{{ catalog_counts.tariffs }}</div></a></div>
+    <div class="col-6 col-md-4 col-xl-2"><a class="catalog-tile text-decoration-none d-block" href="{% url 'catalog-tests' %}"><div class="kpi-label">TESTS</div><div class="kpi-value text-body">{{ catalog_counts.tests }}</div></a></div>
+    <div class="col-6 col-md-4 col-xl-2"><a class="catalog-tile text-decoration-none d-block" href="{% url 'catalog-service-groups' %}"><div class="kpi-label">SERVICE GROUPS</div><div class="kpi-value text-body">{{ catalog_counts.service_groups }}</div></a></div>
+    <div class="col-6 col-md-4 col-xl-2"><a class="catalog-tile text-decoration-none d-block" href="{% url 'catalog-doctors' %}"><div class="kpi-label">DOCTORS</div><div class="kpi-value text-body">{{ catalog_counts.doctors }}</div></a></div>
+    <div class="col-6 col-md-4 col-xl-2"><a class="catalog-tile text-decoration-none d-block" href="{% url 'catalog-imaging' %}"><div class="kpi-label">PROCEDURES</div><div class="kpi-value text-body">{{ catalog_counts.procedures }}</div></a></div>
+    <div class="col-6 col-md-4 col-xl-2"><a class="catalog-tile text-decoration-none d-block" href="{% url 'catalog-clients' %}"><div class="kpi-label">CLIENTS</div><div class="kpi-value text-body">{{ catalog_counts.clients }}</div></a></div>
+  </div>
+</div>
+{% endif %}
+
+<div class="row g-3 mb-4">
+  {% if 'registration' in allowed_workspaces or 'audit' in allowed_workspaces %}
+  <div class="col-6 col-xl-3">
+    <div class="kpi">
+      <span class="kpi-icon text-white" style="background:#0f766e"><i class="bi bi-person-lines-fill"></i></span>
+      <div>
+        <div class="kpi-label">VISITS</div>
+        <div class="kpi-value">{{ summary.visits }}</div>
+        <div class="muted small">Opened in the period</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% if 'accounts' in allowed_workspaces or 'audit' in allowed_workspaces %}
+  <div class="col-6 col-xl-3">
+    <div class="kpi">
+      <span class="kpi-icon text-white" style="background:#1d4e89"><i class="bi bi-receipt"></i></span>
+      <div>
+        <div class="kpi-label">INVOICES</div>
+        <div class="kpi-value">{{ summary.invoice_count }}</div>
+        <div class="muted small">{{ summary.unpaid_invoices }} still unpaid</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="kpi">
+      <span class="kpi-icon text-white" style="background:#0f7b43"><i class="bi bi-cash-coin"></i></span>
+      <div>
+        <div class="kpi-label">CONFIRMED PAYMENTS</div>
+        <div class="kpi-value">₦{{ summary.confirmed_payments_ngn }}</div>
+        <div class="muted small">{{ summary.pending_discounts }} discount{{ summary.pending_discounts|pluralize }} waiting</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% if 'laboratory' in allowed_workspaces or 'phlebotomy' in allowed_workspaces %}
+  <div class="col-6 col-xl-3">
+    <div class="kpi">
+      <span class="kpi-icon text-white" style="background:#9a3412"><i class="bi bi-activity"></i></span>
+      <div>
+        <div class="kpi-label">OPEN SAMPLES</div>
+        <div class="kpi-value">{{ summary.open_samples }}</div>
+        <div class="muted small">{% if 'phlebotomy' in allowed_workspaces and 'laboratory' not in allowed_workspaces %}Waiting on collection{% else %}On the laboratory bench{% endif %}</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% if 'radiology' in allowed_workspaces %}
+  <div class="col-6 col-xl-3">
+    <div class="kpi">
+      <span class="kpi-icon text-white" style="background:#1d4e89"><i class="bi bi-radioactive"></i></span>
+      <div>
+        <div class="kpi-label">OPEN IMAGING</div>
+        <div class="kpi-value">{{ summary.open_imaging }}</div>
+        <div class="muted small">Orders still on the worklist</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% if 'laboratory' in allowed_workspaces or 'radiology' in allowed_workspaces %}
+<div class="row g-3 mb-4">
+  {% if 'laboratory' in allowed_workspaces %}
+  <div class="col-lg-7">
+    <div class="card p-4 h-100 dash-enter">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="section-title mb-0">Laboratory sample pipeline</h2>
+        <span class="badge badge-soft">{{ summary.released_samples }} released</span>
+      </div>
+      {% for row in summary.sample_pipeline %}
+        <div class="status-pill">
+          <span>{{ row.label }}</span>
+          <span class="fw-semibold">{{ row.count }}</span>
+        </div>
+        <div class="progress mb-2" style="height:.35rem" role="progressbar" aria-valuenow="{{ row.count }}" aria-valuemin="0" aria-valuemax="{{ summary.sample_peak }}">
+          <div class="progress-bar" style="width:{% widthratio row.count summary.sample_peak 100 %}%; background:#0f766e"></div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  {% if 'radiology' in allowed_workspaces %}
+  <div class="col-lg-5">
+    <div class="card p-4 h-100 dash-enter">
+      <h2 class="section-title mb-3">Imaging worklist</h2>
+      {% for row in summary.imaging_pipeline %}
+        <div class="status-pill">
+          <span>{{ row.label }}</span>
+          <span class="fw-semibold">{{ row.count }}</span>
+        </div>
+        <div class="progress mb-2" style="height:.35rem">
+          <div class="progress-bar" style="width:{% widthratio row.count summary.imaging_peak 100 %}%; background:#1d4e89"></div>
+        </div>
+      {% empty %}
+        <p class="muted mb-0">No imaging orders in this period.</p>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="row g-3 mb-4">
+  {% if 'accounts' in allowed_workspaces %}
+  <div class="col-lg-4">
+    <div class="card p-4 h-100 queue-card dash-enter">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="section-title mb-0">Outstanding dues</h2>
+        <a class="open-link" href="/accounts/">Open workspace</a>
+      </div>
+      {% for invoice in queues.unpaid_invoices %}
+        <div class="status-pill">
+          <div>
+            <div class="fw-semibold">{{ invoice.invoice_number }}</div>
+            <div class="small muted">{{ invoice.visit.patient.first_name }} {{ invoice.visit.patient.last_name }} · {{ invoice.visit.centre.code }}</div>
+          </div>
+          <span class="badge badge-warn">{{ invoice.get_status_display }}</span>
+        </div>
+      {% empty %}<p class="muted mb-0 mt-3">No unpaid invoices in your centres.</p>{% endfor %}
+      {% include "includes/pagination.html" with page=queues.unpaid_invoices %}
+    </div>
+  </div>
+  {% endif %}
+  {% if 'laboratory' in allowed_workspaces %}
+  <div class="col-lg-4">
+    <div class="card p-4 h-100 queue-card dash-enter">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="section-title mb-0">Samples in motion</h2>
+        <a class="open-link" href="/laboratory/">Open workspace</a>
+      </div>
+      {% for sample in queues.active_samples %}
+        <div class="status-pill">
+          <div>
+            <div class="fw-semibold">{{ sample.sample_id }}</div>
+            <div class="small muted">{{ sample.order.test.name }} · {{ sample.centre.code }}</div>
+          </div>
+          <span class="badge badge-soft">{{ sample.get_status_display }}</span>
+        </div>
+      {% empty %}<p class="muted mb-0 mt-3">No samples are waiting on the bench.</p>{% endfor %}
+      {% include "includes/pagination.html" with page=queues.active_samples %}
+    </div>
+  </div>
+  {% endif %}
+  {% if 'phlebotomy' in allowed_workspaces and 'laboratory' not in allowed_workspaces %}
+  <div class="col-lg-4">
+    <div class="card p-4 h-100 queue-card dash-enter">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="section-title mb-0">Collection queue</h2>
+        <a class="open-link" href="/phlebotomy/">Open workspace</a>
+      </div>
+      <p class="muted mb-0 mt-3">Open Phlebotomy to collect the next paid sample.</p>
+    </div>
+  </div>
+  {% endif %}
+  {% if 'radiology' in allowed_workspaces %}
+  <div class="col-lg-4">
+    <div class="card p-4 h-100 queue-card dash-enter">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="section-title mb-0">Imaging still open</h2>
+        <a class="open-link" href="/radiology/">Open workspace</a>
+      </div>
+      {% for order in queues.open_imaging %}
+        <div class="status-pill">
+          <div>
+            <div class="fw-semibold">{{ order.visit.visit_id }}</div>
+            <div class="small muted">{{ order.modality.name }} · {{ order.visit.patient.first_name }} {{ order.visit.patient.last_name }}</div>
+          </div>
+          <span class="badge badge-soft">{{ order.get_status_display }}</span>
+        </div>
+      {% empty %}<p class="muted mb-0 mt-3">The imaging worklist is clear.</p>{% endfor %}
+      {% include "includes/pagination.html" with page=queues.open_imaging %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card p-4 h-100 dash-enter">
+      <h2 class="section-title mb-3">Centres in scope</h2>
+      <div class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead><tr><th>Centre</th><th>Code</th><th></th></tr></thead>
+          <tbody>
+            {% for centre in centres %}
+              <tr>
+                <td>{{ centre.name }}</td>
+                <td><span class="badge text-bg-light border">{{ centre.code }}</span></td>
+                <td class="text-end">{% for access in centre_accesses %}{% if access.centre_id == centre.id and access.is_default %}<span class="badge badge-soft">Default</span>{% endif %}{% endfor %}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="3" class="text-center muted py-4">No centre access has been assigned.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card p-4 h-100 dash-enter">
+      <h2 class="section-title mb-3">Recent activity</h2>
+      {% for event in queues.recent_events %}
+        <div class="status-pill">
+          <div>
+            <div class="fw-semibold">{{ event.action }}</div>
+            <div class="small muted">{{ event.object_type }}{% if event.centre %} · {{ event.centre.code }}{% endif %}{% if event.actor %} · {{ event.actor }}{% endif %}</div>
+          </div>
+          <span class="small muted">{{ event.created_at|date:"d M, H:i" }}</span>
+        </div>
+      {% empty %}<p class="muted mb-0">No audit events in your centres yet.</p>{% endfor %}
+      {% include "includes/pagination.html" with page=queues.recent_events %}
+    </div>
+  </div>
+</div>
+{% endblock %}

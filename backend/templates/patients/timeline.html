@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Timeline · {{ patient.uhid }} | HFDN{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <div class="muted small">PATIENT TIMELINE</div>
+    <h1 class="h3 mb-1">{{ patient.title }} {{ patient.first_name }} {{ patient.last_name }}</h1>
+    <p class="muted mb-0">{{ patient.uhid }} · {{ patient.phone_country_code }} {{ patient.phone_number }}{% if patient.email %} · {{ patient.email }}{% endif %}</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'patient-registration' %}?q={{ patient.uhid }}">Back to registration</a>
+</div>
+<div class="card p-4">
+  <h2 class="h5 mb-3">Activity timeline</h2>
+  <p class="muted small">Visits, billing, documents, discounts, and audit events for this patient in centres you can see.</p>
+  <div class="timeline">
+    {% for item in timeline %}
+      <div class="timeline-item border-start border-2 ps-3 ms-2 mb-3">
+        <div class="small muted">{{ item.when|date:"d M Y, H:i" }}{% if item.centre %} · {{ item.centre }}{% endif %}{% if item.actor %} · {{ item.actor }}{% endif %}</div>
+        <div class="fw-semibold">{{ item.title }}</div>
+        {% if item.detail %}<div class="small">{{ item.detail }}</div>{% endif %}
+      </div>
+    {% empty %}
+      <p class="muted mb-0">No timeline events yet for this patient.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
