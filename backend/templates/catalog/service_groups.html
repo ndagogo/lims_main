@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Service groups | Catalog | HFDN{% endblock %}
 {% block content %}
-{% include "catalog/_page_header.html" with eyebrow="LABORATORY" title="Service groups" subtitle="Name plus a single-digit code used in sample IDs. Tests pick a group from a dropdown." %}
+{% include "catalog/_page_header.html" with eyebrow="LABORATORY" title="Service groups" subtitle="Each name must be unique. Tests must pick a service group — duplicates are blocked." %}
 <div class="row g-4">
   <div class="col-xl-7">
     <div class="card p-4 catalog-enter">

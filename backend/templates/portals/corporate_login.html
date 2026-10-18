@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Corporate portal{% endblock %}
+{% block content %}
+<div class="container py-5" style="max-width:420px">
+  <h1 class="h4">Corporate portal</h1>
+  {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+  <form method="post">{% csrf_token %}
+    <label class="form-label">Organisation name<input class="form-control" name="org_code" required></label>
+    <button class="btn btn-primary mt-2">Continue</button>
+  </form>
+</div>
+{% endblock %}

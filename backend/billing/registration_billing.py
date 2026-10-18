@@ -48,6 +48,11 @@ def process_registration(visit, user, post):
         for test_id in lab_ids:
             price = lab_prices[test_id]
             order = LabOrder.objects.create(visit=visit, test=price.test, tariff=price.tariff, price=price.price, status='ORDERED')
+            try:
+                from workflows.services import bind_workflow
+                bind_workflow(order)
+            except Exception:
+                pass
             InvoiceItem.objects.create(
                 invoice=invoice, test=price.test, tariff=price.tariff, lab_order=order,
                 unit_price=price.price, outsource_price=price.outsource_price, quantity=1,

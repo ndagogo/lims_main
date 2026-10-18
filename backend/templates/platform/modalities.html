@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Modality workstations | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="Instruments" title="Modality workstations" subtitle="Send each paid radiology study to the workstation for that room." %}
+<div class="card p-4 mb-4">
+  <h2 class="h5">This LIMS worklist</h2>
+  <p class="mb-2">Point each modality at AE title <strong>{{ listener.ae_title }}</strong>, port <strong>{{ listener.port }}</strong>. This software calls the modality as <strong>{{ listener.calling_ae }}</strong>.</p>
+  <p class="small muted mb-3">{% if listener.running %}The worklist listener is running. A paid study on the radiology worklist is returned when that modality queries.{% else %}The worklist listener is stopped. Start it here, or set RIS_MWL_ENABLED=true so it starts with the application.{% endif %}</p>
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="start_listener"><button class="btn btn-outline-dark" type="submit">Start worklist listener</button></form>
+</div>
+<div class="row g-4">
+  <div class="col-xl-5">
+    <div class="card p-4 mb-4">
+      <h2 class="h5">Register workstation</h2>
+      <form method="post" class="row g-2">
+        {% csrf_token %}<input type="hidden" name="action" value="create">
+        <div class="col-md-6"><label class="form-label">Centre</label><select name="centre" class="form-select" required>{% for c in centres %}<option value="{{ c.pk }}">{{ c.code }}</option>{% endfor %}</select></div>
+        <div class="col-md-6"><label class="form-label">Code</label><input name="code" class="form-control" required placeholder="XR1"></div>
+        <div class="col-12"><label class="form-label">Name</label><input name="name" class="form-control" required placeholder="X-ray Room 1"></div>
+        <div class="col-md-6"><label class="form-label">Type</label><select name="modality_type" class="form-select" required>{% for v,l in modality_types %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+        <div class="col-md-6"><label class="form-label">AE title</label><input name="ae_title" class="form-control" maxlength="16" placeholder="CT_ROOM_1"></div>
+        <div class="col-md-8"><label class="form-label">IP address</label><input name="host" class="form-control" placeholder="192.168.1.40"></div>
+        <div class="col-md-4"><label class="form-label">Port</label><input name="port" class="form-control" inputmode="numeric" placeholder="104"></div>
+        <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="worklist_enabled" id="wl-new" checked><label class="form-check-label" for="wl-new">Send paid studies to this workstation</label></div></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Save workstation</button></div>
+      </form>
+    </div>
+    <div class="card p-3">
+      <form method="get" class="mb-2"><input class="form-control" name="q" value="{{ query }}" placeholder="Search name, AE title, or IP"></form>
+      <table class="table align-middle">
+        <thead><tr><th>Name</th><th>AE title</th><th>Address</th></tr></thead>
+        <tbody>
+          {% for row in directory %}
+          <tr>
+            <td><a href="?modality={{ row.pk }}">{{ row.name }}</a><div class="small muted">{{ row.centre.code }} · {{ row.get_modality_type_display }}</div></td>
+            <td>{{ row.ae_title|default:"—" }}</td>
+            <td class="small">{% if row.host %}{{ row.host }}{% if row.port %}:{{ row.port }}{% endif %}{% else %}—{% endif %}
+              {% if row.last_echo_ok == True %}<div class="text-success">Connected</div>{% elif row.last_echo_ok == False %}<div class="text-danger">Last test failed</div>{% endif %}
+            </td>
+          </tr>
+          {% empty %}<tr><td colspan="3" class="muted">No modality workstations yet.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+  </div>
+  <div class="col-xl-7">
+    {% if selected %}
+    <div class="card p-4 mb-4">
+      <h2 class="h5">{{ selected.name }}</h2>
+      <form method="post" class="row g-2">
+        {% csrf_token %}<input type="hidden" name="action" value="update"><input type="hidden" name="modality" value="{{ selected.pk }}">
+        <div class="col-md-8"><label class="form-label">Name</label><input name="name" class="form-control" value="{{ selected.name }}" required></div>
+        <div class="col-md-4"><label class="form-label">AE title</label><input name="ae_title" class="form-control" maxlength="16" value="{{ selected.ae_title }}"></div>
+        <div class="col-md-8"><label class="form-label">IP address</label><input name="host" class="form-control" value="{{ selected.host|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label">Port</label><input name="port" class="form-control" value="{{ selected.port|default_if_none:'' }}"></div>
+        <div class="col-md-6"><div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="worklist_enabled" id="wl-on" {% if selected.worklist_enabled %}checked{% endif %}><label class="form-check-label" for="wl-on">Send paid studies</label></div></div>
+        <div class="col-md-6"><div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="is_active" id="mod-active" {% if selected.is_active %}checked{% endif %}><label class="form-check-label" for="mod-active">Active</label></div></div>
+        <div class="col-12 d-flex flex-wrap gap-2">
+          <button class="btn btn-outline-dark" type="submit">Save connection</button>
+        </div>
+      </form>
+      <form method="post" class="mt-3">{% csrf_token %}<input type="hidden" name="action" value="test_connection"><input type="hidden" name="modality" value="{{ selected.pk }}"><button class="btn btn-primary" type="submit">Test connection</button></form>
+      {% if selected.last_echo_at %}
+      <p class="small mt-3 mb-0">{% if selected.last_echo_ok %}Last test succeeded{% else %}Last test failed{% endif %} {{ selected.last_echo_at|date:"Y-m-d H:i" }}. {{ selected.last_echo_message }}</p>
+      {% endif %}
+    </div>
+    <div class="card p-4">
+      <h2 class="h5">Waiting on this workstation</h2>
+      <table class="table align-middle">
+        <thead><tr><th>Patient</th><th>Visit</th><th>Study</th></tr></thead>
+        <tbody>
+          {% for exam in worklist %}
+          <tr>
+            <td>{{ exam.order.visit.patient.last_name }}, {{ exam.order.visit.patient.first_name }}<div class="small muted">{{ exam.order.visit.patient.uhid }}</div></td>
+            <td>{{ exam.order.visit.visit_id }}</td>
+            <td>{% if exam.order.procedure %}{{ exam.order.procedure.name }}{% else %}{{ exam.order.modality.get_modality_type_display }}{% endif %}<div class="small muted">{{ exam.mwl_status }}</div></td>
+          </tr>
+          {% empty %}<tr><td colspan="3" class="muted">No paid studies are waiting for this AE title.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card p-4 muted">Select a workstation to set its AE title, IP address, and port, then test the connection.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

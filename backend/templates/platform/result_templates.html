@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Result templates | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="TEMPLATES" title="Result templates" subtitle="Versioned layouts for structured entry and formatted clinical reports. Publish a version before using it in production." %}
+<div class="row g-4">
+  <div class="col-xl-4">
+    <div class="card p-4">
+      <h2 class="h5">Create draft template</h2>
+      <form method="post" class="row g-2">
+        {% csrf_token %}<input type="hidden" name="action" value="create">
+        <div class="col-12"><label class="form-label">Test</label><select name="test" class="form-select" required>{% for t in tests %}<option value="{{ t.pk }}">{{ t.code }} — {{ t.name }}</option>{% endfor %}</select></div>
+        <div class="col-12"><label class="form-label">Name</label><input name="name" class="form-control" required placeholder="CBC standard report"></div>
+        <div class="col-12"><label class="form-label">Instructions</label><textarea name="instructions" class="form-control" rows="2"></textarea></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create draft v1</button></div>
+      </form>
+    </div>
+  </div>
+  <div class="col-xl-8">
+    <form method="get" class="mb-3"><input class="form-control" name="q" value="{{ query }}" placeholder="Search test or template"></form>
+    <div class="card p-3">
+      <table class="table align-middle"><thead><tr><th>Template</th><th>Test</th><th>Version</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {% for row in directory %}
+          <tr>
+            <td class="fw-semibold"><a href="{% url 'platform-result-template-builder' row.pk %}">{{ row.name }}</a></td>
+            <td>{{ row.test.code }}</td>
+            <td>v{{ row.version }}</td>
+            <td><span class="badge {% if row.status == 'PUBLISHED' %}badge-soft{% elif row.status == 'DRAFT' %}badge-warn{% else %}badge-danger-soft{% endif %}">{{ row.status }}</span></td>
+            <td class="text-nowrap">
+              <a class="btn btn-sm btn-outline-dark" href="{% url 'platform-result-template-builder' row.pk %}">Builder</a>
+              <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="toggle"><input type="hidden" name="template" value="{{ row.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">{% if row.is_active %}Off{% else %}On{% endif %}</button></form>
+            </td>
+          </tr>
+          {% empty %}<tr><td colspan="5" class="muted text-center py-3">No templates yet.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+  </div>
+</div>
+{% endblock %}

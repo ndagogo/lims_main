@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Corporate portal{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <h1 class="h4">{{ organisation.name }}</h1>
+  <h2 class="h6">Patients</h2>
+  <ul>{% for p in patients %}<li>{{ p.uhid }} — {{ p.first_name }} {{ p.last_name }}</li>{% empty %}<li>None</li>{% endfor %}</ul>
+  <h2 class="h6">Invoices</h2>
+  <ul>{% for i in invoices %}<li>{{ i.invoice_number }} — {{ i.status }} — {{ i.total }}</li>{% empty %}<li>None</li>{% endfor %}</ul>
+  <a href="{% url 'portal-logout' %}">Sign out</a>
+</div>
+{% endblock %}

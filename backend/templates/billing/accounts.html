@@ -11,6 +11,12 @@
     {% if is_accountant %}
       <a class="btn btn-outline-dark btn-sm" href="{% url 'accounts-reports' %}"><i class="bi bi-graph-up me-1"></i>Accountant reports</a>
     {% endif %}
+    {% if can_refund_payment %}
+      <a class="btn btn-outline-dark btn-sm" href="{% url 'accounts-refunds' %}"><i class="bi bi-arrow-counterclockwise me-1"></i>Cancel / refund</a>
+    {% endif %}
+    {% if can_edit_bill %}
+      <a class="btn btn-outline-dark btn-sm" href="{% url 'accounts-bill-edit' %}"><i class="bi bi-pencil-square me-1"></i>Bill edit</a>
+    {% endif %}
   </div>
 </div>
 

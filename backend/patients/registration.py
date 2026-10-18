@@ -47,6 +47,35 @@ def _checked(post, name):
     return (post.get(name) or '').strip().lower() in {'1', 'on', 'true', 'yes'}
 
 
+GUARDIAN_RELATIONSHIPS = ('Parent', 'Mother', 'Father', 'Guardian', 'Other')
+
+
+def patient_is_minor(date_of_birth, today=None):
+    if not date_of_birth:
+        return False
+    from django.utils import timezone
+    today = today or timezone.localdate()
+    years = today.year - date_of_birth.year - ((today.month, today.day) < (date_of_birth.month, date_of_birth.day))
+    return years < 18
+
+
+def apply_guardian(patient, post):
+    """Store guardian details. A patient under 18 cannot be saved without them."""
+    if 'guardian_name' in post:
+        patient.guardian_name = _clean(post.get('guardian_name'), 120)
+    if 'guardian_relationship' in post:
+        relationship = _clean(post.get('guardian_relationship'), 40)
+        patient.guardian_relationship = relationship if relationship in GUARDIAN_RELATIONSHIPS else ''
+    if 'guardian_phone' in post:
+        raw = (post.get('guardian_phone') or '').strip()
+        patient.guardian_phone = validate_local_phone(raw, field_label='Guardian mobile') if raw else ''
+    if patient_is_minor(patient.date_of_birth):
+        if not (patient.guardian_name and patient.guardian_relationship and patient.guardian_phone):
+            raise ValidationError('A patient under 18 needs a guardian name, relationship, and phone.')
+    patient.save(update_fields=['guardian_name', 'guardian_relationship', 'guardian_phone', 'updated_at'])
+    return patient
+
+
 def notification_prefs(post, *, patient=None):
     """Read channel consent checkboxes. If none are ticked, SMS remains the default."""
     prefs = {
@@ -144,22 +173,35 @@ def apply_visit_details(visit, post):
 
 
 def _attach_referral(visit, post):
-    doctor = ReferralDoctor.objects.filter(pk=post.get('referral_doctor') or None, centre=visit.centre, is_active=True).first()
-    if doctor is None:
-        raise ValidationError('Choose a referring doctor who works with this centre.')
-    chosen = [value for value in post.getlist('referral_institutions') if value]
-    available = doctor.institutions.filter(is_active=True)
-    institutions = list(available.filter(pk__in=chosen))
-    if available.exists() and not institutions:
-        raise ValidationError('Select one or more referral institutions for this doctor.')
-    if len(institutions) != len(set(chosen)):
-        raise ValidationError('Each referral institution must belong to the selected doctor.')
+    from referrals.defaults import ensure_default_doctor
+
+    unknown = _checked(post, 'referring_doctor_unknown')
+    if unknown:
+        doctor = ensure_default_doctor(visit.centre)
+        institutions = []
+        note = _clean(post.get('referral_note'), 255) or 'Referring doctor unknown at registration'
+    else:
+        from referrals.services import doctors_for_centre
+        doctor = doctors_for_centre(visit.centre).filter(pk=post.get('referral_doctor') or None).first()
+        if doctor is None:
+            raise ValidationError(
+                'Choose a referring doctor who works with this centre, '
+                'or tick “Referring doctor unknown” to assign DEFAULT DOCTOR.'
+            )
+        chosen = [value for value in post.getlist('referral_institutions') if value]
+        available = doctor.institutions.filter(is_active=True)
+        institutions = list(available.filter(pk__in=chosen))
+        if available.exists() and not institutions:
+            raise ValidationError('Select one or more referral institutions for this doctor.')
+        if len(institutions) != len(set(chosen)):
+            raise ValidationError('Each referral institution must belong to the selected doctor.')
+        note = _clean(post.get('referral_note'), 255)
     attribution, _created = ReferralAttribution.objects.get_or_create(
         visit=visit, defaults={'doctor': doctor, 'recorded_by': visit.registered_by},
     )
     attribution.doctor = doctor
     attribution.recorded_by = visit.registered_by
-    attribution.note = _clean(post.get('referral_note'), 255)
+    attribution.note = note
     attribution.save()
     attribution.institutions.set(institutions)
 
@@ -179,6 +221,7 @@ def create_doctor(centre, post):
             centre=centre, doctor_code=code, title=title, first_name=first, last_name=last,
             phone=_clean(post.get('doctor_phone'), 30), commission_type='PERCENT', commission_value=Decimal('0'),
         )
+        doctor.centres.add(centre)
     names = [part.strip() for part in (post.get('institution_names') or '').split(',') if part.strip()]
     for name in names:
         ReferralInstitution.objects.get_or_create(doctor=doctor, name=name[:180])
@@ -186,7 +229,8 @@ def create_doctor(centre, post):
 
 
 def add_institution(centre, post):
-    doctor = ReferralDoctor.objects.filter(pk=post.get('doctor') or None, centre=centre, is_active=True).first()
+    from referrals.services import doctors_for_centre
+    doctor = doctors_for_centre(centre, include_placeholders=True).filter(pk=post.get('doctor') or None).first()
     name = _clean(post.get('institution_name'), 180)
     if doctor is None or not name:
         raise ValidationError('Choose the doctor and enter the institution name.')

@@ -1,7 +1,7 @@
 from decimal import Decimal
 from django.db import transaction
 from rest_framework import serializers
-from .models import Invoice, InvoiceItem, Payment, DiscountRequest
+from .models import Invoice, InvoiceItem, Payment, DiscountRequest, BillAmendment, Refund
 from laboratory.models import TestPrice, LabOrder
 
 class InvoiceItemSerializer(serializers.ModelSerializer):
@@ -67,3 +67,17 @@ class DiscountRequestSerializer(serializers.ModelSerializer):
         if invoice and invoice.discount_requests.filter(status='PENDING').exists():
             raise serializers.ValidationError('A discount request is already waiting for accountant review on this invoice.')
         return attrs
+
+
+class BillAmendmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BillAmendment
+        fields = '__all__'
+        read_only_fields = ['id', 'authorised_by', 'created_at', 'updated_at']
+
+
+class RefundSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Refund
+        fields = '__all__'
+        read_only_fields = ['id', 'authorised_by', 'status', 'completed_at', 'created_at', 'updated_at']

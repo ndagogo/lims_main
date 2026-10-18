@@ -40,6 +40,24 @@
 </div>
 {% endif %}
 
+{% if show_platform_controls_entry %}
+<div class="mb-4">
+  <a class="catalog-tile text-decoration-none d-block" href="{% url 'platform-hub' %}" style="border-color:#fecaca;background:linear-gradient(135deg,#fff5f5,#ffffff)">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+      <div class="d-flex align-items-start gap-3">
+        <span class="kpi-icon text-white" style="background:#7f1d1d"><i class="bi bi-shield-lock"></i></span>
+        <div>
+          <div class="muted small text-danger">RESTRICTED</div>
+          <h2 class="h5 mb-1 text-body">Platform controls</h2>
+          <p class="muted small mb-0">Critical catalogue, instrument, workflow, QC, finance, and portal configuration. Opens on its own secured page — not Django admin.</p>
+        </div>
+      </div>
+      <span class="btn btn-sm btn-outline-danger">Open platform controls</span>
+    </div>
+  </a>
+</div>
+{% endif %}
+
 <div class="row g-3 mb-4">
   {% if 'registration' in allowed_workspaces or 'audit' in allowed_workspaces %}
   <div class="col-6 col-xl-3">

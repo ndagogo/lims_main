@@ -1,13 +1,25 @@
 from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from core.models import AuditEvent
-from .models import Analyzer, AnalyzerTestMapping, AnalyzerMessage
+from .models import Analyzer, AnalyzerTestMapping, AnalyzerMessage, GatewayRegistration
 from .serializers import AnalyzerSerializer, AnalyzerTestMappingSerializer, AnalyzerMessageSerializer
 from .services import mapped_result_values, match_sample_from_payload, parse_hl7_obx
+
+
+def _gateway_from_request(request):
+    key = (request.headers.get('X-Gateway-Key') or request.META.get('HTTP_X_GATEWAY_KEY') or '').strip()
+    if not key:
+        auth = request.headers.get('Authorization', '')
+        if auth.lower().startswith('gateway '):
+            key = auth[8:].strip()
+    if not key:
+        return None
+    return GatewayRegistration.objects.filter(api_key=key, is_active=True).select_related('centre').first()
+
 
 class CentreScopedMixin:
     def centre_ids(self):
@@ -41,19 +53,34 @@ class AnalyzerTestMappingViewSet(CentreScopedMixin, viewsets.ModelViewSet):
 class AnalyzerMessageViewSet(CentreScopedMixin, viewsets.ReadOnlyModelViewSet):
     serializer_class=AnalyzerMessageSerializer; permission_classes=[IsAuthenticated]
     def get_queryset(self): return self.scope(AnalyzerMessage.objects.select_related('analyzer','analyzer__centre','sample').all(),'analyzer__centre_id')
-    @action(detail=False, methods=['post'], url_path='ingest')
+    @action(detail=False, methods=['post'], url_path='ingest', permission_classes=[AllowAny])
     def ingest(self, request):
-        # Authenticated gateway ingress; use TLS and a dedicated service account.
+        # Prefer registered gateway API key; fall back to staff JWT/session.
+        gateway = _gateway_from_request(request)
         analyzer_id=request.data.get('analyzer_id')
         raw_payload=request.data.get('raw_payload')
+        external_id=str(request.data.get('external_message_id',''))[:150]
         if not analyzer_id or not isinstance(raw_payload,str) or not raw_payload.strip():
             return Response({'detail':'analyzer_id and non-empty raw_payload are required.'},status=400)
-        try:
-            analyzer=self.get_queryset().get(pk=analyzer_id,is_active=True)
-        except Analyzer.DoesNotExist:
-            return Response({'detail':'Active analyzer not found in your permitted centres.'},status=404)
-        if not request.user.is_superuser and not request.user.centre_access.filter(centre=analyzer.centre,can_view=True,can_edit=True).exists():
-            raise PermissionDenied('Analyzer message ingestion requires edit access to this centre.')
+        if external_id and AnalyzerMessage.objects.filter(external_message_id=external_id, analyzer_id=analyzer_id).exists():
+            existing = AnalyzerMessage.objects.filter(external_message_id=external_id, analyzer_id=analyzer_id).first()
+            return Response(AnalyzerMessageSerializer(existing).data, status=200)
+        if gateway:
+            try:
+                analyzer = Analyzer.objects.get(pk=analyzer_id, is_active=True, centre=gateway.centre)
+            except Analyzer.DoesNotExist:
+                return Response({'detail':'Active analyzer not found for this gateway centre.'},status=404)
+            actor = None
+        else:
+            if not request.user or not request.user.is_authenticated:
+                return Response({'detail':'Authentication credentials were not provided.'}, status=401)
+            try:
+                analyzer=self.get_queryset().get(pk=analyzer_id,is_active=True)
+            except Analyzer.DoesNotExist:
+                return Response({'detail':'Active analyzer not found in your permitted centres.'},status=404)
+            if not request.user.is_superuser and not request.user.centre_access.filter(centre=analyzer.centre,can_view=True,can_edit=True).exists():
+                raise PermissionDenied('Analyzer message ingestion requires edit access to this centre.')
+            actor = request.user
         sample=None
         sample_id=request.data.get('sample_id')
         if sample_id:
@@ -61,9 +88,15 @@ class AnalyzerMessageViewSet(CentreScopedMixin, viewsets.ReadOnlyModelViewSet):
             sample=Sample.objects.filter(sample_id=sample_id,centre=analyzer.centre).first()
             if sample is None:
                 return Response({'detail':'Sample was not found at this analyzer centre; message not accepted.'},status=400)
-        msg=AnalyzerMessage.objects.create(analyzer=analyzer,sample=sample,external_message_id=str(request.data.get('external_message_id',''))[:150],raw_payload=raw_payload[:200000])
+        msg=AnalyzerMessage.objects.create(
+            analyzer=analyzer, sample=sample, gateway=gateway,
+            external_message_id=external_id, raw_payload=raw_payload[:200000],
+        )
         analyzer.last_seen_at=timezone.now(); analyzer.save(update_fields=['last_seen_at','updated_at'])
-        AuditEvent.objects.create(actor=request.user,action='ANALYZER_MESSAGE_RECEIVED',object_type='AnalyzerMessage',object_id=str(msg.pk),path=request.path,method=request.method,centre=analyzer.centre,detail={'payload_chars':len(msg.raw_payload),'sample_matched':bool(sample)})
+        if gateway:
+            gateway.last_seen_at = timezone.now()
+            gateway.save(update_fields=['last_seen_at', 'updated_at'])
+        AuditEvent.objects.create(actor=actor,action='ANALYZER_MESSAGE_RECEIVED',object_type='AnalyzerMessage',object_id=str(msg.pk),path=request.path,method=request.method,centre=analyzer.centre,detail={'payload_chars':len(msg.raw_payload),'sample_matched':bool(sample),'gateway':bool(gateway)})
         return Response(AnalyzerMessageSerializer(msg).data,status=201)
 
     @action(detail=True, methods=['post'])
@@ -76,10 +109,15 @@ class AnalyzerMessageViewSet(CentreScopedMixin, viewsets.ReadOnlyModelViewSet):
             msg.status='PARSED' if msg.parsed_payload['observations'] else 'ERROR'
             msg.error_message='' if msg.status=='PARSED' else 'No OBX observations found; confirm protocol and payload framing.'
             msg.save(update_fields=['parsed_payload','status','error_message','updated_at'])
+            if msg.status == 'ERROR':
+                from communications.messaging import notify_integration_failure
+                notify_integration_failure(msg, user=request.user)
             AuditEvent.objects.create(actor=request.user,action='ANALYZER_MESSAGE_PARSED',object_type='AnalyzerMessage',object_id=str(msg.pk),path=request.path,method=request.method,centre=msg.analyzer.centre,detail={'observation_count':len(msg.parsed_payload['observations'])})
             return Response(self.get_serializer(msg).data)
         except Exception as exc:
             msg.status='ERROR'; msg.error_message=str(exc)[:1000]; msg.save(update_fields=['status','error_message','updated_at'])
+            from communications.messaging import notify_integration_failure
+            notify_integration_failure(msg, user=getattr(request, 'user', None))
             return Response({'detail':'Unable to parse message.'},status=400)
     @action(detail=True, methods=['post'])
     def mark_pending_review(self, request, pk=None):

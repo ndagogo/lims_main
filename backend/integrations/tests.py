@@ -32,7 +32,9 @@ class AnalyzerDraftApplyTests(TestCase):
         SampleCodeConfig.objects.create(centre=centre, numeric_code='3')
         patient = Patient.objects.create(first_name='Kay', last_name='Ade', phone_number='08022223333')
         visit = Visit.objects.create(patient=patient, centre=centre, registered_by=user)
-        test = Test.objects.create(code='WBC', name='White cells', department='PATHOLOGY', department_code='1', service_group_code='1')
+        from laboratory.models import ServiceGroup
+        group = ServiceGroup.objects.create(name='Haematology', code='1')
+        test = Test.objects.create(code='WBC', name='White cells', department='PATHOLOGY', department_code='1', service_group=group)
         parameter = TestParameter.objects.create(test=test, code='WBC', name='WBC', is_required=True)
         order = LabOrder.objects.create(visit=visit, test=test, price='1000')
         sample = Sample.objects.create(order=order, centre=centre, status='PROCESSING')

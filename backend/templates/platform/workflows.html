@@ -1,0 +1,407 @@
+{% extends "base.html" %}
+{% block title %}Workflow builder | Platform{% endblock %}
+{% block content %}
+<div class="wf-page">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+    <div>
+      <div class="eyebrow">Settings · Workflows</div>
+      <h1>Workflow builder</h1>
+    </div>
+    {% if editable %}
+    <button class="btn btn-primary" type="submit" form="reorder-form">Save workflow</button>
+    {% else %}
+    <button class="btn btn-primary" type="button" disabled title="Open a draft version to save step order">Save workflow</button>
+    {% endif %}
+  </div>
+
+  <div class="wf-filters mb-3">
+    <a class="wf-filter {% if lane == 'ALL' %}is-on{% endif %}" href="?lane=ALL">All workflows</a>
+    {% for row in canvas_workflows %}
+    <a class="wf-filter {% if lane == row.code %}is-on{% endif %}" href="?lane={{ row.code }}&workflow={{ row.pk }}">{{ row.lane_label }}</a>
+    {% endfor %}
+    <a class="wf-filter {% if lane == 'NEW' %}is-on{% endif %}" href="?lane=NEW">+ New</a>
+  </div>
+
+  <div class="wf-layout">
+    <section class="wf-card wf-steps">
+      <h2>Steps</h2>
+      <div class="wf-palette" id="step-palette">
+        {% for step in step_palette %}
+        <div class="wf-chip" draggable="true" data-code="{{ step.code }}" data-name="{{ step.canvas_label }}" data-sample-status="{{ step.sample_status }}">
+          <span class="wf-grip" aria-hidden="true">⋮⋮</span>{{ step.canvas_label }}
+        </div>
+        {% empty %}
+        <p class="muted small mb-0">No steps yet. Create a workflow, then add steps.</p>
+        {% endfor %}
+      </div>
+      <p class="wf-hint">Drag onto the canvas.{% if editable %} Drag to reorder the open draft.{% endif %}</p>
+    </section>
+
+    <section class="wf-card wf-canvas">
+      <h2>Canvas</h2>
+      {% if lane == 'NEW' or not canvas_workflows %}
+      <form method="post" class="wf-new row g-2 mb-3">
+        {% csrf_token %}<input type="hidden" name="action" value="create">
+        <div class="col-md-3"><input name="code" class="form-control form-control-sm" placeholder="Code e.g. NORMAL" required></div>
+        <div class="col-md-4"><input name="name" class="form-control form-control-sm" placeholder="Display name" required></div>
+        <div class="col-md-3"><input name="expected_tat_minutes" type="number" min="1" class="form-control form-control-sm" placeholder="Overall TAT (minutes)"></div>
+        <div class="col-md-2"><button class="btn btn-primary btn-sm w-100" type="submit">Create draft</button></div>
+        <div class="col-12"><textarea name="description" class="form-control form-control-sm" rows="2" placeholder="Description"></textarea></div>
+      </form>
+      {% endif %}
+
+      {% for row in visible_canvas %}
+      <div class="wf-lane">
+        <div class="wf-lane-title">{{ row.lane_label }} workflow</div>
+        {% if editable and selected.pk == row.pk %}
+        <form method="post" id="reorder-form">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="reorder_steps">
+          <input type="hidden" name="workflow" value="{{ selected.pk }}">
+          <ul class="wf-track" id="step-list" data-drop="1" data-workflow="{{ selected.pk }}">
+            {% for step in selected.steps.all %}
+            <li draggable="true" data-step-id="{{ step.pk }}">
+              <input type="hidden" name="step_order" value="{{ step.pk }}">
+              <a class="wf-node {% if selected_step and selected_step.pk == step.pk %}is-current{% endif %} {% if step.skip_allowed %}is-optional{% endif %}" href="?lane={{ lane }}&workflow={{ selected.pk }}&step={{ step.pk }}">{{ step.canvas_label }}</a>
+            </li>
+            {% empty %}
+            <li class="muted small">Drop a step here.</li>
+            {% endfor %}
+          </ul>
+        </form>
+        {% else %}
+        <div class="wf-track" {% if row.status == 'DRAFT' %}data-drop="1" data-workflow="{{ row.pk }}"{% else %}data-locked="1"{% endif %}>
+          {% for step in row.steps.all %}
+          <a class="wf-node {% if selected_step and selected_step.pk == step.pk %}is-current{% endif %} {% if step.skip_allowed %}is-optional{% endif %}" href="?lane={{ row.code }}&workflow={{ row.pk }}&step={{ step.pk }}">{{ step.canvas_label }}</a>
+          {% empty %}<span class="muted small">No steps on this workflow.</span>{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% empty %}
+      <p class="muted mb-0">No workflows yet. Use + New to create a draft.</p>
+      {% endfor %}
+    </section>
+  </div>
+
+  {% if selected %}
+  <div class="wf-card wf-detail mt-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+      <div>
+        <h2 class="h5 mb-1">{{ selected.name }}</h2>
+        <div class="small muted">{{ selected.code }} · version {{ selected.version }} ·
+          <span class="badge {% if selected.status == 'PUBLISHED' %}text-bg-success{% elif selected.status == 'DRAFT' %}text-bg-warning{% else %}text-bg-secondary{% endif %}">{{ selected.status }}</span>
+          {% if selected.is_active %}<span class="badge text-bg-primary">Active for new orders</span>{% endif %}
+        </div>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        {% if selected.status == 'DRAFT' %}
+        <form method="post" class="d-inline">{% csrf_token %}
+          <input type="hidden" name="action" value="publish"><input type="hidden" name="workflow" value="{{ selected.pk }}">
+          <input type="hidden" name="notes" value="Published from platform workflow builder">
+          <button class="btn btn-sm btn-outline-dark" type="submit" onclick="return confirm('Publish this version? It becomes active for new orders. Existing orders keep their bound version.')">Publish / activate</button>
+        </form>
+        {% endif %}
+        <form method="post" class="d-inline">{% csrf_token %}
+          <input type="hidden" name="action" value="clone_version"><input type="hidden" name="workflow" value="{{ selected.pk }}">
+          <button class="btn btn-sm btn-outline-dark" type="submit">New version (clone)</button>
+        </form>
+        <a class="btn btn-sm btn-outline-secondary" href="?lane={{ lane }}&workflow={{ selected.pk }}&preview=1#preview">Preview</a>
+      </div>
+    </div>
+    {% if not editable %}
+    <div class="alert alert-info py-2 small mb-3">This version is locked. Use <strong>New version (clone)</strong> to edit steps and transitions without affecting orders already in progress.</div>
+    {% endif %}
+
+    {% if editable %}
+    <form method="post" class="row g-2 mb-3">
+      {% csrf_token %}<input type="hidden" name="action" value="update"><input type="hidden" name="workflow" value="{{ selected.pk }}">
+      <div class="col-md-6"><label class="form-label small">Name</label><input name="name" class="form-control form-control-sm" value="{{ selected.name }}"></div>
+      <div class="col-md-3"><label class="form-label small">Overall TAT (min)</label><input name="expected_tat_minutes" type="number" class="form-control form-control-sm" value="{{ selected.expected_tat_minutes|default_if_none:'' }}"></div>
+      <div class="col-md-3 d-flex align-items-end"><button class="btn btn-sm btn-outline-dark w-100" type="submit">Save metadata</button></div>
+      <div class="col-12"><label class="form-label small">Description</label><textarea name="description" class="form-control form-control-sm" rows="2">{{ selected.description }}</textarea></div>
+      <div class="col-12"><label class="form-label small">Leadership notes</label><textarea name="notes" class="form-control form-control-sm" rows="2">{{ selected.notes }}</textarea></div>
+    </form>
+    {% endif %}
+
+    <div class="mb-4">
+      <h3 class="h6">{% if selected_step %}{% if editable %}Configure step{% else %}Step{% endif %} {{ selected_step.code }}{% else %}{% if editable %}Add step{% else %}Step detail{% endif %}{% endif %}</h3>
+      {% if editable %}
+      <form method="post" class="row g-2" id="step-editor">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="{% if selected_step %}update_step{% else %}add_step{% endif %}">
+        <input type="hidden" name="workflow" value="{{ selected.pk }}">
+        <input type="hidden" name="required_submitted" value="1">
+        {% if selected_step %}<input type="hidden" name="step" value="{{ selected_step.pk }}">{% endif %}
+        {% if not selected_step %}
+        <div class="col-md-4"><label class="form-label small">Code</label><input name="step_code" class="form-control form-control-sm" required placeholder="REVIEW"></div>
+        {% endif %}
+        <div class="col-md-8"><label class="form-label small">Name</label><input name="step_name" class="form-control form-control-sm" required value="{{ selected_step.name|default:'' }}"></div>
+        <div class="col-md-6">
+          <label class="form-label small">Department</label>
+          <input name="department" class="form-control form-control-sm" list="dept-list" value="{{ selected_step.department|default:'' }}">
+          <datalist id="dept-list">{% for d in department_choices %}<option value="{{ d }}">{% endfor %}</datalist>
+        </div>
+        <div class="col-md-3"><label class="form-label small">Sample status</label><input name="sample_status" class="form-control form-control-sm" value="{{ selected_step.sample_status|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label small">Result status</label><input name="result_status" class="form-control form-control-sm" value="{{ selected_step.result_status|default:'' }}"></div>
+        <div class="col-12"><label class="form-label small">Allowed roles (who may leave this step)</label>
+          <select name="allowed_roles" class="form-select form-select-sm" multiple size="4">
+            {% for role in role_choices %}
+            <option value="{{ role }}" {% if selected_step and role in selected_step.allowed_roles %}selected{% endif %}>{{ role }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6"><label class="form-label small">Required fields</label>
+          <select name="required_fields" class="form-select form-select-sm" multiple size="4">
+            {% for f in field_choices %}
+            <option value="{{ f }}" {% if selected_step and f in selected_step.required_fields %}selected{% endif %}>{{ f }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6"><label class="form-label small">Required documents</label>
+          <select name="required_documents" class="form-select form-select-sm" multiple size="4">
+            {% for d in doc_choices %}
+            <option value="{{ d }}" {% if selected_step and d in selected_step.required_documents %}selected{% endif %}>{{ d }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4"><label class="form-label small">Step TAT (min)</label><input name="expected_tat_minutes" type="number" class="form-control form-control-sm" value="{{ selected_step.expected_tat_minutes|default_if_none:'' }}"></div>
+        <div class="col-md-4"><label class="form-label small">Escalate after (min)</label><input name="escalation_after_minutes" type="number" class="form-control form-control-sm" value="{{ selected_step.escalation_after_minutes|default_if_none:'' }}"></div>
+        <div class="col-md-4"><label class="form-label small">Escalation roles</label>
+          <select name="escalation_roles" class="form-select form-select-sm" multiple size="3">
+            {% for role in role_choices %}
+            <option value="{{ role }}" {% if selected_step and role in selected_step.escalation_roles %}selected{% endif %}>{{ role }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12"><label class="form-label small">Instructions</label><textarea name="instructions" class="form-control form-control-sm" rows="2">{{ selected_step.instructions|default:'' }}</textarea></div>
+        <div class="col-md-4"><div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="required" id="step-req" {% if not selected_step or selected_step.required %}checked{% endif %}><label class="form-check-label" for="step-req">Mandatory step</label></div></div>
+        <div class="col-md-4"><div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="skip_allowed" id="step-skip" {% if selected_step and selected_step.skip_allowed %}checked{% endif %}><label class="form-check-label" for="step-skip">Skip allowed</label></div></div>
+        <div class="col-md-4 d-flex align-items-end"><button class="btn btn-sm btn-dark" type="submit">{% if selected_step %}Save step{% else %}Add step{% endif %}</button></div>
+      </form>
+      {% if selected_step %}
+      <form method="post" class="mt-2" onsubmit="return confirm('Remove this step?');">
+        {% csrf_token %}<input type="hidden" name="action" value="delete_step"><input type="hidden" name="step" value="{{ selected_step.pk }}">
+        <button class="btn btn-sm btn-outline-danger" type="submit">Remove step</button>
+      </form>
+      {% endif %}
+      {% elif selected_step %}
+      <dl class="row small mb-0">
+        <dt class="col-sm-4">Department</dt><dd class="col-sm-8">{{ selected_step.department|default:"—" }}</dd>
+        <dt class="col-sm-4">Roles</dt><dd class="col-sm-8">{{ selected_step.allowed_roles|join:", "|default:"Any lab role" }}</dd>
+        <dt class="col-sm-4">Required fields</dt><dd class="col-sm-8">{{ selected_step.required_fields|join:", "|default:"—" }}</dd>
+        <dt class="col-sm-4">Documents</dt><dd class="col-sm-8">{{ selected_step.required_documents|join:", "|default:"—" }}</dd>
+        <dt class="col-sm-4">TAT / escalate</dt><dd class="col-sm-8">{{ selected_step.expected_tat_minutes|default:"—" }} min / {{ selected_step.escalation_after_minutes|default:"—" }} min</dd>
+        <dt class="col-sm-4">Instructions</dt><dd class="col-sm-8">{{ selected_step.instructions|default:"—" }}</dd>
+      </dl>
+      {% else %}
+      <p class="muted small mb-0">Select a step on the canvas to inspect it.</p>
+      {% endif %}
+    </div>
+
+    <div class="mb-4">
+      <h3 class="h6">Transitions (server-enforced)</h3>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>From</th><th>Action</th><th>To</th><th>Conditions</th><th></th></tr></thead>
+          <tbody>
+            {% for tr in selected.transitions.all %}
+            <tr>
+              <td>{{ tr.from_step.code }}</td>
+              <td><code>{{ tr.action }}</code>{% if tr.label %}<div class="small muted">{{ tr.label }}</div>{% endif %}</td>
+              <td>{{ tr.to_step.code }}</td>
+              <td class="small">{% if tr.condition %}{{ tr.condition }}{% else %}—{% endif %}</td>
+              <td>{% if editable %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="delete_transition"><input type="hidden" name="transition" value="{{ tr.pk }}"><button class="btn btn-sm btn-outline-danger" type="submit">Remove</button></form>{% endif %}</td>
+            </tr>
+            {% empty %}<tr><td colspan="5" class="muted">No transitions yet — publish will require at least one.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if editable and selected.steps.exists %}
+      <form method="post" class="row g-2">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="add_transition">
+        <input type="hidden" name="workflow" value="{{ selected.pk }}">
+        <input type="hidden" name="require_fields_submitted" value="1">
+        <div class="col-md-3"><label class="form-label small">From</label><select name="from_step" class="form-select form-select-sm" required>{% for s in selected.steps.all %}<option value="{{ s.pk }}">{{ s.code }}</option>{% endfor %}</select></div>
+        <div class="col-md-3"><label class="form-label small">To</label><select name="to_step" class="form-select form-select-sm" required>{% for s in selected.steps.all %}<option value="{{ s.pk }}">{{ s.code }}</option>{% endfor %}</select></div>
+        <div class="col-md-3"><label class="form-label small">Action</label><input name="transition_action" class="form-control form-control-sm" list="wf-actions" required placeholder="batch"><datalist id="wf-actions">{% for code in action_choices %}<option value="{{ code }}">{% endfor %}</datalist></div>
+        <div class="col-md-3"><label class="form-label small">Label</label><input name="label" class="form-control form-control-sm" placeholder="Authenticate"></div>
+        <div class="col-md-3"><div class="form-check mt-4"><input class="form-check-input" type="checkbox" name="require_paid" id="req-paid"><label class="form-check-label" for="req-paid">Require paid</label></div></div>
+        <div class="col-md-3"><label class="form-label small">Require document</label><select name="require_document" class="form-select form-select-sm"><option value="">—</option>{% for d in doc_choices %}<option value="{{ d }}">{{ d }}</option>{% endfor %}</select></div>
+        <div class="col-md-3"><div class="form-check mt-4"><input class="form-check-input" type="checkbox" name="require_fields_complete" id="req-fields" checked><label class="form-check-label" for="req-fields">Enforce required fields</label></div></div>
+        <div class="col-md-3"><label class="form-label small">Extra condition JSON</label><input name="condition_json" class="form-control form-control-sm" placeholder='{"flag_x": true}'></div>
+        <div class="col-12"><button class="btn btn-sm btn-dark" type="submit">Add transition</button></div>
+      </form>
+      {% endif %}
+    </div>
+
+    <div class="mb-4" id="preview">
+      <h3 class="h6">Preview before activation</h3>
+      {% if preview %}
+      <ol class="small">
+        {% for s in preview.steps %}
+        <li><strong>{{ s.code }}</strong> — {{ s.name }}{% if s.department %} <span class="muted">({{ s.department }})</span>{% endif %}</li>
+        {% empty %}<li class="muted">No steps</li>{% endfor %}
+      </ol>
+      {% endif %}
+    </div>
+
+    <div>
+      <h3 class="h6">Assign workflow to test / service group</h3>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Target</th><th>Priority</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {% for a in assignments %}
+            <tr>
+              <td>{% if a.test %}Test {{ a.test.code }} — {{ a.test.name }}{% elif a.service_group %}Group {{ a.service_group.name }}{% else %}—{% endif %}</td>
+              <td>{{ a.priority }}</td>
+              <td>{% if a.is_active %}Active{% else %}Off{% endif %}</td>
+              <td class="text-nowrap">
+                <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="toggle_assignment"><input type="hidden" name="assignment" value="{{ a.pk }}"><input type="hidden" name="workflow" value="{{ selected.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Toggle</button></form>
+                <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="delete_assignment"><input type="hidden" name="assignment" value="{{ a.pk }}"><input type="hidden" name="workflow" value="{{ selected.pk }}"><button class="btn btn-sm btn-outline-danger" type="submit">Remove</button></form>
+              </td>
+            </tr>
+            {% empty %}<tr><td colspan="4" class="muted">No assignments for {{ selected.code }}.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <form method="post" class="row g-2">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="add_assignment">
+        <input type="hidden" name="workflow" value="{{ selected.pk }}">
+        <input type="hidden" name="workflow_code" value="{{ selected.code }}">
+        <div class="col-md-4"><select name="test" class="form-select form-select-sm"><option value="">Test (preferred)</option>{% for t in tests %}<option value="{{ t.pk }}">{{ t.code }} — {{ t.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-4"><select name="service_group" class="form-select form-select-sm"><option value="">Or service group</option>{% for g in service_groups %}<option value="{{ g.pk }}">{{ g.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-2"><input name="priority" type="number" class="form-control form-control-sm" value="100"></div>
+        <div class="col-md-2"><button class="btn btn-sm btn-dark w-100" type="submit">Assign</button></div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<form method="post" id="palette-add-form" class="d-none">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="add_step">
+  <input type="hidden" name="workflow" id="palette-workflow" value="{{ selected.pk|default:'' }}">
+  <input type="hidden" name="step_code" id="palette-code">
+  <input type="hidden" name="step_name" id="palette-name">
+  <input type="hidden" name="sample_status" id="palette-status">
+  <input type="hidden" name="required_submitted" value="1">
+  <input type="hidden" name="required" value="on">
+</form>
+
+<style>
+  .wf-page { min-width: 0; }
+  .wf-page h1 { margin-bottom: 0; }
+  .wf-page .btn-primary { background: #171717; border-color: #171717; }
+  .wf-filters { display: flex; flex-wrap: wrap; gap: .45rem; }
+  .wf-filter {
+    border: 1px solid #e4dfd6;
+    background: #fff;
+    color: #1c1917;
+    border-radius: 999px;
+    padding: .35rem .85rem;
+    text-decoration: none;
+    font-size: .92rem;
+  }
+  .wf-filter.is-on { background: #171717; color: #fff; border-color: #171717; }
+  .wf-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 1rem; align-items: start; }
+  .wf-card {
+    background: #fff;
+    border: 1px solid #e7e2d9;
+    border-radius: 18px;
+    padding: 1rem 1.05rem 1.15rem;
+    min-width: 0;
+  }
+  .wf-card h2 { font-family: Newsreader, Georgia, serif; font-size: 1.35rem; font-weight: 460; margin-bottom: .8rem; }
+  .wf-palette { display: flex; flex-direction: column; gap: .55rem; }
+  .wf-chip {
+    display: flex; align-items: center; gap: .45rem;
+    border: 1px solid #e7e2d9; border-radius: 12px; background: #fff;
+    padding: .55rem .7rem; font-size: .92rem; cursor: grab;
+  }
+  .wf-grip { color: #a8a29e; letter-spacing: -1px; font-size: .8rem; }
+  .wf-hint { color: #78716c; font-size: .82rem; margin: .8rem 0 0; }
+  .wf-lane + .wf-lane { margin-top: 1.15rem; }
+  .wf-lane-title { font-weight: 600; margin-bottom: .45rem; }
+  .wf-track {
+    display: flex; flex-wrap: nowrap; align-items: center; gap: .35rem;
+    overflow-x: auto; padding: .15rem .05rem .45rem; list-style: none; margin: 0; min-height: 2.6rem; min-width: 0;
+  }
+  .wf-track li { display: flex; align-items: center; gap: .35rem; }
+  .wf-track li:not(:last-child)::after, .wf-track > .wf-node:not(:last-child)::after {
+    content: "→"; color: #a8a29e; margin-left: .35rem;
+  }
+  .wf-node {
+    flex: 0 0 auto;
+    border: 1px solid #e7e2d9;
+    background: #fff;
+    color: #1c1917;
+    border-radius: 12px;
+    padding: .42rem .75rem;
+    text-decoration: none;
+    font-size: .9rem;
+    white-space: nowrap;
+  }
+  .wf-node.is-current { border-color: #1f6b4a; box-shadow: 0 0 0 1px #1f6b4a; }
+  .wf-node.is-optional { border-style: dashed; color: #78716c; }
+  .wf-track .dragging { opacity: .45; }
+  .wf-detail h3 { font-family: Newsreader, Georgia, serif; font-weight: 460; }
+  @media (max-width: 991.98px) { .wf-layout { grid-template-columns: 1fr; } }
+</style>
+<script>
+(function () {
+  const list = document.getElementById('step-list');
+  let dragEl = null;
+  if (list) {
+    list.querySelectorAll('li[draggable="true"]').forEach((item) => {
+      item.addEventListener('dragstart', (e) => {
+        dragEl = item;
+        item.classList.add('dragging');
+        e.dataTransfer.setData('reorder', '1');
+      });
+      item.addEventListener('dragend', () => { item.classList.remove('dragging'); dragEl = null; });
+      item.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const over = e.target.closest('li[draggable="true"]');
+        if (!over || over === dragEl) return;
+        const rect = over.getBoundingClientRect();
+        const before = (e.clientX - rect.left) < rect.width / 2;
+        list.insertBefore(dragEl, before ? over : over.nextSibling);
+      });
+    });
+  }
+  document.querySelectorAll('#step-palette .wf-chip').forEach((chip) => {
+    chip.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('code', chip.dataset.code || '');
+      e.dataTransfer.setData('name', chip.dataset.name || '');
+      e.dataTransfer.setData('status', chip.dataset.sampleStatus || '');
+    });
+  });
+  document.querySelectorAll('[data-drop="1"]').forEach((track) => {
+    track.addEventListener('dragover', (e) => e.preventDefault());
+    track.addEventListener('drop', (e) => {
+      const code = e.dataTransfer.getData('code');
+      if (!code) return;
+      e.preventDefault();
+      const form = document.getElementById('palette-add-form');
+      document.getElementById('palette-workflow').value = track.dataset.workflow || '';
+      document.getElementById('palette-code').value = code;
+      document.getElementById('palette-name').value = e.dataTransfer.getData('name') || code;
+      document.getElementById('palette-status').value = e.dataTransfer.getData('status') || '';
+      form.submit();
+    });
+  });
+  document.querySelectorAll('[data-locked="1"]').forEach((track) => {
+    track.addEventListener('dragover', (e) => e.preventDefault());
+    track.addEventListener('drop', (e) => {
+      if (!e.dataTransfer.getData('code')) return;
+      e.preventDefault();
+      window.alert('This version is locked. Use New version (clone), then drag the step onto that draft.');
+    });
+  });
+})();
+</script>
+{% endblock %}

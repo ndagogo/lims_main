@@ -39,12 +39,25 @@ class Invoice(TimeStampedModel):
         # Query the tables directly so a prefetched invoice cannot keep a stale total.
         subtotal = InvoiceItem.objects.filter(invoice_id=self.pk).aggregate(total=models.Sum('line_total'))['total'] or Decimal('0.00')
         paid = Payment.objects.filter(invoice_id=self.pk, status='CONFIRMED').aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
+        refunded = Refund.objects.filter(invoice_id=self.pk, status='COMPLETED').aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
+        net_paid = max(Decimal('0.00'), paid - refunded)
         self.subtotal = subtotal
         self.total = max(Decimal('0.00'), subtotal - (self.discount_amount or Decimal('0.00')))
-        self.status = 'PAID' if paid >= self.total and self.total > 0 else ('PART_PAID' if paid > 0 else 'UNPAID')
+        if self.total == 0 and net_paid == 0:
+            self.status = 'UNPAID'
+        elif net_paid >= self.total and self.total > 0:
+            self.status = 'PAID'
+        elif net_paid > 0:
+            self.status = 'PART_PAID'
+        else:
+            self.status = 'UNPAID'
+        previously_paid = bool(self.pk) and type(self).objects.filter(pk=self.pk, status='PAID').exists()
         self.save(update_fields=['subtotal', 'discount_amount', 'total', 'status', 'updated_at'])
         from referrals.services import sync_commission
         sync_commission(self)
+        if self.status == 'PAID' and not previously_paid:
+            from radiology.worklist import publish_paid_invoice
+            publish_paid_invoice(self)
 
 class InvoiceItem(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -118,3 +131,64 @@ class DiscountRequest(TimeStampedModel):
     def clean(self):
         if self.requested_value <= 0: raise ValidationError('Discount value must be greater than zero.')
         if self.discount_type == 'PERCENT' and self.requested_value > 100: raise ValidationError('Percentage cannot exceed 100.')
+
+
+class BillAmendment(TimeStampedModel):
+    """Audited invoice line changes — never silent overwrite of completed payments."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name='amendments')
+    action = models.CharField(max_length=20, choices=[
+        ('ADD_ITEM', 'Add item'),
+        ('REMOVE_ITEM', 'Remove item'),
+        ('ADJUST_PRICE', 'Adjust price'),
+        ('REPLACE_ITEM', 'Replace item'),
+    ])
+    description = models.CharField(max_length=255)
+    amount_delta = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    reason = models.TextField()
+    authorised_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='bill_amendments')
+    invoice_item = models.ForeignKey(InvoiceItem, null=True, blank=True, on_delete=models.SET_NULL)
+    removed_description = models.CharField(max_length=255, blank=True, default='')
+    added_description = models.CharField(max_length=255, blank=True, default='')
+    snapshot = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        permissions = [
+            ('bill_edit', 'Can edit invoice lines (remove/replace tests)'),
+            ('bill_modify', 'Can modify invoice billing details'),
+        ]
+        ordering = ['-created_at']
+
+
+class Refund(TimeStampedModel):
+    """Explicit refund distinct from payment reversal — optionally per invoice line/test."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    payment = models.ForeignKey(Payment, null=True, blank=True, on_delete=models.PROTECT, related_name='refunds')
+    invoice = models.ForeignKey(Invoice, null=True, blank=True, on_delete=models.PROTECT, related_name='refunds')
+    invoice_item = models.ForeignKey(InvoiceItem, null=True, blank=True, on_delete=models.SET_NULL, related_name='refunds')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    reason = models.TextField()
+    refund_mode = models.CharField(
+        max_length=20,
+        choices=[('CANCEL_ONLY', 'Cancel test only'), ('CANCEL_AND_REFUND', 'Cancel and refund')],
+        default='CANCEL_AND_REFUND',
+    )
+    status = models.CharField(max_length=12, choices=[('PENDING','Pending'),('COMPLETED','Completed'),('CANCELLED','Cancelled')], default='PENDING')
+    authorised_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='refunds_authorised')
+    completed_at = models.DateTimeField(null=True, blank=True)
+    item_description = models.CharField(max_length=255, blank=True, default='')
+
+    class Meta:
+        permissions = [
+            ('issue_refund', 'Can issue a payment refund'),
+            ('payment_refund', 'Can refund individual billed tests'),
+        ]
+        ordering = ['-created_at']
+
+    def clean(self):
+        if self.amount < 0:
+            raise ValidationError('Refund amount cannot be negative.')
+        if self.refund_mode == 'CANCEL_AND_REFUND' and self.amount <= 0:
+            raise ValidationError('Refund amount must be greater than zero.')
+        if self.payment_id and self.amount > self.payment.amount:
+            raise ValidationError('Refund cannot exceed the original payment.')

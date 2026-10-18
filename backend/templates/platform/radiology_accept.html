@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Report accept window | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="Workflows" title="Report accept window" subtitle="If the assigned radiologist does not accept in this time, the study can be assigned again." %}
+<div class="card p-4" style="max-width: 32rem;">
+  <form method="post" class="row g-3">
+    {% csrf_token %}
+    <div class="col-8">
+      <label class="form-label">Minutes to accept</label>
+      <input class="form-control" type="number" min="1" max="1440" name="accept_minutes" value="{{ setting.accept_minutes }}" required>
+    </div>
+    <div class="col-4 d-flex align-items-end"><button class="btn btn-primary w-100" type="submit">Save</button></div>
+  </form>
+</div>
+{% endblock %}

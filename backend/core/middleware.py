@@ -17,9 +17,16 @@ class AuditContextMiddleware(MiddlewareMixin):
         if request.method not in self.SAFE_METHODS and getattr(request, 'user', None) is not None and request.user.is_authenticated:
             try:
                 AuditEvent.objects.create(
-                    actor=request.user, action=f'HTTP_{request.method}', object_type='HTTP_REQUEST',
-                    path=request.path[:500], method=request.method, ip_address=request.audit_ip,
-                    browser=request.audit_browser, detail={'status_code': response.status_code},
+                    actor=request.user,
+                    action=f'HTTP_{request.method}',
+                    category='SYSTEM',
+                    object_type='HTTP_REQUEST',
+                    path=request.path[:500],
+                    method=request.method,
+                    ip_address=request.audit_ip,
+                    browser=request.audit_browser,
+                    department=(getattr(request.user, 'department', '') or '')[:120],
+                    detail={'status_code': response.status_code},
                 )
             except Exception:
                 # Audit persistence failures should be visible through application monitoring;

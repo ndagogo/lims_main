@@ -1,84 +1,53 @@
 {% extends "base.html" %}
 {% block title %}Patient registration | HFDN{% endblock %}
 {% block content %}
-<div class="mb-4">
-  <div class="muted small">PATIENT MANAGEMENT</div>
-  <h1 class="h3">Patient registration</h1>
-  <p class="muted">Search a UHID or phone number before creating a record. Add every test, then save. The visit is processed onto the cashier’s outstanding dues.</p>
-</div>
-<div class="card p-4 mb-4">
-  <h2 class="h5">Find an existing patient</h2>
-  <form method="get" class="row g-2">
-    <input type="hidden" name="vq" value="{{ visit_filters.q }}">
-    <input type="hidden" name="vcentre" value="{{ visit_filters.centre }}">
-    <input type="hidden" name="vstatus" value="{{ visit_filters.status }}">
-    <input type="hidden" name="vchannel" value="{{ visit_filters.channel }}">
-    <input type="hidden" name="vpay" value="{{ visit_filters.pay }}">
-    <input type="hidden" name="vfrom" value="{{ visit_filters.start }}">
-    <input type="hidden" name="vto" value="{{ visit_filters.end }}">
-    <input type="hidden" name="per" value="{{ request.GET.per }}">
-    <div class="col-md-8"><input class="form-control" name="q" value="{{ query }}" placeholder="UHID, phone, or name"></div>
-    <div class="col-md-4"><button class="btn btn-outline-dark" type="submit">Search</button></div>
-  </form>
-  {% if query %}
-    <div class="table-responsive mt-3">
-      <table class="table align-middle">
-        <thead><tr><th>UHID</th><th>Patient</th><th>Phone</th><th></th></tr></thead>
-        <tbody>
-          {% for patient in matches %}
-            <tr>
-              <td class="fw-semibold">{{ patient.uhid }}</td>
-              <td>{{ patient.title }} {{ patient.first_name }} {{ patient.last_name }}</td>
-              <td>{{ patient.phone_country_code }} {{ patient.phone_number }}</td>
-              <td class="text-nowrap">
-                <a class="btn btn-sm btn-primary" href="?q={{ query }}&patient={{ patient.pk }}&vq={{ visit_filters.q|urlencode }}&vcentre={{ visit_filters.centre }}&vstatus={{ visit_filters.status }}&vchannel={{ visit_filters.channel }}&vpay={{ visit_filters.pay }}&vfrom={{ visit_filters.start }}&vto={{ visit_filters.end }}&per={{ request.GET.per }}">Open a visit</a>
-                <a class="btn btn-sm btn-outline-dark" href="{% url 'patient-timeline' patient.pk %}">Timeline</a>
-              </td>
-            </tr>
-          {% empty %}
-            <tr><td colspan="4" class="muted py-3">No patient in your centres matches that search.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-    {% include "includes/pagination.html" with page=matches %}
+<div class="mb-4 d-flex flex-wrap justify-content-between align-items-end gap-2">
+  <div>
+    <div class="muted small">PATIENT MANAGEMENT</div>
+    <h1 class="h3">Patient registration</h1>
+    <p class="muted mb-0">Enter the mobile number first. Returning patients are detected automatically — there is no separate returning-patient form. UHID is assigned by the system and cannot be edited.</p>
+  </div>
+  {% if can_modify_patient_data %}
+    <a class="btn btn-outline-dark btn-sm" href="{% url 'patient-demographics' %}">Modify demographics</a>
   {% endif %}
 </div>
-{% if selected_patient %}
+
 <div class="card p-4 mb-4">
-  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
-    <div>
-      <h2 class="h5">Another visit for {{ selected_patient.uhid }}</h2>
-      <p class="muted mb-0">{{ selected_patient.title }} {{ selected_patient.first_name }} {{ selected_patient.last_name }} · {{ selected_patient.phone_country_code }} {{ selected_patient.phone_number }}</p>
+  <h2 class="h5 mb-3">Registration</h2>
+  <form method="post" enctype="multipart/form-data" class="row g-3 registration-form" id="registration-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="register" id="reg-action">
+    <input type="hidden" name="existing_patient" value="" id="existing-patient">
+
+    <div class="col-md-2">
+      <label class="form-label">Code</label>
+      <select name="phone_country_code" class="form-select" id="field-phone-code">{% for code in phone_codes %}<option {% if code == '+234' %}selected{% endif %}>{{ code }}</option>{% endfor %}</select>
     </div>
-    <a class="btn btn-sm btn-outline-dark" href="{% url 'patient-timeline' selected_patient.pk %}">View timeline</a>
-  </div>
-  <form method="post" enctype="multipart/form-data" class="row g-3 registration-form">
-    {% csrf_token %}
-    <input type="hidden" name="action" value="new_visit">
-    <input type="hidden" name="patient" value="{{ selected_patient.pk }}">
-    <div class="col-md-4"><label class="form-label">Centre</label><select name="centre" class="form-select centre-select" required>{% for centre in centres %}<option value="{{ centre.pk }}">{{ centre.code }} — {{ centre.name }}</option>{% endfor %}</select></div>
-    {% include "patients/_notification_prefs.html" with prefix="return" patient=selected_patient %}
-    {% include "patients/_visit_fields.html" %}
-    {% include "patients/_tests.html" with prefix="return" %}
-    <div class="col-md-4"><label class="form-label">Supporting document</label><input name="document" type="file" accept=".pdf,.jpg,.jpeg,.png" class="form-control"></div>
-    <div class="col-md-4"><label class="form-label">Document type</label><select name="document_type" class="form-select"><option value="REGISTRATION">Registration form</option><option value="REFERRAL">Referral form</option><option value="OTHER">Other</option></select></div>
-    <div class="col-12"><button class="btn btn-primary" type="submit">Save (Processed)</button></div>
-  </form>
-</div>
-{% endif %}
-<div class="card p-4 mb-4">
-  <h2 class="h5 mb-3">New patient and first visit</h2>
-  <form method="post" enctype="multipart/form-data" class="row g-3 registration-form">
-    {% csrf_token %}
-    <input type="hidden" name="action" value="register">
-    <div class="col-md-4"><label class="form-label">Registration centre</label><select name="centre" class="form-select centre-select" required><option value="">Choose centre</option>{% for centre in centres %}<option value="{{ centre.pk }}">{{ centre.code }} — {{ centre.name }}</option>{% endfor %}</select></div>
-    <div class="col-md-2"><label class="form-label">Title</label><select name="title" class="form-select">{% for value, label in titles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
-    <div class="col-md-3"><label class="form-label">First name</label><input name="first_name" class="form-control" required maxlength="100"></div>
-    <div class="col-md-3"><label class="form-label">Last name</label><input name="last_name" class="form-control" required maxlength="100"></div>
-    <div class="col-md-4"><label class="form-label">Other names</label><input name="other_names" class="form-control" maxlength="100"></div>
-    <div class="col-md-4"><label class="form-label">Gender</label><select name="sex" class="form-select">{% for value, label in sexes %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
-    <div class="col-md-4"><label class="form-label">Date of birth</label><input name="date_of_birth" type="date" class="form-control dob-input"></div>
+    <div class="col-md-4">
+      <label class="form-label">Mobile <span class="text-danger">*</span></label>
+      <input name="phone_number" id="field-phone" class="form-control phone-10" type="tel" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" required placeholder="8012345678" title="Enter exactly 10 digits after +234" autocomplete="tel-national">
+      <div class="form-text">Enter 10 digits first. Returning patients are confirmed here.</div>
+      <div id="returning-banner" class="alert alert-info py-2 px-3 mt-2 mb-0 d-none small"></div>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">UHID</label>
+      <input id="field-uhid" class="form-control" value="" readonly tabindex="-1" placeholder="Assigned on save">
+      <div class="form-text">Not editable</div>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Registration centre</label>
+      <select name="centre" class="form-select centre-select" required><option value="">Choose centre</option>{% for centre in centres %}<option value="{{ centre.pk }}">{{ centre.code }} — {{ centre.name }}</option>{% endfor %}</select>
+    </div>
+
+    <div class="col-md-2"><label class="form-label">Title</label><select name="title" id="field-title" class="form-select">{% for value, label in titles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label">First name</label><input name="first_name" id="field-first-name" class="form-control" required maxlength="100"></div>
+    <div class="col-md-3"><label class="form-label">Last name</label><input name="last_name" id="field-last-name" class="form-control" required maxlength="100"></div>
+    <div class="col-md-4"><label class="form-label">Other names</label><input name="other_names" id="field-other-names" class="form-control" maxlength="100"></div>
+    <div class="col-md-4"><label class="form-label">Gender</label><select name="sex" id="field-sex" class="form-select">{% for value, label in sexes %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Date of birth</label><input name="date_of_birth" id="field-dob" type="date" class="form-control dob-input"></div>
+    <div class="col-md-4"><label class="form-label">Guardian name</label><input name="guardian_name" class="form-control" maxlength="120" placeholder="Required if under 18"></div>
+    <div class="col-md-4"><label class="form-label">Guardian relationship</label><select name="guardian_relationship" class="form-select"><option value="">—</option><option>Parent</option><option>Mother</option><option>Father</option><option>Guardian</option><option>Other</option></select></div>
+    <div class="col-md-4"><label class="form-label">Guardian mobile</label><input name="guardian_phone" class="form-control phone-10" maxlength="10" pattern="[0-9]{10}" placeholder="Required if under 18"></div>
     <div class="col-md-4">
       <label class="form-label">Age from date of birth</label>
       <div class="row g-2">
@@ -87,40 +56,33 @@
         <div class="col-4"><input class="form-control age-days" placeholder="Days" readonly tabindex="-1"></div>
       </div>
     </div>
-    <div class="col-md-2"><label class="form-label">Code</label><select name="phone_country_code" class="form-select">{% for code in phone_codes %}<option {% if code == '+234' %}selected{% endif %}>{{ code }}</option>{% endfor %}</select></div>
-    <div class="col-md-4">
-      <label class="form-label">Mobile</label>
-      <input name="phone_number" class="form-control phone-10" type="tel" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" required placeholder="8012345678" title="Enter exactly 10 digits after +234">
-      <div class="form-text">Exactly 10 digits (Nigerian local number after +234).</div>
-    </div>
     <div class="col-md-3">
       <label class="form-label">Alternate mobile</label>
-      <input name="alt_phone" class="form-control phone-10" type="tel" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="Optional 10 digits" title="Enter exactly 10 digits if provided">
+      <input name="alt_phone" id="field-alt-phone" class="form-control phone-10" type="tel" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="Optional 10 digits">
     </div>
     <div class="col-md-3">
       <label class="form-label">Email</label>
-      <input name="email" type="email" class="form-control" inputmode="email" autocomplete="email" placeholder="name@example.com" title="Enter a valid email address">
+      <input name="email" id="field-email" type="email" class="form-control" inputmode="email" autocomplete="email" placeholder="name@example.com">
       <div class="invalid-feedback email-feedback">Enter a valid email address.</div>
     </div>
     {% include "patients/_notification_prefs.html" with prefix="new" %}
-    <div class="col-md-6"><label class="form-label">Address</label><input name="address" class="form-control"></div>
-    <div class="col-md-3"><label class="form-label">City</label><input name="city" class="form-control" maxlength="80"></div>
-    <div class="col-md-3"><label class="form-label">State</label><select name="state" class="form-select">{% for value, label in states %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
-    <div class="col-md-4"><label class="form-label">Race</label><select name="race" class="form-select">{% for value, label in races %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
-    <div class="col-md-4"><label class="form-label">Health card number</label><input name="health_card_number" class="form-control" maxlength="40"></div>
-    <div class="col-md-4"><label class="form-label">Passport number</label><input name="passport_number" class="form-control" maxlength="40"></div>
+    <div class="col-md-6"><label class="form-label">Address</label><input name="address" id="field-address" class="form-control"></div>
+    <div class="col-md-3"><label class="form-label">City</label><input name="city" id="field-city" class="form-control" maxlength="80"></div>
+    <div class="col-md-3"><label class="form-label">State</label><select name="state" id="field-state" class="form-select">{% for value, label in states %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Race</label><select name="race" id="field-race" class="form-select">{% for value, label in races %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Health card number</label><input name="health_card_number" id="field-health-card" class="form-control" maxlength="40"></div>
+    <div class="col-md-4"><label class="form-label">Passport number</label><input name="passport_number" id="field-passport" class="form-control" maxlength="40"></div>
     {% include "patients/_visit_fields.html" %}
     {% include "patients/_tests.html" with prefix="new" %}
     <div class="col-md-4"><label class="form-label">Clinical history or registration form</label><input name="document" type="file" accept=".pdf,.jpg,.jpeg,.png" class="form-control"><div class="form-text">PDF, JPEG, or PNG, maximum 10 MB.</div></div>
     <div class="col-md-4"><label class="form-label">Document type</label><select name="document_type" class="form-select"><option value="REGISTRATION">Registration form</option><option value="REFERRAL">Referral form</option><option value="OTHER">Other</option></select></div>
-    <div class="col-12"><button class="btn btn-primary" type="submit">Save (Processed)</button></div>
+    <div class="col-12"><button class="btn btn-primary" type="submit" id="reg-submit">Save (Processed)</button></div>
   </form>
 </div>
+
 <div class="card p-4">
   <h2 class="h5">Recent visits you can see</h2>
   <form method="get" class="row g-2 align-items-end mb-3">
-    <input type="hidden" name="q" value="{{ query }}">
-    {% if selected_patient %}<input type="hidden" name="patient" value="{{ selected_patient.pk }}">{% endif %}
     <div class="col-lg-4">
       <label class="form-label">Search</label>
       <input class="form-control" name="vq" value="{{ visit_filters.q }}" placeholder="Visit, UHID, name, phone, doctor, or HMO">
@@ -168,7 +130,7 @@
       </select>
     </div>
     <div class="col-md-4 col-lg-2"><button class="btn btn-outline-dark w-100" type="submit">Apply filter</button></div>
-    <div class="col-md-4 col-lg-2"><a class="btn btn-link" href="{% url 'patient-registration' %}{% if query %}?q={{ query|urlencode }}{% if selected_patient %}&patient={{ selected_patient.pk }}{% endif %}{% endif %}">Clear</a></div>
+    <div class="col-md-4 col-lg-2"><a class="btn btn-link" href="{% url 'patient-registration' %}">Clear</a></div>
   </form>
   {% if visits %}
   <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end mb-3">
@@ -221,6 +183,9 @@
 {{ test_catalog|json_script:"test-catalog" }}
 <script>
 const channelCatalog = JSON.parse(document.getElementById('channel-catalog').textContent);
+const phoneLookupUrl = "{% url 'patient-phone-lookup' %}";
+let lastLookedUpPhone = '';
+let returningPromptActive = false;
 
 function fillSelect(select, rows, placeholder) {
   const current = select.value;
@@ -243,10 +208,12 @@ function fillDoctorSelect(form) {
   const doctor = form.querySelector('.doctor-select');
   const search = form.querySelector('.doctor-search');
   const institutions = form.querySelector('.institution-select');
+  const unknown = form.querySelector('.referring-unknown');
   if (!doctor) return;
   const centreId = centre ? centre.value : '';
   const query = search ? search.value.trim().toLowerCase() : '';
-  let doctors = centreId ? channelCatalog.doctors.filter((row) => row.centre === centreId) : [];
+  const unknownChecked = unknown && unknown.checked;
+  let doctors = centreId ? channelCatalog.doctors.filter((row) => (row.centres || [row.centre]).includes(centreId)) : [];
   if (query) {
     doctors = doctors.filter((row) => row.name.toLowerCase().includes(query));
   }
@@ -254,9 +221,11 @@ function fillDoctorSelect(form) {
   if (!doctors.length && centreId) {
     doctor.options[0].textContent = query ? 'No matching doctor' : 'Choose a doctor';
   }
+  doctor.disabled = unknownChecked;
+  if (search) search.disabled = unknownChecked;
   if (institutions) {
     const chosen = channelCatalog.doctors.find((row) => row.id === doctor.value);
-    const places = chosen ? chosen.institutions : [];
+    const places = (!unknownChecked && chosen) ? chosen.institutions : [];
     const previous = new Set([...institutions.selectedOptions].map((option) => option.value));
     institutions.replaceChildren();
     places.forEach((place) => {
@@ -266,6 +235,7 @@ function fillDoctorSelect(form) {
       option.selected = previous.has(place.id);
       institutions.appendChild(option);
     });
+    institutions.disabled = unknownChecked;
   }
 }
 
@@ -309,43 +279,120 @@ function digitsOnly(value) {
   return String(value || '').replace(/\D/g, '');
 }
 
-document.querySelectorAll('.registration-form').forEach((form) => {
-  form.addEventListener('change', () => syncRegistration(form));
-  form.addEventListener('input', (event) => {
-    if (event.target.classList.contains('phone-10')) {
-      event.target.value = digitsOnly(event.target.value).slice(0, 10);
-    }
-    syncRegistration(form);
+function setField(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.value = value == null ? '' : value;
+}
+
+function applyReturningPatient(patient) {
+  setField('existing-patient', patient.id);
+  setField('field-uhid', patient.uhid);
+  setField('field-title', patient.title || '');
+  setField('field-first-name', patient.first_name || '');
+  setField('field-last-name', patient.last_name || '');
+  setField('field-other-names', patient.other_names || '');
+  setField('field-sex', patient.sex || '');
+  setField('field-dob', patient.date_of_birth || '');
+  setField('field-phone-code', patient.phone_country_code || '+234');
+  setField('field-phone', patient.phone_number || '');
+  setField('field-alt-phone', patient.alt_phone || '');
+  setField('field-email', patient.email || '');
+  setField('field-address', patient.address || '');
+  setField('field-city', patient.city || '');
+  setField('field-state', patient.state || '');
+  setField('field-race', patient.race || '');
+  setField('field-health-card', patient.health_card_number || '');
+  setField('field-passport', patient.passport_number || '');
+  const banner = document.getElementById('returning-banner');
+  banner.classList.remove('d-none');
+  banner.textContent = 'Returning patient ' + patient.uhid + ' — ' + patient.display_name + '. Demographics filled; complete visit details and tests.';
+  document.getElementById('reg-submit').textContent = 'Save visit (Processed)';
+  syncRegistration(document.getElementById('registration-form'));
+}
+
+function clearReturningPatient(keepPhone) {
+  const phone = keepPhone ? document.getElementById('field-phone').value : '';
+  setField('existing-patient', '');
+  setField('field-uhid', '');
+  ['field-title','field-first-name','field-last-name','field-other-names','field-sex','field-dob',
+   'field-alt-phone','field-email','field-address','field-city','field-state','field-race',
+   'field-health-card','field-passport'].forEach((id) => setField(id, ''));
+  if (!keepPhone) setField('field-phone', '');
+  else setField('field-phone', phone);
+  const banner = document.getElementById('returning-banner');
+  banner.classList.add('d-none');
+  banner.textContent = '';
+  document.getElementById('reg-submit').textContent = 'Save (Processed)';
+}
+
+async function lookupPhone(phone) {
+  if (phone.length !== 10 || phone === lastLookedUpPhone || returningPromptActive) return;
+  lastLookedUpPhone = phone;
+  const response = await fetch(phoneLookupUrl + '?phone=' + encodeURIComponent(phone), {
+    headers: { 'Accept': 'application/json' },
+    credentials: 'same-origin',
   });
-  const doctorSearch = form.querySelector('.doctor-search');
-  if (doctorSearch) {
-    doctorSearch.addEventListener('input', () => fillDoctorSelect(form));
+  if (!response.ok) return;
+  const data = await response.json();
+  if (!data.found || !data.patients.length) {
+    if (document.getElementById('existing-patient').value) clearReturningPatient(true);
+    return;
   }
-  form.addEventListener('submit', (event) => {
-    const email = form.querySelector('input[name="email"]');
-    if (email && email.value.trim()) {
-      if (!email.checkValidity()) {
-        event.preventDefault();
-        email.classList.add('is-invalid');
-        email.reportValidity();
-        return;
-      }
-      email.classList.remove('is-invalid');
+  const patient = data.patients[0];
+  returningPromptActive = true;
+  const ok = window.confirm(
+    "This patient's data exists (" + patient.uhid + ' — ' + patient.display_name + '). Continue with registration?\n\nOK = load demographics\nCancel = keep typing as a new patient'
+  );
+  returningPromptActive = false;
+  if (ok) applyReturningPatient(patient);
+  else {
+    clearReturningPatient(true);
+    lastLookedUpPhone = phone;
+  }
+}
+
+const form = document.getElementById('registration-form');
+form.addEventListener('change', () => syncRegistration(form));
+form.addEventListener('input', (event) => {
+  if (event.target.classList.contains('phone-10')) {
+    event.target.value = digitsOnly(event.target.value).slice(0, 10);
+  }
+  if (event.target.id === 'field-phone') {
+    const phone = event.target.value;
+    if (phone.length < 10) {
+      lastLookedUpPhone = '';
+      if (document.getElementById('existing-patient').value) clearReturningPatient(true);
+    } else {
+      lookupPhone(phone);
     }
-    const phones = form.querySelectorAll('.phone-10');
-    for (const phone of phones) {
-      if (!phone.value && !phone.required) continue;
-      if (!/^\d{10}$/.test(phone.value)) {
-        event.preventDefault();
-        phone.setCustomValidity('Enter exactly 10 digits.');
-        phone.reportValidity();
-        return;
-      }
-      phone.setCustomValidity('');
-    }
-  });
+  }
   syncRegistration(form);
 });
+form.querySelector('.doctor-search')?.addEventListener('input', () => fillDoctorSelect(form));
+form.addEventListener('submit', (event) => {
+  const email = form.querySelector('input[name="email"]');
+  if (email && email.value.trim()) {
+    if (!email.checkValidity()) {
+      event.preventDefault();
+      email.classList.add('is-invalid');
+      email.reportValidity();
+      return;
+    }
+    email.classList.remove('is-invalid');
+  }
+  const phones = form.querySelectorAll('.phone-10');
+  for (const phone of phones) {
+    if (!phone.value && !phone.required) continue;
+    if (!/^\d{10}$/.test(phone.value)) {
+      event.preventDefault();
+      phone.setCustomValidity('Enter exactly 10 digits.');
+      phone.reportValidity();
+      return;
+    }
+    phone.setCustomValidity('');
+  }
+});
+syncRegistration(form);
 
 const testCatalog = JSON.parse(document.getElementById('test-catalog').textContent);
 

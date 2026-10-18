@@ -22,7 +22,11 @@
       <select name="referral_doctor" class="form-select doctor-select" size="6">
         <option value="">Choose the centre first</option>
       </select>
-      <div class="form-text">Search, then choose a doctor set up for this centre.</div>
+      <div class="form-check mt-2">
+        <input class="form-check-input referring-unknown" type="checkbox" name="referring_doctor_unknown" value="1" id="referring-doctor-unknown">
+        <label class="form-check-label" for="referring-doctor-unknown">Referring doctor unknown — assign DEFAULT DOCTOR</label>
+      </div>
+      <div class="form-text">Search and choose a doctor, or tick unknown to map later.</div>
     </div>
     <div class="col-md-7">
       <label class="form-label">Referral institutions</label>

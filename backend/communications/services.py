@@ -17,12 +17,18 @@ class ProviderNotConfigured(Exception):
     pass
 
 
-def queue_message(*, centre, channel, recipient, body, subject='', visit=None, user=None):
+def queue_message(*, centre, channel, recipient, body, subject='', visit=None, user=None, idempotency_key=''):
     if not recipient or not str(recipient).strip():
         return None
+    key = (idempotency_key or '')[:120]
+    if key:
+        existing = NotificationOutbox.objects.filter(idempotency_key=key, channel=channel).first()
+        if existing:
+            return existing
     note = NotificationOutbox.objects.create(
         centre=centre, visit=visit, channel=channel, recipient=str(recipient).strip()[:255],
         subject=(subject or '')[:200], body=body, created_by=user, status='QUEUED',
+        idempotency_key=key,
     )
     return dispatch_one(note)
 

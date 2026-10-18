@@ -1,26 +1,64 @@
 {% extends "base.html" %}
 {% block title %}Phlebotomy | HFDN{% endblock %}
 {% block content %}
-<div class="mb-4">
-  <div class="muted small">PHLEBOTOMY</div>
-  <h1 class="h3">Phlebotomy dashboard</h1>
-  <p class="muted">Only visits the paypoint has paid in full appear here. Result entry, review, and release stay with the laboratory.</p>
+<div class="hero-band dash-enter">
+  <div class="muted small mb-1">STEP 3 · SAMPLE COLLECTION</div>
+  <h1 class="h3 mb-1">Phlebotomy &amp; barcode generation</h1>
+  <p class="muted mb-0">Only fully paid (or credit-cleared) orders appear here. Each collection creates a unique sample ID and Code128 barcode.</p>
 </div>
+
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-lg-3">
+    <div class="kpi">
+      <span class="kpi-icon" style="background:#e7f4f2;color:#0f5c56"><i class="bi bi-hourglass-split"></i></span>
+      <div>
+        <div class="kpi-label">WAITING</div>
+        <div class="kpi-value">{{ pending_count }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="kpi">
+      <span class="kpi-icon" style="background:#eef3ff;color:#314e8c"><i class="bi bi-upc-scan"></i></span>
+      <div>
+        <div class="kpi-label">READY TO HAND OFF</div>
+        <div class="kpi-value">{{ collected_count }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="kpi">
+      <span class="kpi-icon" style="background:#f4f1ea;color:#3d3a33"><i class="bi bi-clock-history"></i></span>
+      <div>
+        <div class="kpi-label">COLLECTION HISTORY</div>
+        <div class="kpi-value">{{ history_count }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="row g-3">
   <div class="col-lg-7">
     <div class="card p-4">
-      <h2 class="h5">Waiting for collection</h2>
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h5 mb-0">Waiting for collection</h2>
+        <span class="badge badge-soft">Payment confirmed</span>
+      </div>
       {% for order in pending_orders %}
         <form method="post" class="border-bottom py-3">
           {% csrf_token %}
           <input type="hidden" name="action" value="collect">
           <input type="hidden" name="order" value="{{ order.pk }}">
-          <div class="d-flex flex-wrap justify-content-between gap-2 align-items-center">
+          <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
             <div>
               <div class="fw-semibold">{{ order.visit.patient.first_name }} {{ order.visit.patient.last_name }}</div>
-              <div class="small muted">{{ order.visit.visit_id }} · {{ order.test.name }} · {{ order.visit.centre.code }}</div>
+              <div class="small muted">{{ order.visit.visit_id }} · UHID {{ order.visit.patient.uhid }}</div>
+              <div class="small">{{ order.test.name }} · {{ order.test.department }} · {{ order.visit.centre.code }}</div>
             </div>
-            <button class="btn btn-primary btn-sm" type="submit">Collect</button>
+            <div class="d-flex flex-column gap-2" style="min-width:11rem">
+              <input class="form-control form-control-sm" name="note" placeholder="Collection note (optional)">
+              <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-droplet-half"></i> Collect &amp; barcode</button>
+            </div>
           </div>
         </form>
       {% empty %}
@@ -31,22 +69,110 @@
   </div>
   <div class="col-lg-5">
     <div class="card p-4">
-      <h2 class="h5">Collected, not yet received by the bench</h2>
+      <h2 class="h5 mb-3">Collected — print &amp; hand off</h2>
       {% for sample in collected_samples %}
-        <form method="post" class="border-bottom py-3">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="recollect">
-          <input type="hidden" name="sample" value="{{ sample.pk }}">
-          <div class="fw-semibold">{{ sample.sample_id }}</div>
-          <div class="small muted mb-2">{{ sample.order.test.name }} · {{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }}</div>
-          <input class="form-control form-control-sm mb-2" name="reason" placeholder="Reason if this sample must be recollected">
-          <button class="btn btn-outline-dark btn-sm" type="submit">Recollect</button>
-        </form>
+        <div class="border-bottom py-3">
+          <div class="d-flex justify-content-between gap-2 align-items-start">
+            <div>
+              <div class="fw-semibold font-monospace">{{ sample.sample_id }}</div>
+              <div class="small muted">{{ sample.order.test.name }} · {{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }}</div>
+              <div class="small muted">{% if sample.collected_at %}{{ sample.collected_at|date:"Y-m-d H:i" }}{% endif %}</div>
+            </div>
+            <a class="btn btn-sm btn-outline-dark" href="{% url 'sample-label' sample.pk %}?print=1" target="_blank"><i class="bi bi-upc"></i> Label</a>
+          </div>
+          <form method="post" class="mt-2">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="recollect">
+            <input type="hidden" name="sample" value="{{ sample.pk }}">
+            <div class="row g-1">
+              <div class="col-12">
+                <input class="form-control form-control-sm" name="reason" placeholder="Reason for recollection (original will be superseded)" required>
+              </div>
+              <div class="col-6">
+                <select class="form-select form-select-sm" name="disposition" title="Disposition of original">
+                  <option value="SUPERSEDED">Superseded</option>
+                  <option value="UNSUITABLE">Unsuitable</option>
+                  <option value="REJECTED">Rejected</option>
+                </select>
+              </div>
+              <div class="col-6">
+                <input class="form-control form-control-sm" name="corrective_action" placeholder="Corrective action (optional)">
+              </div>
+              <div class="col-12">
+                <button class="btn btn-sm btn-outline-danger w-100" type="submit">Recollect &amp; supersede</button>
+              </div>
+            </div>
+          </form>
+        </div>
       {% empty %}
-        <p class="muted mb-0">No collected samples are waiting to leave phlebotomy.</p>
+        <p class="muted mb-0">No collected samples waiting to leave phlebotomy.</p>
       {% endfor %}
       {% include "includes/pagination.html" with page=collected_samples %}
     </div>
   </div>
+</div>
+
+<div class="card p-4 mt-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+    <div>
+      <h2 class="h5 mb-1">Collection history</h2>
+      <p class="muted small mb-0">Every sample collected at your centres, including those already batched, received, released, rejected, or superseded.</p>
+    </div>
+  </div>
+  <form method="get" class="row g-2 mb-3">
+    <div class="col-md-5">
+      <label class="form-label small">Search</label>
+      <input class="form-control form-control-sm" name="hq" value="{{ history_query }}" placeholder="Sample ID, patient, UHID, visit, or test">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small">From</label>
+      <input class="form-control form-control-sm" type="date" name="hfrom" value="{{ history_from }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small">To</label>
+      <input class="form-control form-control-sm" type="date" name="hto" value="{{ history_to }}">
+    </div>
+    <div class="col-md-3 d-flex align-items-end gap-2">
+      <button class="btn btn-sm btn-dark" type="submit">Search history</button>
+      <a class="btn btn-sm btn-outline-dark" href="{% url 'phlebotomy-workspace' %}">Clear</a>
+    </div>
+  </form>
+  <div class="table-responsive">
+    <table class="table mb-0">
+      <thead>
+        <tr>
+          <th>Collected</th>
+          <th>Sample</th>
+          <th>Patient</th>
+          <th>Test</th>
+          <th>Collected by</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sample in collection_history %}
+        <tr>
+          <td class="small">{% if sample.collected_at %}{{ sample.collected_at|date:"Y-m-d H:i" }}{% else %}—{% endif %}</td>
+          <td>
+            <div class="fw-semibold font-monospace">{{ sample.sample_id }}</div>
+            <div class="small muted">{{ sample.order.visit.visit_id }} · {{ sample.centre.code }}</div>
+          </td>
+          <td>
+            <div>{{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }}</div>
+            <div class="small muted">{{ sample.order.visit.patient.uhid }}</div>
+          </td>
+          <td class="small">{{ sample.order.test.name }}{% if sample.specimen_type %}<div class="muted">{{ sample.specimen_type }}</div>{% endif %}</td>
+          <td class="small">{{ sample.collected_by.get_username|default:"—" }}</td>
+          <td><span class="badge-soft badge rounded-pill">{{ sample.get_status_display }}</span></td>
+          <td class="text-end"><a class="btn btn-sm btn-outline-dark" href="{% url 'sample-label' sample.pk %}" target="_blank">Label</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="muted">No collected samples match this history.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=collection_history %}
 </div>
 {% endblock %}

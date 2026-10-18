@@ -100,10 +100,48 @@
           <div class="col-12"><button class="btn btn-outline-dark btn-sm" type="submit">Save centre</button></div>
         </form>
       </div>
+      {% if report_format %}
+      <div class="card p-4 mt-4" id="report-format">
+        <h2 class="h5">Result formatting</h2>
+        <p class="small muted">Controls letterhead, colours, layout and whether authenticator signatures appear on lab and radiology printouts for this centre.</p>
+        <form method="post" class="row g-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="save_report_format">
+          <input type="hidden" name="centre" value="{{ selected.pk }}">
+          <div class="col-md-6"><label class="form-label">Lab report title</label><input class="form-control" name="title_lab" value="{{ report_format.title_lab }}"></div>
+          <div class="col-md-6"><label class="form-label">Radiology report title</label><input class="form-control" name="title_radiology" value="{{ report_format.title_radiology }}"></div>
+          <div class="col-12"><label class="form-label">Header text</label><textarea class="form-control" name="header_text" rows="2" placeholder="Optional line under centre name">{{ report_format.header_text }}</textarea></div>
+          <div class="col-12"><label class="form-label">Footer text</label><textarea class="form-control" name="footer_text" rows="2">{{ report_format.footer_text }}</textarea></div>
+          <div class="col-md-6"><label class="form-label">Layout</label>
+            <select class="form-select" name="layout_style">
+              {% for value, label in layout_choices %}<option value="{{ value }}" {% if report_format.layout_style == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6"><label class="form-label">Font</label>
+            <select class="form-select" name="font_family">
+              {% for value, label in font_choices %}<option value="{{ value }}" {% if report_format.font_family == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4"><label class="form-label">Body font size</label><input class="form-control" type="number" min="8" max="14" name="body_font_size" value="{{ report_format.body_font_size }}"></div>
+          <div class="col-md-4"><label class="form-label">Margin (mm)</label><input class="form-control" type="number" min="10" max="30" name="margin_mm" value="{{ report_format.margin_mm }}"></div>
+          <div class="col-md-4"><label class="form-label">Watermark</label><input class="form-control" name="watermark_text" value="{{ report_format.watermark_text }}" placeholder="Optional e.g. CONFIDENTIAL"></div>
+          <div class="col-md-6"><label class="form-label">Primary colour</label><input class="form-control" type="color" name="primary_color" value="{{ report_format.primary_color }}"></div>
+          <div class="col-md-6"><label class="form-label">Accent colour</label><input class="form-control" type="color" name="accent_color" value="{{ report_format.accent_color }}"></div>
+          <div class="col-md-6"><label class="form-label">Signature label</label><input class="form-control" name="signature_label" value="{{ report_format.signature_label }}"></div>
+          <div class="col-12">
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="show_logo" id="fmt-logo" {% if report_format.show_logo %}checked{% endif %}><label class="form-check-label" for="fmt-logo">Show centre logo</label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="show_centre_address" id="fmt-addr" {% if report_format.show_centre_address %}checked{% endif %}><label class="form-check-label" for="fmt-addr">Show centre address</label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="show_centre_contact" id="fmt-contact" {% if report_format.show_centre_contact %}checked{% endif %}><label class="form-check-label" for="fmt-contact">Show phone / email</label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="show_authenticator_signature" id="fmt-sig" {% if report_format.show_authenticator_signature %}checked{% endif %}><label class="form-check-label" for="fmt-sig">Show authenticator signature block</label></div>
+          </div>
+          <div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Save result formatting</button></div>
+        </form>
+      </div>
+      {% endif %}
     {% else %}
       <div class="card p-4">
         <h2 class="h5">Select a centre</h2>
-        <p class="muted mb-0">Open a centre to edit details, upload a logo, set the sample digit, or deactivate it.</p>
+        <p class="muted mb-0">Open a centre to edit details, upload a logo, set result formatting, or deactivate it.</p>
       </div>
     {% endif %}
   </div>

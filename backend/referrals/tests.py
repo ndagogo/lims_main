@@ -23,7 +23,9 @@ class CommissionAccrualTests(TestCase):
         visit = Visit.objects.create(patient=patient, centre=centre, registered_by=user)
         doctor = ReferralDoctor.objects.create(centre=centre, doctor_code='DR1', first_name='Ife', last_name='Balogun', commission_type='PERCENT', commission_value=Decimal('10'))
         ReferralAttribution.objects.create(visit=visit, doctor=doctor, recorded_by=user)
-        test = Test.objects.create(code='GLU', name='Glucose')
+        from laboratory.models import ServiceGroup
+        group = ServiceGroup.objects.create(name='Chemistry', code='1')
+        test = Test.objects.create(code='GLU', name='Glucose', service_group=group)
         invoice = Invoice.objects.create(visit=visit, created_by=user, status='UNPAID')
         InvoiceItem.objects.create(invoice=invoice, test=test, unit_price=Decimal('10000.00'))
         client = APIClient()

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Barcode {{ sample.sample_id }} | HFDN{% endblock %}
+{% block extra_head %}
+<style>
+  @media print {
+    .sidebar, .mobile-nav, .no-print, .alert { display: none !important; }
+    main { width: 100% !important; max-width: 100% !important; margin: 0 !important; padding: .5rem !important; }
+    body { background: #fff !important; }
+    .label-sheet { box-shadow: none !important; border: 0 !important; }
+  }
+  .label-sheet {
+    max-width: 22rem;
+    border: 1px solid var(--hfdn-line);
+    border-radius: 1rem;
+    padding: 1.25rem 1.4rem;
+    background: #fff;
+  }
+  .label-sheet .barcode-wrap svg { width: 100%; height: auto; }
+  .label-meta { font-size: .85rem; color: var(--hfdn-muted); }
+  .label-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 1.35rem; letter-spacing: .04em; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="no-print mb-3 d-flex flex-wrap gap-2 align-items-center justify-content-between">
+  <div>
+    <div class="muted small">SAMPLE LABEL</div>
+    <h1 class="h4 mb-0">Barcode for {{ sample.sample_id }}</h1>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <button class="btn btn-primary" type="button" onclick="window.print()"><i class="bi bi-printer"></i> Print label</button>
+    <a class="btn btn-outline-dark" href="{% url 'sample-barcode-svg' sample.pk %}">SVG</a>
+    <a class="btn btn-outline-dark" href="{% url 'phlebotomy-workspace' %}">Back to phlebotomy</a>
+    <a class="btn btn-outline-dark" href="{% url 'laboratory-workspace' %}?stage=batch">Laboratory</a>
+  </div>
+</div>
+<div class="label-sheet dash-enter">
+  <div class="fw-semibold mb-1">Health Focus Diagnostics</div>
+  <div class="label-id mb-2">{{ sample.sample_id }}</div>
+  {% if barcode_svg %}
+    <div class="barcode-wrap mb-3">{{ barcode_svg|safe }}</div>
+  {% else %}
+    <p class="text-danger">{{ barcode_error|default:"Barcode could not be rendered." }}</p>
+  {% endif %}
+  <div class="label-meta">
+    <div><strong>{{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }}</strong></div>
+    <div>UHID {{ sample.order.visit.patient.uhid }} · Visit {{ sample.order.visit.visit_id }}</div>
+    <div>{{ sample.order.test.name }} · {{ sample.order.test.department }}</div>
+    <div>{{ sample.centre.name }} ({{ sample.centre.code }})</div>
+    <div>Collected {% if sample.collected_at %}{{ sample.collected_at|date:"Y-m-d H:i" }}{% else %}—{% endif %}
+      {% if sample.collected_by %} by {{ sample.collected_by.get_username }}{% endif %}
+    </div>
+  </div>
+</div>
+<div class="no-print mt-4">
+  <h2 class="h6">Print history</h2>
+  {% if print_history %}
+    <ul class="list-unstyled small mb-0">
+      {% for row in print_history %}
+        <li class="border-bottom py-1">
+          {{ row.printed_at|date:"Y-m-d H:i:s" }}
+          · {{ row.get_source_display }}
+          {% if row.printed_by %} · {{ row.printed_by.get_username }}{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted small mb-0">No prints recorded yet.</p>
+  {% endif %}
+</div>
+<script>
+(function () {
+  var url = "{{ record_print_url|escapejs }}";
+  var csrf = (document.cookie.match(/(?:^|; )csrftoken=([^;]*)/) || [])[1] || '';
+  var skipAfterPrint = {{ auto_print|yesno:"true,false" }};
+  function recordPrint(source) {
+    fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': decodeURIComponent(csrf),
+      },
+      body: JSON.stringify({ source: source || 'LABEL_PAGE' }),
+    }).catch(function () {});
+  }
+  window.addEventListener('afterprint', function () {
+    if (!skipAfterPrint) recordPrint('LABEL_PAGE');
+  });
+  {% if auto_print %}
+  window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 350); });
+  {% endif %}
+})();
+</script>
+{% endblock %}

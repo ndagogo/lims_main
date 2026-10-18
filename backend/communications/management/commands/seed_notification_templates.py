@@ -1,32 +1,41 @@
 from django.core.management.base import BaseCommand
 
-from communications.messaging import (
-    DEFAULT_BODIES, DEFAULT_SUBJECTS, EVENT_REGISTRATION_SUCCESS, EVENT_RESULT_READY, template_key,
-)
+from communications.messaging import DEFAULT_BODIES, DEFAULT_SUBJECTS, template_key, validate_template_text
 from communications.models import NotificationTemplate
 
-EVENTS = (
-    (EVENT_REGISTRATION_SUCCESS, 'Registration success'),
-    (EVENT_RESULT_READY, 'Result ready'),
-)
 CHANNELS = ('SMS', 'EMAIL', 'WHATSAPP')
+LABELS = {
+    'registration-success': 'Registration success',
+    'referral-received': 'Referral received',
+    'payment-receipt': 'Payment receipt',
+    'discount-requested': 'Discount requested',
+    'discount-decision': 'Discount decision',
+    'sample-recollection': 'Sample recollection',
+    'result-authenticated': 'Result authenticated',
+    'result-ready': 'Result ready',
+    'referral-withdrawal': 'Referral withdrawal',
+    'referral-payout': 'Referral payout settled',
+    'integration-failure': 'Integration failure',
+}
 
 
 class Command(BaseCommand):
-    help = 'Seed patient notification templates for SMS, email, and WhatsApp.'
+    help = 'Seed notification templates for SMS, email, and WhatsApp.'
 
     def handle(self, *args, **options):
         created = 0
-        for event_key, label in EVENTS:
+        for event_key, body in DEFAULT_BODIES.items():
+            validate_template_text(body)
+            validate_template_text(DEFAULT_SUBJECTS.get(event_key, ''))
             for channel in CHANNELS:
                 key = template_key(event_key, channel)
                 _, was_created = NotificationTemplate.objects.update_or_create(
                     key=key,
                     defaults={
-                        'name': f'{label} ({channel})',
+                        'name': f'{LABELS.get(event_key, event_key)} ({channel})',
                         'channel': channel,
-                        'subject_template': DEFAULT_SUBJECTS[event_key] if channel == 'EMAIL' else '',
-                        'body_template': DEFAULT_BODIES[event_key],
+                        'subject_template': DEFAULT_SUBJECTS.get(event_key, '') if channel == 'EMAIL' else '',
+                        'body_template': body,
                         'is_active': True,
                     },
                 )

@@ -2,7 +2,7 @@ from django.contrib.auth import authenticate, get_user_model
 from django.utils import timezone
 
 User = get_user_model()
-LOCKED = 'This account is temporarily locked after repeated sign-in failures. Try again later.'
+LOCKED = 'Your account has been temporarily lock. Please contact your system administrator for assiatnce'
 
 
 def attempt_login(username, password):

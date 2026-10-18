@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Patient portal{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-2">
+  <div>
+    <div class="eyebrow">UHID {{ patient.uhid }}</div>
+    <h1>Hello, {{ patient.first_name }}</h1>
+    <p class="muted mb-0">{{ patient.first_name }} {{ patient.last_name }}{% if patient.date_of_birth %} · born {{ patient.date_of_birth }}{% endif %}{% if patient.phone_number %} · {{ patient.phone_country_code }} {{ patient.phone_number }}{% endif %}</p>
+  </div>
+  <form method="post" action="{% url 'portal-logout' %}">{% csrf_token %}<button class="btn btn-outline-dark btn-sm">Sign out</button></form>
+</div>
+{% if messages %}{% for message in messages %}<div class="alert alert-info mt-3">{{ message }}</div>{% endfor %}{% endif %}
+<div class="row g-3 mt-1">
+  <div class="col-lg-8">
+    <div class="card p-3 p-md-4 mb-3">
+      <h2 class="section-title">My results</h2>
+      <p class="muted small">Only released reports for this UHID are listed. Draft results stay in the laboratory.</p>
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead><tr><th>Test</th><th>Sample</th><th></th></tr></thead>
+          <tbody>
+            {% for r in results %}
+            <tr>
+              <td class="fw-semibold">{{ r.sample.order.test.name }}</td>
+              <td class="font-monospace small">{{ r.sample.sample_id }}</td>
+              <td class="text-end">
+                <a href="{% url 'portal-patient-result' r.pk %}">View</a>
+                · <a href="{% url 'portal-patient-result-pdf' r.pk %}">Download</a>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3" class="muted">No released results yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if imaging %}
+      <h3 class="h6 mt-4">Imaging reports</h3>
+      <ul class="mb-0">
+        {% for report in imaging %}
+        <li><a href="{% url 'portal-patient-imaging' report.pk %}">{{ report.exam.order.procedure.name|default:"Imaging report" }}</a> · <a href="{% url 'portal-patient-imaging-pdf' report.pk %}">Download</a></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    <div class="card p-3 p-md-4 mb-3">
+      <h2 class="section-title">Invoices</h2>
+      <table class="table mb-0">
+        <thead><tr><th>Invoice</th><th>Visit</th><th>Status</th><th class="text-end">Total</th></tr></thead>
+        <tbody>
+          {% for i in invoices %}
+          <tr><td>{{ i.invoice_number }}</td><td class="font-monospace small">{{ i.visit.visit_id }}</td><td>{{ i.status }}</td><td class="text-end">₦{{ i.total }}</td></tr>
+          {% empty %}<tr><td colspan="4" class="muted">None</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card p-3 p-md-4">
+      <h2 class="section-title">Receipts</h2>
+      <table class="table mb-0">
+        <thead><tr><th>Receipt</th><th>Invoice</th><th class="text-end">Amount</th></tr></thead>
+        <tbody>
+          {% for p in receipts %}
+          <tr><td class="font-monospace small">{{ p.receipt_number }}</td><td>{{ p.invoice.invoice_number }}</td><td class="text-end">₦{{ p.amount }}</td></tr>
+          {% empty %}<tr><td colspan="3" class="muted">No confirmed receipts</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card p-3 p-md-4 mb-3">
+      <h2 class="section-title">Visits</h2>
+      {% for v in visits %}
+        <div class="status-pill"><span class="font-monospace">{{ v.visit_id }}</span><span class="muted small">{{ v.centre.name }}</span></div>
+      {% empty %}<p class="muted mb-0">No visits</p>{% endfor %}
+    </div>
+    <div class="card p-3 p-md-4 mb-3">
+      <h2 class="section-title">Notification preferences</h2>
+      <form method="post" action="{% url 'portal-patient-preferences' %}">
+        {% csrf_token %}
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="notify_sms" value="1" id="pref-sms" {% if patient.notify_sms %}checked{% endif %}><label class="form-check-label" for="pref-sms">SMS</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="notify_email" value="1" id="pref-email" {% if patient.notify_email %}checked{% endif %}><label class="form-check-label" for="pref-email">Email</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="notify_whatsapp" value="1" id="pref-wa" {% if patient.notify_whatsapp %}checked{% endif %}><label class="form-check-label" for="pref-wa">WhatsApp</label></div>
+        <p class="form-text">Messages confirm a visit, receipt, or that a result is ready. They do not contain the result itself.</p>
+        <button class="btn btn-sm btn-dark" type="submit">Save preferences</button>
+      </form>
+    </div>
+    <div class="card p-3 p-md-4">
+      <h2 class="section-title">Support or correction</h2>
+      <form method="post" action="{% url 'portal-patient-requests' %}" class="vstack gap-2">
+        {% csrf_token %}
+        <select name="kind" class="form-select form-select-sm"><option value="SUPPORT">Support</option><option value="CORRECTION">Ask for a correction</option></select>
+        <select name="visit" class="form-select form-select-sm"><option value="">No specific visit</option>{% for v in visits %}<option value="{{ v.pk }}">{{ v.visit_id }}</option>{% endfor %}</select>
+        <textarea name="message" class="form-control" rows="3" required placeholder="What should the centre look at?"></textarea>
+        <button class="btn btn-sm btn-outline-dark" type="submit">Send request</button>
+      </form>
+      {% for row in portal_requests %}
+      <div class="small mt-2"><span class="badge-soft badge rounded-pill">{{ row.kind }}</span> {{ row.message|truncatechars:80 }}</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

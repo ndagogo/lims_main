@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}Remap referring doctor | HFDN{% endblock %}
+{% block content %}
+<div class="mb-4 d-flex flex-wrap justify-content-between align-items-end gap-2">
+  <div>
+    <div class="muted small">REFERRALS</div>
+    <h1 class="h3">Remap referring doctor</h1>
+    <p class="muted mb-0">Search a patient to change their referring physician, or search remap history below. A patient request / registration form must be uploaded before remapping. Requires <code>change_referring_doctor</code>.</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'patient-registration' %}">Back to registration</a>
+</div>
+
+<form method="get" class="card p-4 mb-4">
+  <h2 class="h5">Search patient to remap</h2>
+  <div class="row g-2 align-items-end">
+    <div class="col-md-8">
+      <label class="form-label">Patient search</label>
+      <input class="form-control" name="q" value="{{ query }}" placeholder="UHID, phone, visit ID, or invoice">
+    </div>
+    <div class="col-md-4">
+      <button class="btn btn-outline-dark w-100" type="submit">Search patient</button>
+    </div>
+  </div>
+  {% if history_query %}<input type="hidden" name="hq" value="{{ history_query }}">{% endif %}
+  {% if history_from %}<input type="hidden" name="hfrom" value="{{ history_from }}">{% endif %}
+  {% if history_to %}<input type="hidden" name="hto" value="{{ history_to }}">{% endif %}
+</form>
+
+{% if query %}
+<div class="card p-4 mb-4">
+  <h2 class="h5">Matches with referring-doctor visits</h2>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>UHID</th><th>Patient</th><th>Phone</th><th></th></tr></thead>
+      <tbody>
+        {% for patient in matches %}
+          <tr>
+            <td class="fw-semibold">{{ patient.uhid }}</td>
+            <td>{{ patient.title }} {{ patient.first_name }} {{ patient.last_name }}</td>
+            <td>{{ patient.phone_country_code }} {{ patient.phone_number }}</td>
+            <td><a class="btn btn-sm btn-primary" href="?q={{ query|urlencode }}&patient={{ patient.pk }}{% if history_query %}&hq={{ history_query|urlencode }}{% endif %}{% if history_from %}&hfrom={{ history_from }}{% endif %}{% if history_to %}&hto={{ history_to }}{% endif %}">Remap</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="muted py-3">No patient with a referring-doctor visit matched that search.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=matches %}
+</div>
+{% endif %}
+
+{% if selected_patient %}
+<div class="card p-4 mb-4">
+  <h2 class="h5">{{ selected_patient.uhid }} — {{ selected_patient.first_name }} {{ selected_patient.last_name }}</h2>
+  {% if attributed_visits %}
+    {% for visit in attributed_visits %}
+      <div class="border-top py-3 remap-visit" data-visit="{{ visit.pk }}">
+        <div class="fw-semibold font-monospace">{{ visit.visit_id }}</div>
+        <div class="small muted mb-2">
+          {{ visit.centre.name }} · {{ visit.created_at|date:"Y-m-d H:i" }}
+          · currently
+          {% if visit.referral_attribution.doctor.is_default_placeholder %}
+            <strong>DEFAULT DOCTOR</strong>
+          {% else %}
+            <strong>{{ visit.referral_attribution.doctor.title }} {{ visit.referral_attribution.doctor.first_name }} {{ visit.referral_attribution.doctor.last_name }}</strong>
+            <span class="font-monospace">({{ visit.referral_attribution.doctor.doctor_code }})</span>
+          {% endif %}
+          <span class="request-form-status ms-1"></span>
+        </div>
+        <form method="post" class="row g-2 remap-form">
+          {% csrf_token %}
+          <input type="hidden" name="visit" value="{{ visit.pk }}">
+          <div class="col-md-5">
+            <label class="form-label">Map to referring doctor</label>
+            <select name="referral_doctor" class="form-select doctor-select" required>
+              <option value="">Choose a doctor</option>
+            </select>
+          </div>
+          <div class="col-md-5">
+            <label class="form-label">Institutions</label>
+            <select name="referral_institutions" class="form-select institution-select" multiple size="3"></select>
+          </div>
+          <div class="col-md-2 d-flex align-items-end">
+            <button class="btn btn-primary w-100" type="submit">Save mapping</button>
+          </div>
+          <div class="col-12">
+            <input name="referral_note" class="form-control form-control-sm" placeholder="Reason for remapping (recommended)" maxlength="255">
+          </div>
+        </form>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted mb-0">This patient has no visits with a referring doctor attribution.</p>
+  {% endif %}
+</div>
+{{ doctor_catalog|json_script:"remap-doctor-catalog" }}
+<script>
+(function () {
+  const catalog = JSON.parse(document.getElementById('remap-doctor-catalog').textContent || '{}');
+  const requestFormMsg = "{{ request_form_message|escapejs }}";
+  const sameDoctorMsg = "{{ same_doctor_message|escapejs }}";
+  document.querySelectorAll('.remap-visit').forEach((box) => {
+    const visitId = box.dataset.visit;
+    const data = catalog[visitId] || { doctors: [], has_request_form: false };
+    const doctorSelect = box.querySelector('.doctor-select');
+    const institutionSelect = box.querySelector('.institution-select');
+    const status = box.querySelector('.request-form-status');
+    if (status) {
+      status.innerHTML = data.has_request_form
+        ? '<span class="badge text-bg-success">Request form on file</span>'
+        : '<span class="badge text-bg-warning">Request form missing</span>';
+    }
+    data.doctors.forEach((row) => {
+      const option = document.createElement('option');
+      option.value = row.id;
+      option.dataset.doctorCode = row.doctor_code || '';
+      option.textContent = row.name;
+      if (data.current_doctor_id && row.id === data.current_doctor_id) option.selected = true;
+      doctorSelect.appendChild(option);
+    });
+    function syncInstitutions() {
+      const chosen = data.doctors.find((row) => row.id === doctorSelect.value);
+      institutionSelect.replaceChildren();
+      (chosen ? chosen.institutions : []).forEach((place) => {
+        const option = document.createElement('option');
+        option.value = place.id;
+        option.textContent = place.name;
+        institutionSelect.appendChild(option);
+      });
+    }
+    doctorSelect.addEventListener('change', syncInstitutions);
+    syncInstitutions();
+    const form = box.querySelector('.remap-form');
+    form.addEventListener('submit', (event) => {
+      if (!data.has_request_form) {
+        event.preventDefault();
+        window.alert(requestFormMsg);
+        return;
+      }
+      const selected = data.doctors.find((row) => row.id === doctorSelect.value);
+      const sameById = data.current_doctor_id && selected && selected.id === data.current_doctor_id;
+      const sameByCode = data.current_doctor_code && selected
+        && selected.doctor_code === data.current_doctor_code;
+      if (sameById || sameByCode) {
+        event.preventDefault();
+        window.alert(sameDoctorMsg);
+      }
+    });
+  });
+})();
+</script>
+{% endif %}
+
+<div class="card p-4 mb-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+    <div>
+      <h2 class="h5 mb-1">Remap history</h2>
+      <p class="muted small mb-0">Audited referring-doctor changes for your centres. Filter by text and/or date.</p>
+    </div>
+  </div>
+  <form method="get" class="row g-2 align-items-end mb-3">
+    {% if query %}<input type="hidden" name="q" value="{{ query }}">{% endif %}
+    {% if selected_patient %}<input type="hidden" name="patient" value="{{ selected_patient.pk }}">{% endif %}
+    <div class="col-md-4">
+      <label class="form-label">Search history</label>
+      <input class="form-control" name="hq" value="{{ history_query }}" placeholder="UHID, visit ID, doctor, remapped by, note">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">From date</label>
+      <input class="form-control" type="date" name="hfrom" value="{{ history_from }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">To date</label>
+      <input class="form-control" type="date" name="hto" value="{{ history_to }}">
+    </div>
+    <div class="col-md-4 d-flex gap-2">
+      <button class="btn btn-outline-dark flex-grow-1" type="submit">Search history</button>
+      {% if history_query or history_from or history_to or selected_patient %}
+        <a class="btn btn-outline-secondary" href="{% url 'referring-doctor-remap' %}{% if query %}?q={{ query|urlencode }}{% endif %}">Clear</a>
+      {% endif %}
+    </div>
+  </form>
+  {% if selected_patient and not history_query and not history_from and not history_to %}
+    <p class="small muted">Showing history for <strong>{{ selected_patient.uhid }}</strong> when available; otherwise recent centre remaps.</p>
+  {% endif %}
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Patient</th>
+          <th>Visit</th>
+          <th>From</th>
+          <th>To</th>
+          <th>By</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in remap_history %}
+          {% with detail=row.detail %}
+          <tr>
+            <td class="small text-nowrap">{{ row.created_at|date:"Y-m-d H:i" }}</td>
+            <td>
+              <div class="fw-semibold">{{ detail.uhid|default:row.patient_ref|default:"—" }}</div>
+              <div class="small muted">{{ detail.patient_name|default:"" }}</div>
+            </td>
+            <td class="font-monospace small">{{ detail.visit_id|default:row.visit_ref|default:"—" }}</td>
+            <td class="small">
+              {% if detail.from.is_default_placeholder %}DEFAULT DOCTOR
+              {% else %}{{ detail.from.doctor_name|default:"—" }}
+                {% if detail.from.doctor_code %}<div class="font-monospace muted">{{ detail.from.doctor_code }}</div>{% endif %}
+              {% endif %}
+              {% if detail.from.institutions %}
+                <div class="muted">{{ detail.from.institutions|join:", " }}</div>
+              {% endif %}
+            </td>
+            <td class="small">
+              {{ detail.to.doctor_name|default:"—" }}
+              {% if detail.to.doctor_code %}<div class="font-monospace muted">{{ detail.to.doctor_code }}</div>{% endif %}
+              {% if detail.to.institutions %}
+                <div class="muted">{{ detail.to.institutions|join:", " }}</div>
+              {% endif %}
+            </td>
+            <td class="small">{{ row.actor.get_username|default:detail.remapped_by|default:"—" }}</td>
+            <td class="small">{{ detail.to.note|default:row.reason|default:"—" }}</td>
+          </tr>
+          {% endwith %}
+        {% empty %}
+          <tr><td colspan="7" class="muted py-3">No remap history matched{% if history_query or history_from or history_to %} those filters{% endif %}.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=remap_history %}
+</div>
+{% endblock %}

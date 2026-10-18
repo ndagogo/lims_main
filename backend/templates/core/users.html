@@ -64,12 +64,35 @@
     </div>
     <div class="card p-4">
       <h2 class="h5">Create a staff account</h2>
+      <p class="muted small">First name, last name, and mobile number are required. Display name is built from the name when left blank.</p>
       <form method="post" class="row g-3">
         {% csrf_token %}
         <input type="hidden" name="action" value="create">
+        <div class="col-md-2">
+          <label class="form-label">Title</label>
+          <select class="form-select" name="title">{% for value, label in title_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+        </div>
+        <div class="col-md-3"><label class="form-label">First name</label><input class="form-control" name="first_name" required></div>
+        <div class="col-md-3"><label class="form-label">Other names</label><input class="form-control" name="other_names"></div>
+        <div class="col-md-4"><label class="form-label">Last name</label><input class="form-control" name="last_name" required></div>
         <div class="col-md-4"><label class="form-label">Username</label><input class="form-control" name="username" required></div>
         <div class="col-md-4"><label class="form-label">Email</label><input class="form-control" type="email" name="email" required></div>
-        <div class="col-md-4"><label class="form-label">Display name</label><input class="form-control" name="display_name"></div>
+        <div class="col-md-4"><label class="form-label">Display name</label><input class="form-control" name="display_name" placeholder="Optional"></div>
+        <div class="col-md-4"><label class="form-label">Mobile phone</label><input class="form-control" name="phone_mobile" required></div>
+        <div class="col-md-4"><label class="form-label">Work phone</label><input class="form-control" name="phone_work"></div>
+        <div class="col-md-4"><label class="form-label">Date of birth</label><input class="form-control" type="date" name="date_of_birth"></div>
+        <div class="col-md-4">
+          <label class="form-label">Gender</label>
+          <select class="form-select" name="sex">{% for value, label in sex_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Marital status</label>
+          <select class="form-select" name="marital_status">{% for value, label in marital_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+        </div>
+        <div class="col-md-4"><label class="form-label">Staff ID</label><input class="form-control" name="staff_id"></div>
+        <div class="col-md-4"><label class="form-label">Department</label><input class="form-control" name="department"></div>
+        <div class="col-md-4"><label class="form-label">Job title</label><input class="form-control" name="job_title"></div>
+        <div class="col-12"><label class="form-label">Address</label><input class="form-control" name="address"></div>
         <div class="col-md-6"><label class="form-label">Temporary password</label><input class="form-control" type="password" name="password" required minlength="12" autocomplete="new-password"><div class="form-text">At least 12 characters. The user must change it at the next sign-in.</div></div>
         <div class="col-md-6"><label class="form-label">Roles</label><select class="form-select" name="groups" multiple size="4">{% for role in roles %}<option value="{{ role.pk }}">{{ role.name }}</option>{% endfor %}</select></div>
         <div class="col-12 d-flex flex-wrap gap-3">
@@ -106,10 +129,30 @@
           {% csrf_token %}
           <input type="hidden" name="action" value="save_account">
           <input type="hidden" name="user" value="{{ selected.pk }}">
+          <div class="col-md-3">
+            <label class="form-label">Title</label>
+            <select class="form-select" name="title">{% for value, label in title_choices %}<option value="{{ value }}" {% if selected.title == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+          </div>
+          <div class="col-md-4"><label class="form-label">First name</label><input class="form-control" name="first_name" value="{{ selected.first_name }}" required></div>
+          <div class="col-md-5"><label class="form-label">Other names</label><input class="form-control" name="other_names" value="{{ selected.other_names }}"></div>
+          <div class="col-md-6"><label class="form-label">Last name</label><input class="form-control" name="last_name" value="{{ selected.last_name }}" required></div>
           <div class="col-md-6"><label class="form-label">Display name</label><input class="form-control" name="display_name" value="{{ selected.display_name }}"></div>
           <div class="col-md-6"><label class="form-label">Email</label><input class="form-control" type="email" name="email" value="{{ selected.email }}" required></div>
-          <div class="col-md-6"><label class="form-label">First name</label><input class="form-control" name="first_name" value="{{ selected.first_name }}"></div>
-          <div class="col-md-6"><label class="form-label">Last name</label><input class="form-control" name="last_name" value="{{ selected.last_name }}"></div>
+          <div class="col-md-6"><label class="form-label">Mobile phone</label><input class="form-control" name="phone_mobile" value="{{ selected.phone_mobile }}" required></div>
+          <div class="col-md-4"><label class="form-label">Work phone</label><input class="form-control" name="phone_work" value="{{ selected.phone_work }}"></div>
+          <div class="col-md-4"><label class="form-label">Date of birth</label><input class="form-control" type="date" name="date_of_birth" value="{{ selected.date_of_birth|date:'Y-m-d' }}"></div>
+          <div class="col-md-4">
+            <label class="form-label">Gender</label>
+            <select class="form-select" name="sex">{% for value, label in sex_choices %}<option value="{{ value }}" {% if selected.sex == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Marital status</label>
+            <select class="form-select" name="marital_status">{% for value, label in marital_choices %}<option value="{{ value }}" {% if selected.marital_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+          </div>
+          <div class="col-md-4"><label class="form-label">Staff ID</label><input class="form-control" name="staff_id" value="{{ selected.staff_id }}"></div>
+          <div class="col-md-4"><label class="form-label">Department</label><input class="form-control" name="department" value="{{ selected.department }}"></div>
+          <div class="col-md-6"><label class="form-label">Job title</label><input class="form-control" name="job_title" value="{{ selected.job_title }}"></div>
+          <div class="col-md-6"><label class="form-label">Address</label><input class="form-control" name="address" value="{{ selected.address }}"></div>
           <div class="col-12 d-flex flex-wrap gap-3">
             <div class="form-check"><input class="form-check-input" type="checkbox" name="is_staff" id="staff-{{ selected.pk }}" {% if selected.is_staff %}checked{% endif %}><label class="form-check-label" for="staff-{{ selected.pk }}">Django admin access</label></div>
             <div class="form-check"><input class="form-check-input" type="checkbox" name="is_superuser" id="super-{{ selected.pk }}" {% if selected.is_superuser %}checked{% endif %}><label class="form-check-label" for="super-{{ selected.pk }}">Platform superuser</label></div>

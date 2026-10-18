@@ -33,13 +33,13 @@ class Command(BaseCommand):
             ('CBC', 'Complete Blood Count', 'HAEMATOLOGY', '1', 'Haematology', '1', 'EDTA', Decimal('5500.00')),
             ('MP', 'Malaria Parasite', 'PARASITOLOGY', '2', 'Microscopy', '1', 'EDTA', Decimal('2500.00')),
             ('FBS', 'Fasting Blood Sugar', 'CHEMISTRY', '3', 'Chemistry', '1', 'Fluoride', Decimal('3000.00')),
-            ('LFT', 'Liver Function Test', 'CHEMISTRY', '3', 'Chemistry', '2', 'Serum', Decimal('8500.00')),
-            ('RFT', 'Renal Function Test', 'CHEMISTRY', '3', 'Chemistry', '3', 'Serum', Decimal('8000.00')),
+            ('LFT', 'Liver Function Test', 'CHEMISTRY', '3', 'Chemistry LFT', '2', 'Serum', Decimal('8500.00')),
+            ('RFT', 'Renal Function Test', 'CHEMISTRY', '3', 'Chemistry RFT', '3', 'Serum', Decimal('8000.00')),
             ('WIDAL', 'Widal Test', 'MICROBIOLOGY', '4', 'Serology', '1', 'Serum', Decimal('3500.00')),
-            ('URINE', 'Urinalysis', 'CLINICAL', '5', 'Microscopy', '1', 'Urine', Decimal('2000.00')),
-            ('ESR', 'Erythrocyte Sedimentation Rate', 'HAEMATOLOGY', '1', 'Haematology', '2', 'Citrate', Decimal('2200.00')),
+            ('URINE', 'Urinalysis', 'CLINICAL', '5', 'Urinalysis', '2', 'Urine', Decimal('2000.00')),
+            ('ESR', 'Erythrocyte Sedimentation Rate', 'HAEMATOLOGY', '1', 'Haematology ESR', '2', 'Citrate', Decimal('2200.00')),
             ('BG', 'Blood Group', 'HAEMATOLOGY', '6', 'Blood bank', '1', 'EDTA', Decimal('2500.00')),
-            ('HBSAG', 'Hepatitis B Surface Antigen', 'MICROBIOLOGY', '4', 'Serology', '2', 'Serum', Decimal('4000.00')),
+            ('HBSAG', 'Hepatitis B Surface Antigen', 'MICROBIOLOGY', '4', 'Serology HBsAg', '2', 'Serum', Decimal('4000.00')),
         ]
         imaging_catalog = [
             ('XR-CHEST', 'Chest X-ray', 'XRAY', Decimal('15000.00')),
@@ -71,7 +71,11 @@ class Command(BaseCommand):
                 row.save(update_fields=['service_group', 'service_group_code', 'updated_at'])
             for tariff_name, factor in tariff_factors:
                 TestPrice.objects.get_or_create(tariff=tariffs[tariff_name], test=row, defaults={'price': (base * factor).quantize(Decimal('0.01'))})
-        TestParameter.objects.get_or_create(test=Test.objects.get(code='CBC'), code='WBC', defaults={'name': 'White cells', 'unit': '10^9/L', 'result_type': 'NUMBER', 'is_required': True})
+        from laboratory.cbc_seed import ensure_cbc_catalogue
+        from radiology.modality_templates import ensure_modality_report_templates
+        ensure_cbc_catalogue(publish=True)
+        ensure_modality_report_templates(publish=True)
+
         for code, name, modality_type, base in imaging_catalog:
             row, _created = ImagingProcedure.objects.get_or_create(code=code, defaults={'name': name, 'modality_type': modality_type})
             for tariff_name, factor in tariff_factors:

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}TAT rules | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="TAT" title="TAT rules & pause reasons" subtitle="Define expected turnaround per test or service, clock start/end, and documented pause reasons." %}
+<div class="row g-4">
+  <div class="col-xl-4">
+    <div class="card p-4 mb-4">
+      <h2 class="h5">Add TAT rule</h2>
+      <form method="post" class="row g-2">
+        {% csrf_token %}<input type="hidden" name="action" value="create_rule">
+        <div class="col-12"><label class="form-label">Name</label><input name="name" class="form-control" required placeholder="e.g. FBC same-day"></div>
+        <div class="col-12"><label class="form-label">Test (preferred)</label>
+          <select name="test" class="form-select"><option value="">— Service group instead —</option>
+            {% for t in tests %}<option value="{{ t.pk }}">{{ t.code }} — {{ t.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-12"><label class="form-label">Service group</label>
+          <select name="service_group" class="form-select"><option value="">— Optional —</option>
+            {% for g in service_groups %}<option value="{{ g.pk }}">{{ g.code }} — {{ g.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-12"><label class="form-label">Department filter</label><input name="department" class="form-control" placeholder="Optional for group rules"></div>
+        <div class="col-md-6"><label class="form-label">Clock starts</label>
+          <select name="clock_start" class="form-select">{% for val, label in clock_starts %}<option value="{{ val }}">{{ label }}</option>{% endfor %}</select>
+        </div>
+        <div class="col-md-6"><label class="form-label">Clock ends</label>
+          <select name="clock_end" class="form-select">{% for val, label in clock_ends %}<option value="{{ val }}">{{ label }}</option>{% endfor %}</select>
+        </div>
+        <div class="col-md-4"><label class="form-label">Expected (min)</label><input name="expected_minutes" type="number" min="1" class="form-control" value="1440" required></div>
+        <div class="col-md-4"><label class="form-label">Warning (min)</label><input name="warning_minutes" type="number" min="0" class="form-control" placeholder="auto 80%"></div>
+        <div class="col-md-4"><label class="form-label">Escalate (min)</label><input name="escalation_minutes" type="number" min="0" class="form-control" placeholder="= expected"></div>
+        <div class="col-12"><label class="form-label">Escalation roles</label><input name="escalation_roles" class="form-control" value="Lab Manager" placeholder="Comma-separated group names"></div>
+        <div class="col-12"><input type="hidden" name="allow_pause_submitted" value="1"><div class="form-check"><input class="form-check-input" type="checkbox" name="allow_pause" id="allow_pause" checked><label class="form-check-label" for="allow_pause">Allow documented clock pauses</label></div></div>
+        <div class="col-12"><label class="form-label">Notes</label><textarea name="notes" class="form-control" rows="2"></textarea></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Save rule</button></div>
+      </form>
+    </div>
+    <div class="card p-4">
+      <h2 class="h5">Pause reason</h2>
+      <form method="post" class="row g-2">
+        {% csrf_token %}<input type="hidden" name="action" value="create_reason">
+        <div class="col-12"><label class="form-label">Code</label><input name="code" class="form-control" required placeholder="INSTRUMENT_DOWN"></div>
+        <div class="col-12"><label class="form-label">Name</label><input name="reason_name" class="form-control" required></div>
+        <div class="col-12"><input type="hidden" name="pauses_clock_submitted" value="1"><div class="form-check"><input class="form-check-input" type="checkbox" name="pauses_clock" id="pauses_clock" checked><label class="form-check-label" for="pauses_clock">Pauses the TAT clock</label></div></div>
+        <div class="col-12"><button class="btn btn-outline-dark" type="submit">Add reason</button></div>
+      </form>
+      <ul class="mt-3 mb-0 small">
+        {% for r in reasons %}
+          <li class="d-flex justify-content-between gap-2 py-1 border-bottom">
+            <span>{{ r.code }} — {{ r.name }} {% if not r.pauses_clock %}<span class="muted">(clock continues)</span>{% endif %}</span>
+            <form method="post">{% csrf_token %}<input type="hidden" name="action" value="toggle_reason"><input type="hidden" name="reason" value="{{ r.pk }}"><button class="btn btn-sm btn-link p-0" type="submit">{% if r.is_active %}off{% else %}on{% endif %}</button></form>
+          </li>
+        {% empty %}<li class="muted">No pause reasons yet.</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="col-xl-8">
+    <form method="get" class="mb-3"><input class="form-control" name="q" value="{{ query }}" placeholder="Search rules"></form>
+    <div class="card p-3">
+      <table class="table align-middle">
+        <thead><tr><th>Rule</th><th>Scope</th><th>Clock</th><th>Target</th><th></th></tr></thead>
+        <tbody>
+          {% for row in directory %}
+          <tr>
+            <td class="fw-semibold">{{ row.name }}{% if not row.is_active %} <span class="badge badge-warn">inactive</span>{% endif %}</td>
+            <td class="small">{% if row.test %}{{ row.test.code }}{% elif row.service_group %}Group: {{ row.service_group.name }}{% endif %}{% if row.department %} · {{ row.department }}{% endif %}</td>
+            <td class="small">{{ row.get_clock_start_display }} → {{ row.get_clock_end_display }}</td>
+            <td class="small">{{ row.expected_minutes }} min{% if row.allow_pause %} · pause OK{% endif %}</td>
+            <td>
+              <form method="post">{% csrf_token %}<input type="hidden" name="action" value="toggle_rule"><input type="hidden" name="rule" value="{{ row.pk }}">
+                <button class="btn btn-sm btn-outline-dark" type="submit">{% if row.is_active %}Deactivate{% else %}Activate{% endif %}</button>
+              </form>
+            </td>
+          </tr>
+          {% empty %}<tr><td colspan="5" class="muted text-center py-3">No TAT rules yet. Defaults to 24 hours from payment.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,77 +1,296 @@
 {% extends "base.html" %}
-{% block title %}Radiology | HFDN{% endblock %}
+{% block title %}Radiology worklist | HFDN{% endblock %}
 {% block content %}
-<div class="mb-4">
-  <div class="muted small">RADIOLOGY</div>
-  <h1 class="h3">Radiology worklist</h1>
-  <p class="muted">Paid studies arrive from reception. Assign a radiographer, acquire the exam, then draft and finalise the report. Image viewing stays with the PACS.</p>
-</div>
-<div class="row g-2 mb-4">
-  {% for key, count in order_counts.items %}
-    <div class="col-6 col-md-4 col-xl-2"><div class="card p-3"><div class="muted small">{{ key }}</div><div class="h4 mb-0">{{ count }}</div></div></div>
-  {% endfor %}
-</div>
-<div class="card p-4 mb-4">
-  <h2 class="h5">Orders and exams</h2>
-  {% for order in orders %}
-    <div class="border-top py-3">
-      <div class="fw-semibold">{{ order.visit.visit_id }} — {{ order.modality.name }} — {{ order.get_status_display }}</div>
-      <div class="small muted">{{ order.visit.patient.first_name }} {{ order.visit.patient.last_name }} — {{ order.get_priority_display }}</div>
-      {% if order.status != 'COMPLETED' and order.status != 'CANCELLED' %}
-        <form method="post" class="row g-2 mt-2">
+<div class="rad-desk">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+    <div>
+      <div class="eyebrow">{{ today_label }} · {% if desk == 'report' %}Reporting{% else %}Your assigned modalities{% endif %}</div>
+      <h1>Radiology worklist</h1>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-dark btn-sm" href="?modality={{ modality_filter }}&when={% if when == 'today' %}all{% else %}today{% endif %}&desk={{ desk }}">{% if when == 'today' %}Today{% else %}All dates{% endif %}</a>
+      <a class="btn btn-primary btn-sm" href="?modality={{ modality_filter }}&when={{ when }}&desk={{ desk }}">Refresh worklist</a>
+    </div>
+  </div>
+  <div class="rad-filters mb-3">
+    <a class="rad-pill {% if modality_filter == 'ALL' %}is-on{% endif %}" href="?modality=ALL&when={{ when }}&desk={{ desk }}">All · {{ modality_counts.ALL }}</a>
+    <a class="rad-pill {% if modality_filter == 'CT' %}is-on{% endif %}" href="?modality=CT&when={{ when }}&desk={{ desk }}">CT · {{ modality_counts.CT|default:0 }}</a>
+    <a class="rad-pill {% if modality_filter == 'XRAY' %}is-on{% endif %}" href="?modality=XRAY&when={{ when }}&desk={{ desk }}">X-Ray · {{ modality_counts.XRAY|default:0 }}</a>
+    <a class="rad-pill {% if modality_filter == 'MRI' %}is-on{% endif %}" href="?modality=MRI&when={{ when }}&desk={{ desk }}">MRI · {{ modality_counts.MRI|default:0 }}</a>
+    <a class="rad-pill {% if modality_filter == 'US' %}is-on{% endif %}" href="?modality=US&when={{ when }}&desk={{ desk }}">Ultrasound · {{ modality_counts.US|default:0 }}</a>
+    <a class="rad-pill {% if modality_filter == 'MAMMO' %}is-on{% endif %}" href="?modality=MAMMO&when={{ when }}&desk={{ desk }}">Mammo · {{ modality_counts.MAMMO|default:0 }}</a>
+  </div>
+  <div class="rad-grid">
+    <section class="card rad-table-card">
+      <table class="table align-middle mb-0">
+        <thead><tr><th>Accession</th><th>Patient</th><th>Modality</th><th>Procedure</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {% for order in orders %}
+          <tr class="{% if selected and selected.pk == order.pk %}is-selected{% endif %}">
+            <td><a class="rad-acc" href="?study={{ order.pk }}&modality={{ modality_filter }}&when={{ when }}&desk={{ desk }}">{{ order.visit.visit_id }}</a></td>
+            <td>{{ order.visit.patient.first_name }}<br>{{ order.visit.patient.last_name }}</td>
+            <td>{{ order.modality.get_modality_type_display }}</td>
+            <td>{{ order.procedure.name|default:order.modality.name }}</td>
+            <td>
+              {% if order.exam.status == 'ASSIGNED' %}<span class="dot dot-wait"></span> Awaiting start
+              {% elif order.exam.status == 'IN_PROGRESS' %}<span class="dot dot-live"></span> In exam{% if order.exam.duration_label %} · {{ order.exam.duration_label }}{% endif %}
+              {% elif order.exam.status == 'ACQUIRED' and not order.exam.pacs_uploaded_at %}<span class="dot dot-wait"></span> Ended{% if order.exam.duration_label %} · {{ order.exam.duration_label }}{% endif %}
+              {% elif order.exam.report and order.exam.report.status != 'DRAFT' %}<span class="rad-status rad-status-reported"><span class="dot dot-reported"></span> Reported</span>
+              {% elif order.exam.accepted_at %}<span class="rad-status rad-status-ready"><span class="dot dot-ready"></span> Ready to report</span>
+              {% elif order.exam.pacs_uploaded_at %}<span class="rad-status rad-status-await"><span class="dot dot-await"></span> Awaiting acceptance{% if order.exam.accept_remaining != None %} · {{ order.exam.accept_remaining }} min{% endif %}</span>
+              {% else %}<span class="dot"></span> {{ order.exam.get_status_display }}{% endif %}
+            </td>
+            <td class="text-end">
+              {% if is_radiographer and order.exam.status == 'ASSIGNED' %}
+                <form method="post" {% if active_exam %}data-exam-busy="1"{% endif %} onsubmit="return guardExamStart(this)">{% csrf_token %}<input type="hidden" name="action" value="start"><input type="hidden" name="exam" value="{{ order.exam.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Start exam</button></form>
+              {% elif is_radiographer and order.exam.status == 'ACQUIRED' and not order.exam.pacs_uploaded_at %}
+                <form method="post">{% csrf_token %}<input type="hidden" name="action" value="upload_pacs"><input type="hidden" name="exam" value="{{ order.exam.pk }}"><button class="btn btn-sm btn-primary" type="submit">Upload to PACS server</button></form>
+              {% elif is_radiologist and order.exam.pacs_uploaded_at and not order.exam.accepted_at %}
+                {% if order.exam.can_reassign or order.exam.assigned_radiologist_id == request.user.pk or request.user.is_superuser %}
+                <form method="post">{% csrf_token %}<input type="hidden" name="action" value="accept"><input type="hidden" name="exam" value="{{ order.exam.pk }}"><button class="btn btn-sm btn-rad-accept" type="submit">Accept</button></form>
+                {% endif %}
+              {% elif is_radiologist and order.exam.accepted_at %}
+                <a class="btn btn-sm btn-rad-open" href="?study={{ order.pk }}&modality={{ modality_filter }}&when={{ when }}&desk={{ desk }}">Open report</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="muted p-4">{% if desk == 'report' %}No studies have been uploaded to PACS yet.{% else %}No paid studies are waiting.{% endif %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="p-3">{% include "includes/pagination.html" with page=orders %}</div>
+    </section>
+
+    <aside class="card rad-side p-4">
+      {% if selected %}
+        <div class="rad-viewer mb-3">
+          <div class="small">{{ selected.visit.patient.first_name }} {{ selected.visit.patient.last_name }} · {{ selected.modality.get_modality_type_display }}</div>
+          <div class="rad-viewer-mark">HFDN viewer</div>
+          {% if selected.modality.wado_url %}<a class="small" href="{{ selected.modality.wado_url }}">Open PACS</a>{% endif %}
+        </div>
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+          <div>
+            <h2 class="h5 mb-0">{{ selected.modality.get_modality_type_display }} · {{ selected.procedure.name|default:selected.modality.name }}</h2>
+            <div class="small muted">{{ selected.visit.visit_id }}{% if selected.exam.duration_label %} · {{ selected.exam.duration_label }}{% endif %}</div>
+          </div>
+          <span class="small">{% if selected.exam.report %}{{ selected.exam.report.get_status_display }}{% else %}Draft{% endif %}</span>
+        </div>
+
+        {% if is_radiographer and selected.exam.status == 'IN_PROGRESS' %}
+        <form method="post" id="end-form" class="mb-3">
           {% csrf_token %}
-          <input type="hidden" name="action" value="assign">
-          <input type="hidden" name="order" value="{{ order.pk }}">
-          <div class="col-md-6"><select name="radiographer" class="form-select form-select-sm" required><option value="">Assign radiographer</option>{% for person in staff %}<option value="{{ person.pk }}">{{ person.username }}</option>{% endfor %}</select></div>
-          <div class="col-md-3"><button class="btn btn-sm btn-outline-dark" type="submit">Assign</button></div>
+          <input type="hidden" name="action" value="end">
+          <input type="hidden" name="exam" value="{{ selected.exam.pk }}">
+          <label class="form-label">Items used</label>
+          <table class="table table-sm">
+            <thead><tr><th>Item</th><th>Qty</th></tr></thead>
+            <tbody>
+              {% for name in supply_presets %}
+              <tr>
+                <td><input class="form-control form-control-sm" name="item_name" value="{{ name }}"></td>
+                <td style="width:5rem"><input class="form-control form-control-sm" name="quantity" type="number" min="0" value="0"></td>
+              </tr>
+              {% endfor %}
+              <tr>
+                <td><input class="form-control form-control-sm" name="item_name" placeholder="Other item"></td>
+                <td><input class="form-control form-control-sm" name="quantity" type="number" min="0" value="0"></td>
+              </tr>
+            </tbody>
+          </table>
+          <label class="form-label">Assign radiologist</label>
+          <select name="radiologist" class="form-select form-select-sm mb-3" required>
+            <option value="">Radiologist</option>
+            {% for person in radiologists %}<option value="{{ person.pk }}">{{ person.get_full_name|default:person.username }}</option>{% endfor %}
+          </select>
+          <button class="btn btn-primary" type="submit">End exam</button>
         </form>
-      {% endif %}
-      {% if order.exam %}
-        <div class="small mt-2">Exam {{ order.exam.get_status_display }} — assigned {{ order.exam.assigned_radiographer|default:"nobody" }}</div>
-        {% if order.exam.status == 'ASSIGNED' %}
-          <form method="post" class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="start"><input type="hidden" name="exam" value="{{ order.exam.pk }}"><button class="btn btn-sm btn-primary" type="submit">Start exam</button></form>
-        {% elif order.exam.status == 'IN_PROGRESS' %}
-          <form method="post" class="row g-2 mt-1">{% csrf_token %}<input type="hidden" name="action" value="end"><input type="hidden" name="exam" value="{{ order.exam.pk }}"><div class="col-md-8"><input name="acquisition_notes" class="form-control form-control-sm" placeholder="Acquisition notes"></div><div class="col-md-3"><button class="btn btn-sm btn-primary" type="submit">End exam</button></div></form>
-        {% elif order.exam.status == 'ACQUIRED' %}
-          {% if not order.exam.report %}
-            <form method="post" class="row g-2 mt-1">
+        {% endif %}
+
+        {% if is_radiographer and selected.exam.status == 'ACQUIRED' and not selected.exam.pacs_uploaded_at %}
+          {% if selected.exam.assigned_radiologist and not selected.exam.can_reassign %}
+            <p class="small">Assigned to {{ selected.exam.assigned_radiologist.get_full_name|default:selected.exam.assigned_radiologist.username }}. Reassignment opens when the accept window elapses.</p>
+          {% elif selected.exam.can_reassign %}
+            <form method="post" class="row g-2 mb-3">
               {% csrf_token %}
-              <input type="hidden" name="action" value="draft">
-              <input type="hidden" name="exam" value="{{ order.exam.pk }}">
-              <div class="col-md-4"><textarea name="findings" class="form-control" rows="2" placeholder="Findings" required></textarea></div>
-              <div class="col-md-4"><textarea name="impression" class="form-control" rows="2" placeholder="Impression" required></textarea></div>
-              <div class="col-md-4"><textarea name="recommendations" class="form-control" rows="2" placeholder="Recommendations"></textarea></div>
-              <div class="col-12"><button class="btn btn-sm btn-primary" type="submit">Save draft report</button></div>
+              <input type="hidden" name="action" value="assign_radiologist">
+              <input type="hidden" name="order" value="{{ selected.pk }}">
+              <div class="col-12">
+                <label class="form-label">Assign radiologist</label>
+                <select name="radiologist" class="form-select form-select-sm" required>
+                  <option value="">Radiologist</option>
+                  {% for person in radiologists %}<option value="{{ person.pk }}">{{ person.get_full_name|default:person.username }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-12"><button class="btn btn-sm btn-outline-dark" type="submit">Assign</button></div>
             </form>
           {% endif %}
         {% endif %}
+
+        {% if is_radiologist and selected.exam.pacs_uploaded_at %}
+          {% if not selected.exam.accepted_at %}
+            {% if selected.exam.assigned_radiologist and not selected.exam.can_reassign %}
+              <p class="small">Assigned to {{ selected.exam.assigned_radiologist.get_full_name|default:selected.exam.assigned_radiologist.username }}.{% if selected.exam.accept_remaining != None %} {{ selected.exam.accept_remaining }} min left to accept.{% endif %} Reassignment opens when this time elapses.</p>
+            {% endif %}
+            {% if selected.exam.can_reassign or selected.exam.assigned_radiologist_id == request.user.pk or request.user.is_superuser %}
+            <form method="post" class="mb-2">{% csrf_token %}<input type="hidden" name="action" value="accept"><input type="hidden" name="exam" value="{{ selected.exam.pk }}"><button class="btn btn-rad-accept" type="submit">Accept and report</button></form>
+            {% endif %}
+            {% if selected.exam.can_reassign %}
+            <form method="post" class="row g-2 mb-3">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="assign_radiologist">
+              <input type="hidden" name="order" value="{{ selected.pk }}">
+              <div class="col-8">
+                <select name="radiologist" class="form-select form-select-sm" required>
+                  <option value="">Assign radiologist</option>
+                  {% for person in radiologists %}<option value="{{ person.pk }}">{{ person.get_full_name|default:person.username }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-4"><button class="btn btn-sm btn-outline-dark w-100" type="submit">Assign</button></div>
+            </form>
+            {% endif %}
+          {% elif not selected.exam.report or selected.exam.report.status == 'DRAFT' %}
+            {{ report_templates|json_script:"report-templates" }}
+            {{ report_body|json_script:"report-body" }}
+            <form method="post" class="row g-2" id="report-draft-form" onsubmit="return saveReportEditor()">
+              {% csrf_token %}
+              {% if selected.exam.report %}
+                <input type="hidden" name="action" value="update_draft">
+                <input type="hidden" name="report" value="{{ selected.exam.report.pk }}">
+                <input type="hidden" name="exam" value="{{ selected.exam.pk }}">
+              {% else %}
+                <input type="hidden" name="action" value="draft">
+                <input type="hidden" name="exam" value="{{ selected.exam.pk }}">
+              {% endif %}
+              <input type="hidden" name="findings" id="report-findings" value="">
+              <input type="hidden" name="indication" value="{% if selected.exam.report %}{{ selected.exam.report.indication }}{% else %}{{ selected.clinical_history }}{% endif %}">
+              <div class="col-12">
+                <label class="form-label" for="report-template">Template</label>
+                <select name="template" id="report-template" class="form-select form-select-sm">
+                  <option value="">Free text</option>
+                  {% for t in selected.available_templates %}
+                    <option value="{{ t.pk }}" {% if selected.exam.report and selected.exam.report.template_id == t.pk %}selected{% endif %}>{{ t.get_modality_type_display }} — {{ t.name }}</option>
+                  {% endfor %}
+                </select>
+                <div class="form-text">Choose a published template and it loads here for you to complete.</div>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Report</label>
+                <div id="report-editor" class="report-editor" contenteditable="true" role="textbox" aria-label="Report"></div>
+              </div>
+              <div class="col-12 d-flex gap-2">
+                <button class="btn btn-outline-dark" type="submit">Save draft</button>
+              </div>
+              <div class="col-12 small muted">Only the reporting radiologist can sign. Reporting stays blocked until the exam is acquired and uploaded.</div>
+            </form>
+            {% if selected.exam.report %}
+            <form method="post" class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="finalize"><input type="hidden" name="report" value="{{ selected.exam.report.pk }}"><button class="btn btn-primary" type="submit">Sign report</button></form>
+            <p class="small muted mt-2">Only the reporting radiologist can edit a signed report.</p>
+            {% endif %}
+          {% elif selected.exam.report.status == 'FINAL' %}
+            {% if selected.exam.report.release_blockers %}
+              <div class="alert alert-warning py-2 small">
+                {% for blocker in selected.exam.report.release_blockers %}<div>{{ blocker.message }}</div>{% endfor %}
+              </div>
+            {% else %}
+              <form method="post">{% csrf_token %}<input type="hidden" name="action" value="release"><input type="hidden" name="report" value="{{ selected.exam.report.pk }}"><button class="btn btn-primary" type="submit">Dispatch result</button></form>
+              <p class="small muted mt-2">Dispatch sends the signed report out. It stays here until the registration or referral form is on the visit and the invoice is paid.</p>
+            {% endif %}
+          {% elif selected.exam.report.status == 'RELEASED' or selected.exam.report.status == 'AMENDED' %}
+            <p class="small">This result has been dispatched.</p>
+            <a class="btn btn-outline-dark btn-sm" href="/api/radiology-reports/{{ selected.exam.report.pk }}/pdf/">Print result</a>
+          {% endif %}
+        {% endif %}
+
+        {% if selected.exam.supply_rows %}
+          <div class="small mt-3">Items used: {% for row in selected.exam.supply_rows %}{{ row.item_name }} ×{{ row.quantity }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+        {% endif %}
+        {% if selected.exam.recent_activities %}
+          <div class="small muted mt-2">History: {% for row in selected.exam.recent_activities %}<span class="me-2">{{ row.created_at|date:"H:i" }} {{ row.action }}</span>{% endfor %}</div>
+        {% endif %}
+      {% else %}
+        <p class="muted mb-0">Select a study.</p>
       {% endif %}
-    </div>
-  {% empty %}<p class="muted mb-0">No paid imaging studies are waiting.</p>{% endfor %}
-  {% include "includes/pagination.html" with page=orders %}
+    </aside>
+  </div>
 </div>
-<div class="card p-4">
-  <h2 class="h5">Reports</h2>
-  {% for report in reports %}
-    <div class="border-top py-3">
-      <div class="fw-semibold">{{ report.exam.order.visit.visit_id }} — {{ report.get_status_display }} — version {{ report.version }}</div>
-      <div class="small muted">{{ report.exam.order.visit.patient.first_name }} {{ report.exam.order.visit.patient.last_name }} — {{ report.author }}</div>
-      {% if report.status == 'DRAFT' %}
-        <form method="post" class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="finalize"><input type="hidden" name="report" value="{{ report.pk }}"><button class="btn btn-sm btn-success" type="submit">Finalise</button></form>
-      {% elif report.status == 'FINAL' or report.status == 'AMENDED' %}
-        <form method="post" class="row g-2 mt-1">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="override">
-          <input type="hidden" name="report" value="{{ report.pk }}">
-          <div class="col-md-4"><textarea name="findings" class="form-control" rows="2" placeholder="Amended findings">{{ report.findings }}</textarea></div>
-          <div class="col-md-4"><textarea name="impression" class="form-control" rows="2" placeholder="Amended impression">{{ report.impression }}</textarea></div>
-          <div class="col-md-4"><input name="reason" class="form-control" placeholder="Reason" required></div>
-          <div class="col-12"><button class="btn btn-sm btn-outline-danger" type="submit">Amend final report</button></div>
-        </form>
-      {% endif %}
-      {% if report.exam.order.modality.wado_url %}<div class="small mt-2">PACS: {{ report.exam.order.modality.wado_url }}</div>{% endif %}
-    </div>
-  {% empty %}<p class="muted mb-0">No reports yet.</p>{% endfor %}
-  {% include "includes/pagination.html" with page=reports %}
-</div>
+<style>
+  .rad-desk h1 { margin-bottom: 0; }
+  .rad-filters { display: flex; flex-wrap: wrap; gap: .45rem; }
+  .rad-pill { border: 1px solid #e4dfd6; background: #fff; color: #1c1917; border-radius: 999px; padding: .35rem .85rem; text-decoration: none; font-size: .92rem; }
+  .rad-pill.is-on { background: #171717; color: #fff; border-color: #171717; }
+  .rad-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, .8fr); gap: 1rem; align-items: start; }
+  .rad-table-card, .rad-side { border-radius: 18px; }
+  .rad-table-card { padding: .4rem .6rem 0; }
+  .rad-table-card tr.is-selected { background: #f7f5f0; }
+  .rad-acc { color: inherit; font-weight: 600; text-decoration: none; }
+  .rad-table-card td:last-child, .rad-table-card .btn { white-space: nowrap; }
+  .dot { display: inline-block; width: .45rem; height: .45rem; border-radius: 50%; background: #a8a29e; margin-right: .25rem; }
+  .dot-wait { background: #d97706; }
+  .dot-live { background: #2563eb; }
+  .dot-done { background: #1f6b4a; }
+  .rad-status { display: inline-flex; align-items: center; border-radius: 999px; padding: .15rem .6rem; font-size: .82rem; font-weight: 650; }
+  .rad-status-await { background: #fff1e6; color: #9a3412; }
+  .dot-await { background: #ea580c; }
+  .rad-status-ready { background: #e7f0ff; color: #1e40af; }
+  .dot-ready { background: #2563eb; }
+  .rad-status-reported { background: #e8f7ee; color: #166534; }
+  .dot-reported { background: #15803d; }
+  .btn-rad-accept { background: #0f766e; border-color: #0f766e; color: #fff; }
+  .btn-rad-accept:hover { background: #115e59; border-color: #115e59; color: #fff; }
+  .btn-rad-open { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+  .btn-rad-open:hover { background: #1e40af; border-color: #1e40af; color: #fff; }
+  .report-editor { min-height: 240px; border: 1px solid #e4dfd6; border-radius: 12px; padding: .85rem 1rem; background: #fff; }
+  .report-editor:focus { outline: 2px solid #1d4ed8; outline-offset: 1px; }
+  .report-editor:empty:before { content: "Select a template to load it here."; color: #a8a29e; }
+  .rad-viewer { background: #171717; color: #fff; border-radius: 16px; min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .4rem; }
+  .rad-viewer-mark { width: 92px; height: 92px; border: 1px solid #444; border-radius: 50%; display: grid; place-items: center; font-size: .75rem; letter-spacing: .04em; }
+  .rad-viewer a { color: #d6d3d1; }
+  @media (max-width: 991.98px) { .rad-grid { grid-template-columns: 1fr; } }
+</style>
+<script>
+  function guardExamStart(form) {
+    if (form.dataset.examBusy === '1') {
+      window.alert('Sorry you currently have an exam in process. Check your list and complete the exam. Thank You');
+      return false;
+    }
+    return true;
+  }
+  function reportTemplateHtml(row) {
+    if ((row.body_html || '').trim()) return row.body_html;
+    function block(label, text) {
+      text = (text || '').trim();
+      if (!text) return '';
+      var safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+      return '<p><strong>' + label + ':</strong> ' + safe + '</p>';
+    }
+    return [
+      block('CLINICAL INFORMATION', row.indication),
+      block('TECHNIQUE', row.technique),
+      block('FINDINGS', row.findings),
+      block('IMPRESSION', row.impression),
+      block('RECOMMENDATIONS', row.recommendations),
+    ].join('');
+  }
+  function saveReportEditor() {
+    var editor = document.getElementById('report-editor');
+    var field = document.getElementById('report-findings');
+    if (editor && field) field.value = editor.innerHTML;
+    return true;
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    var editor = document.getElementById('report-editor');
+    var select = document.getElementById('report-template');
+    if (!editor || !select) return;
+    var catalog = JSON.parse(document.getElementById('report-templates').textContent || '[]');
+    var saved = JSON.parse(document.getElementById('report-body').textContent || '""');
+    function applySelected() {
+      var chosen = catalog.find(function (row) { return String(row.id) === select.value; });
+      editor.innerHTML = chosen ? reportTemplateHtml(chosen) : '';
+    }
+    if ((saved || '').trim()) editor.innerHTML = saved;
+    else if (select.value) applySelected();
+    select.addEventListener('change', applySelected);
+  });
+</script>
 {% endblock %}

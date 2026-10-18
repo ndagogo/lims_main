@@ -10,7 +10,9 @@ from django.shortcuts import get_object_or_404, redirect
 from core.access import is_platform_admin
 from core.models import AuditEvent, Centre
 from core.paging import PAGE_SIZES, paginate
-from laboratory.models import SampleCodeConfig, ServiceGroup, Tariff, Test, TestParameter, TestPrice
+from laboratory.models import (
+    ReferenceRange, ResultTemplate, SampleCodeConfig, ServiceGroup, Tariff, Test, TestParameter, TestPrice,
+)
 from patients.models import OrganisationClient
 from radiology.models import ImagingModality, ImagingPrice, ImagingProcedure
 from referrals.models import ReferralDoctor, ReferralInstitution
@@ -23,16 +25,24 @@ def platform_admin_only(request):
         raise PermissionDenied('Only a platform administrator can manage the catalog.')
 
 
-def _audit(request, action, obj, detail=None, centre=None):
-    AuditEvent.objects.create(
+def _audit(request, action, obj, detail=None, centre=None, **kwargs):
+    from core.audit import record_audit
+    record_audit(
+        request=request,
         actor=request.user,
         action=action,
         object_type=obj.__class__.__name__,
         object_id=str(obj.pk),
-        path=request.path,
-        method='POST',
         centre=centre,
         detail=detail or {},
+        previous_values=kwargs.get('previous_values'),
+        new_values=kwargs.get('new_values') or detail,
+        reason=kwargs.get('reason', ''),
+        department=kwargs.get('department', ''),
+        patient_ref=kwargs.get('patient_ref', ''),
+        visit_ref=kwargs.get('visit_ref', ''),
+        order_ref=kwargs.get('order_ref', ''),
+        result_ref=kwargs.get('result_ref', ''),
     )
 
 
@@ -290,7 +300,12 @@ def build_tests_context(request):
     selected = None
     selected_id = request.GET.get('test')
     if selected_id:
-        selected = Test.objects.select_related('service_group').prefetch_related('parameters').filter(pk=selected_id).first()
+        selected = (
+            Test.objects.select_related('service_group', 'default_template')
+            .prefetch_related('parameters__reference_ranges', 'result_templates')
+            .filter(pk=selected_id)
+            .first()
+        )
     return {
         'directory': paginate(request, rows, 'page'),
         'page_sizes': PAGE_SIZES,
@@ -299,6 +314,12 @@ def build_tests_context(request):
         'selected': selected,
         'service_groups': ServiceGroup.objects.filter(is_active=True).order_by('name', 'code'),
         'result_types': TestParameter.RESULT_TYPES,
+        'sex_choices': ReferenceRange.SEX,
+        'templates': (
+            ResultTemplate.objects.filter(test=selected, is_active=True).order_by('name', '-version')
+            if selected else ResultTemplate.objects.none()
+        ),
+        'workflow_codes': ['NORMAL', 'MICROBIOLOGY', 'CYTOLOGY', 'HISTOLOGY'],
     }
 
 
@@ -333,6 +354,14 @@ def handle_tests_post(request):
             _audit(request, 'TEST_PARAMETER_DELETED', test, {'parameter': code})
             messages.success(request, f'Parameter {code} was removed.')
             return redirect(f'/catalog/tests/?test={test.pk}')
+        if action == 'save_range':
+            return _save_reference_range(request, test)
+        if action == 'delete_range':
+            param = get_object_or_404(TestParameter, pk=request.POST.get('parameter'), test=test)
+            row = get_object_or_404(ReferenceRange, pk=request.POST.get('range'), parameter=param)
+            row.delete()
+            messages.success(request, 'Reference range removed.')
+            return redirect(f'/catalog/tests/?test={test.pk}')
     except ValidationError as exc:
         messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
         target = request.POST.get('test')
@@ -350,16 +379,42 @@ def _save_test(request, test):
     department_code = _text(request.POST, 'department_code') or '1'
     if len(department_code) != 1 or not department_code.isdigit():
         raise ValidationError('Department code must be a single digit.')
-    group_id = request.POST.get('service_group') or None
-    group = ServiceGroup.objects.filter(pk=group_id, is_active=True).first() if group_id else None
+    group_id = (request.POST.get('service_group') or '').strip()
+    if not group_id:
+        raise ValidationError('Each test must be mapped to a service group.')
+    group = ServiceGroup.objects.filter(pk=group_id, is_active=True).first()
+    if group is None:
+        raise ValidationError('Choose an active service group for this test.')
     specimen = _text(request.POST, 'specimen')
+    collection_requirements = _text(request.POST, 'collection_requirements')
+    sample_volume = _text(request.POST, 'sample_volume')
+    container = _text(request.POST, 'container')
+    handling_instructions = _text(request.POST, 'handling_instructions')
+    default_workflow_code = _text(request.POST, 'default_workflow_code').upper()
+    tat_raw = _text(request.POST, 'tat_target_minutes')
+    try:
+        tat_target_minutes = int(tat_raw) if tat_raw else None
+    except ValueError as exc:
+        raise ValidationError('TAT target must be a whole number of minutes.') from exc
+    is_outsourceable = _checked(request.POST, 'is_outsourceable')
+    comments_required = _checked(request.POST, 'comments_required')
+    default_template = None
+    if request.POST.get('default_template'):
+        default_template = ResultTemplate.objects.filter(pk=request.POST.get('default_template'), test=test if test else None).first()
+        if test is None:
+            default_template = None
+        elif default_template is None:
+            default_template = ResultTemplate.objects.filter(pk=request.POST.get('default_template'), test_id=test.pk).first()
     is_active = _checked(request.POST, 'is_active') if request.POST.get('is_active_submitted') or test else True
     if test is None:
         if Test.objects.filter(code__iexact=code).exists():
             raise ValidationError('A test with that code already exists.')
         test = Test(
             code=code, name=name, department=department, department_code=department_code,
-            service_group=group, specimen=specimen, is_active=is_active,
+            service_group=group, specimen=specimen, collection_requirements=collection_requirements,
+            sample_volume=sample_volume, container=container, handling_instructions=handling_instructions,
+            default_workflow_code=default_workflow_code, tat_target_minutes=tat_target_minutes,
+            is_outsourceable=is_outsourceable, comments_required=comments_required, is_active=is_active,
         )
         test.save()
         _audit(request, 'TEST_CREATED', test, {'code': test.code, 'name': test.name})
@@ -373,6 +428,21 @@ def _save_test(request, test):
         test.department_code = department_code
         test.service_group = group
         test.specimen = specimen
+        test.collection_requirements = collection_requirements
+        test.sample_volume = sample_volume
+        test.container = container
+        test.handling_instructions = handling_instructions
+        test.default_workflow_code = default_workflow_code
+        test.tat_target_minutes = tat_target_minutes
+        test.is_outsourceable = is_outsourceable
+        test.comments_required = comments_required
+        if request.POST.get('default_template') == '':
+            test.default_template = None
+        elif request.POST.get('default_template'):
+            tpl = ResultTemplate.objects.filter(pk=request.POST.get('default_template'), test=test).first()
+            if tpl is None:
+                raise ValidationError('Default template must belong to this test.')
+            test.default_template = tpl
         test.is_active = _checked(request.POST, 'is_active')
         test.save()
         _audit(request, 'TEST_UPDATED', test, {'code': test.code, 'name': test.name, 'is_active': test.is_active})
@@ -380,45 +450,107 @@ def _save_test(request, test):
     return redirect(f'/catalog/tests/?test={test.pk}')
 
 
+def _parse_choices(raw):
+    text = (raw or '').strip()
+    if not text:
+        return []
+    if text.startswith('['):
+        import json
+        try:
+            data = json.loads(text)
+            return [str(x) for x in data]
+        except Exception as exc:
+            raise ValidationError('Choices must be a JSON list or comma-separated values.') from exc
+    return [part.strip() for part in text.split(',') if part.strip()]
+
+
 def _save_parameter(request, test):
     code = _text(request.POST, 'param_code').upper()
     name = _text(request.POST, 'param_name')
     if not code or not name:
         raise ValidationError('Parameter code and name are required.')
-    result_type = _text(request.POST, 'result_type') or 'TEXT'
+    result_type = _text(request.POST, 'result_type') or 'NUMBER'
     if result_type not in dict(TestParameter.RESULT_TYPES):
         raise ValidationError('Choose a valid result type.')
     unit = _text(request.POST, 'unit')
     reference_range = _text(request.POST, 'reference_range')
+    choices = _parse_choices(request.POST.get('choices'))
+    calculation = _text(request.POST, 'calculation')
+    section_code = _text(request.POST, 'section_code').upper()
     try:
         display_order = int(request.POST.get('display_order') or 0)
     except (TypeError, ValueError) as exc:
         raise ValidationError('Display order must be a whole number.') from exc
+    dec_raw = _text(request.POST, 'decimal_places')
+    try:
+        decimal_places = int(dec_raw) if dec_raw != '' else None
+    except ValueError as exc:
+        raise ValidationError('Decimal places must be a whole number.') from exc
     is_required = _checked(request.POST, 'is_required') if request.POST.get('is_required_submitted') else True
+    require_comment_if_abnormal = _checked(request.POST, 'require_comment_if_abnormal')
+    critical_comment_required = _checked(request.POST, 'critical_comment_required')
     param_id = request.POST.get('parameter')
+    fields = dict(
+        code=code, name=name, result_type=result_type, unit=unit, reference_range=reference_range,
+        choices=choices, calculation=calculation, section_code=section_code, display_order=display_order,
+        decimal_places=decimal_places, require_comment_if_abnormal=require_comment_if_abnormal,
+        critical_comment_required=critical_comment_required,
+    )
     if param_id:
         param = get_object_or_404(TestParameter, pk=param_id, test=test)
         if TestParameter.objects.filter(test=test, code__iexact=code).exclude(pk=param.pk).exists():
             raise ValidationError('That parameter code already exists on this test.')
-        param.code = code
-        param.name = name
-        param.result_type = result_type
-        param.unit = unit
-        param.reference_range = reference_range
-        param.display_order = display_order
+        for key, value in fields.items():
+            setattr(param, key, value)
         param.is_required = _checked(request.POST, 'is_required')
         param.save()
         action = 'TEST_PARAMETER_UPDATED'
     else:
         if TestParameter.objects.filter(test=test, code__iexact=code).exists():
             raise ValidationError('That parameter code already exists on this test.')
-        param = TestParameter.objects.create(
-            test=test, code=code, name=name, result_type=result_type, unit=unit,
-            reference_range=reference_range, display_order=display_order, is_required=is_required,
-        )
+        param = TestParameter.objects.create(test=test, is_required=is_required, **fields)
         action = 'TEST_PARAMETER_CREATED'
     _audit(request, action, param, {'test': test.code, 'parameter': param.code})
     messages.success(request, f'Parameter {param.code} was saved.')
+    return redirect(f'/catalog/tests/?test={test.pk}')
+
+
+def _decimal_or_none(raw, label):
+    text = (raw or '').strip()
+    if not text:
+        return None
+    from decimal import Decimal, InvalidOperation
+    try:
+        return Decimal(text)
+    except InvalidOperation as exc:
+        raise ValidationError(f'{label} must be a number.') from exc
+
+
+def _save_reference_range(request, test):
+    param = get_object_or_404(TestParameter, pk=request.POST.get('parameter'), test=test)
+    sex = _text(request.POST, 'sex')
+    if sex not in dict(ReferenceRange.SEX):
+        sex = ''
+    try:
+        version = int(request.POST.get('range_version') or 1)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError('Range version must be a whole number.') from exc
+    row = ReferenceRange.objects.create(
+        parameter=param,
+        population_label=_text(request.POST, 'population_label'),
+        sex=sex,
+        age_min_years=_decimal_or_none(request.POST.get('age_min_years'), 'Age min'),
+        age_max_years=_decimal_or_none(request.POST.get('age_max_years'), 'Age max'),
+        low=_decimal_or_none(request.POST.get('low'), 'Low'),
+        high=_decimal_or_none(request.POST.get('high'), 'High'),
+        critical_low=_decimal_or_none(request.POST.get('critical_low'), 'Critical low'),
+        critical_high=_decimal_or_none(request.POST.get('critical_high'), 'Critical high'),
+        display_text=_text(request.POST, 'display_text'),
+        version=version,
+        is_active=True,
+    )
+    _audit(request, 'REFERENCE_RANGE_CREATED', row, {'test': test.code, 'parameter': param.code})
+    messages.success(request, f'Reference range added for {param.code}.')
     return redirect(f'/catalog/tests/?test={test.pk}')
 
 
@@ -474,6 +606,15 @@ def handle_service_groups_post(request):
     return redirect('catalog-service-groups')
 
 
+def _service_group_duplicate_error(name, *, exclude_pk=None):
+    qs = ServiceGroup.objects.filter(name__iexact=name)
+    if exclude_pk:
+        qs = qs.exclude(pk=exclude_pk)
+    if qs.exists():
+        return 'Hey, Service group already exists.'
+    return None
+
+
 def _save_service_group(request, group):
     name = _text(request.POST, 'name')
     code = _text(request.POST, 'code')
@@ -483,16 +624,18 @@ def _save_service_group(request, group):
         raise ValidationError('Service group code must be a single digit.')
     is_active = _checked(request.POST, 'is_active') if group or request.POST.get('is_active_submitted') else True
     if group is None:
-        if ServiceGroup.objects.filter(name__iexact=name, code=code).exists():
-            raise ValidationError('That service group already exists.')
+        dup = _service_group_duplicate_error(name)
+        if dup:
+            raise ValidationError(dup)
         group = ServiceGroup(name=name, code=code, is_active=is_active)
         group.full_clean()
         group.save()
         _audit(request, 'SERVICE_GROUP_CREATED', group, {'name': group.name, 'code': group.code})
         messages.success(request, f'Service group {group.name} was created.')
     else:
-        if ServiceGroup.objects.filter(name__iexact=name, code=code).exclude(pk=group.pk).exists():
-            raise ValidationError('That service group already exists.')
+        dup = _service_group_duplicate_error(name, exclude_pk=group.pk)
+        if dup:
+            raise ValidationError(dup)
         group.name = name
         group.code = code
         group.is_active = _checked(request.POST, 'is_active')
@@ -508,22 +651,34 @@ def _save_service_group(request, group):
 # --- Referral doctors ----------------------------------------------------
 
 def build_doctors_context(request):
+    from django.contrib.auth import get_user_model
     query = _text(request.GET, 'q')
     status = request.GET.get('status') or 'all'
     centre_id = request.GET.get('centre') or ''
-    rows = ReferralDoctor.objects.select_related('centre').annotate(institution_count=Count('institutions')).order_by('last_name', 'first_name')
+    rows = (
+        ReferralDoctor.objects.select_related('centre', 'onboarded_by')
+        .prefetch_related('centres')
+        .annotate(institution_count=Count('institutions', distinct=True))
+        .order_by('last_name', 'first_name')
+    )
     if query:
         rows = rows.filter(
             Q(doctor_code__icontains=query) | Q(first_name__icontains=query) | Q(last_name__icontains=query)
             | Q(facility_name__icontains=query) | Q(phone__icontains=query)
         )
     if centre_id:
-        rows = rows.filter(centre_id=centre_id)
+        rows = rows.filter(Q(centre_id=centre_id) | Q(centres=centre_id)).distinct()
     rows = _active_filter(rows, status)
     selected = None
     selected_id = request.GET.get('doctor')
     if selected_id:
-        selected = ReferralDoctor.objects.select_related('centre').prefetch_related('institutions').filter(pk=selected_id).first()
+        selected = (
+            ReferralDoctor.objects.select_related('centre', 'onboarded_by')
+            .prefetch_related('institutions', 'centres')
+            .filter(pk=selected_id)
+            .first()
+        )
+    User = get_user_model()
     return {
         'directory': paginate(request, rows, 'page'),
         'page_sizes': PAGE_SIZES,
@@ -532,6 +687,7 @@ def build_doctors_context(request):
         'centre_id': centre_id,
         'selected': selected,
         'centres': Centre.objects.filter(is_active=True).order_by('name'),
+        'staff': User.objects.filter(is_active=True).order_by('first_name', 'last_name', 'username'),
         'commission_types': ReferralDoctor._meta.get_field('commission_type').choices,
     }
 
@@ -545,6 +701,8 @@ def handle_doctors_post(request):
         if action == 'update':
             return _save_doctor(request, doctor)
         if action == 'deactivate':
+            if doctor.is_default_placeholder:
+                raise ValidationError('DEFAULT DOCTOR cannot be deactivated. It is required for unknown referrals.')
             doctor.is_active = False
             doctor.save(update_fields=['is_active'])
             _audit(request, 'REFERRAL_DOCTOR_DEACTIVATED', doctor, {'doctor_code': doctor.doctor_code}, centre=doctor.centre)
@@ -557,6 +715,8 @@ def handle_doctors_post(request):
             messages.success(request, f'{doctor.doctor_code} is active again.')
             return redirect(f'/catalog/doctors/?doctor={doctor.pk}')
         if action == 'delete':
+            if doctor.is_default_placeholder:
+                raise ValidationError('DEFAULT DOCTOR cannot be deleted. It is required for unknown referrals.')
             return _try_delete(request, doctor, 'catalog-doctors', doctor.doctor_code)
         if action == 'add_institution':
             name = _text(request.POST, 'institution_name')
@@ -602,7 +762,10 @@ def handle_doctors_post(request):
 
 
 def _save_doctor(request, doctor):
+    from django.contrib.auth import get_user_model
     centre = get_object_or_404(Centre, pk=request.POST.get('centre'))
+    if doctor and doctor.is_default_placeholder and doctor.centre_id != centre.pk:
+        raise ValidationError('DEFAULT DOCTOR stays on its home centre.')
     doctor_code = _text(request.POST, 'doctor_code').upper()
     first_name = _text(request.POST, 'first_name')
     last_name = _text(request.POST, 'last_name')
@@ -614,6 +777,21 @@ def _save_doctor(request, doctor):
     commission_value = _decimal(request.POST, 'commission_value')
     if commission_value < 0:
         raise ValidationError('Commission value cannot be negative.')
+    account_number = _text(request.POST, 'account_number').replace(' ', '')
+    if account_number and not account_number.isdigit():
+        raise ValidationError('Account number should contain digits only.')
+    onboarded_by = None
+    onboarded_id = _text(request.POST, 'onboarded_by')
+    if onboarded_id:
+        onboarded_by = get_user_model().objects.filter(pk=onboarded_id, is_active=True).first()
+        if onboarded_by is None:
+            raise ValidationError('Choose the staff member who introduced this doctor.')
+    if request.POST.get('appear_on_reports_submitted'):
+        appear_on_reports = _checked(request.POST, 'appear_on_reports')
+    elif doctor is None:
+        appear_on_reports = True
+    else:
+        appear_on_reports = doctor.appear_on_reports
     fields = {
         'centre': centre,
         'doctor_code': doctor_code,
@@ -626,13 +804,20 @@ def _save_doctor(request, doctor):
         'commission_type': commission_type,
         'commission_value': commission_value,
         'notes': _text(request.POST, 'notes'),
+        'bank_name': _text(request.POST, 'bank_name'),
+        'account_name': _text(request.POST, 'account_name'),
+        'account_number': account_number,
+        'onboarded_by': onboarded_by,
+        'appear_on_reports': False if (doctor and doctor.is_default_placeholder) else appear_on_reports,
         'is_active': _checked(request.POST, 'is_active') if doctor or request.POST.get('is_active_submitted') else True,
     }
+    assigned = list(Centre.objects.filter(pk__in=request.POST.getlist('centres'), is_active=True))
     if doctor is None:
         if ReferralDoctor.objects.filter(doctor_code__iexact=doctor_code).exists():
             raise ValidationError('A doctor with that code already exists.')
         doctor = ReferralDoctor(**fields)
         doctor.save()
+        doctor.assign_centres(assigned)
         _audit(request, 'REFERRAL_DOCTOR_CREATED', doctor, {'doctor_code': doctor.doctor_code}, centre=centre)
         messages.success(request, f'Doctor {doctor.doctor_code} was created.')
     else:
@@ -642,6 +827,7 @@ def _save_doctor(request, doctor):
             setattr(doctor, key, value)
         doctor.is_active = _checked(request.POST, 'is_active')
         doctor.save()
+        doctor.assign_centres(assigned)
         _audit(request, 'REFERRAL_DOCTOR_UPDATED', doctor, {'doctor_code': doctor.doctor_code}, centre=doctor.centre)
         messages.success(request, f'Doctor {doctor.doctor_code} was saved.')
     return redirect(f'/catalog/doctors/?doctor={doctor.pk}')
@@ -797,6 +983,9 @@ def _save_modality(request, modality):
 # --- Centres -------------------------------------------------------------
 
 def build_centres_context(request):
+    from core.models import CentreReportFormat
+    from core.report_format import get_report_format
+
     query = _text(request.GET, 'q')
     status = request.GET.get('status') or 'all'
     rows = Centre.objects.select_related('sample_code_config').order_by('name')
@@ -804,15 +993,21 @@ def build_centres_context(request):
         rows = rows.filter(Q(code__icontains=query) | Q(name__icontains=query) | Q(phone__icontains=query))
     rows = _active_filter(rows, status)
     selected = None
+    report_format = None
     selected_id = request.GET.get('centre')
     if selected_id:
-        selected = Centre.objects.select_related('sample_code_config').filter(pk=selected_id).first()
+        selected = Centre.objects.select_related('sample_code_config', 'report_format').filter(pk=selected_id).first()
+        if selected:
+            report_format = get_report_format(selected)
     return {
         'directory': paginate(request, rows, 'page'),
         'page_sizes': PAGE_SIZES,
         'query': query,
         'status': status,
         'selected': selected,
+        'report_format': report_format,
+        'layout_choices': CentreReportFormat.LAYOUTS,
+        'font_choices': CentreReportFormat.FONTS,
     }
 
 
@@ -824,6 +1019,8 @@ def handle_centres_post(request):
         centre = get_object_or_404(Centre, pk=request.POST.get('centre'))
         if action == 'update':
             return _save_centre(request, centre)
+        if action == 'save_report_format':
+            return _save_report_format(request, centre)
         if action == 'deactivate':
             centre.is_active = False
             centre.save(update_fields=['is_active'])
@@ -877,6 +1074,8 @@ def _save_centre(request, centre):
             if logo:
                 centre.logo = logo
             centre.save()
+            from referrals.defaults import ensure_default_doctor
+            ensure_default_doctor(centre)
             action = 'CENTRE_CREATED'
             messages.success(request, f'Centre {centre.code} was created.')
         else:
@@ -903,6 +1102,56 @@ def _save_centre(request, centre):
             _audit(request, 'SAMPLE_CODE_CONFIG_SAVED', config, {'centre': centre.code, 'digit': sample_digit}, centre=centre)
         _audit(request, action, centre, {'code': centre.code, 'name': centre.name, 'has_logo': bool(centre.logo)}, centre=centre)
     return redirect(f'/catalog/centres/?centre={centre.pk}')
+
+
+def _save_report_format(request, centre):
+    from core.models import CentreReportFormat
+    from core.report_format import get_report_format
+
+    fmt = get_report_format(centre)
+    layout = _text(request.POST, 'layout_style').upper() or 'CLASSIC'
+    font = _text(request.POST, 'font_family') or 'Helvetica'
+    if layout not in dict(CentreReportFormat.LAYOUTS):
+        raise ValidationError('Choose a valid layout style.')
+    if font not in dict(CentreReportFormat.FONTS):
+        raise ValidationError('Choose a valid font.')
+    try:
+        body_font_size = int(request.POST.get('body_font_size') or 10)
+        margin_mm = int(request.POST.get('margin_mm') or 18)
+    except (TypeError, ValueError):
+        raise ValidationError('Font size and margin must be numbers.')
+    if not 8 <= body_font_size <= 14:
+        raise ValidationError('Body font size must be between 8 and 14.')
+    if not 10 <= margin_mm <= 30:
+        raise ValidationError('Margin must be between 10 and 30 mm.')
+    primary = _text(request.POST, 'primary_color') or '#102033'
+    accent = _text(request.POST, 'accent_color') or '#0f766e'
+    if not primary.startswith('#') or len(primary) != 7:
+        raise ValidationError('Primary colour must be a #RRGGBB value.')
+    if not accent.startswith('#') or len(accent) != 7:
+        raise ValidationError('Accent colour must be a #RRGGBB value.')
+    fmt.title_lab = _text(request.POST, 'title_lab') or 'Laboratory Report'
+    fmt.title_radiology = _text(request.POST, 'title_radiology') or 'Radiology Report'
+    fmt.header_text = _text(request.POST, 'header_text')
+    fmt.footer_text = _text(request.POST, 'footer_text')
+    fmt.show_logo = _checked(request.POST, 'show_logo')
+    fmt.show_centre_address = _checked(request.POST, 'show_centre_address')
+    fmt.show_centre_contact = _checked(request.POST, 'show_centre_contact')
+    fmt.show_authenticator_signature = _checked(request.POST, 'show_authenticator_signature')
+    fmt.signature_label = _text(request.POST, 'signature_label') or 'Authenticated by'
+    fmt.watermark_text = _text(request.POST, 'watermark_text')
+    fmt.layout_style = layout
+    fmt.font_family = font
+    fmt.body_font_size = body_font_size
+    fmt.margin_mm = margin_mm
+    fmt.primary_color = primary
+    fmt.accent_color = accent
+    fmt.save()
+    _audit(request, 'CENTRE_REPORT_FORMAT_SAVED', centre, {
+        'layout': layout, 'font': font, 'title_lab': fmt.title_lab, 'title_radiology': fmt.title_radiology,
+    }, centre=centre)
+    messages.success(request, f'Result formatting for {centre.code} was saved.')
+    return redirect(f'/catalog/centres/?centre={centre.pk}#report-format')
 
 
 # --- Organisation clients ------------------------------------------------

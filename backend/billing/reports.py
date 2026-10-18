@@ -9,7 +9,7 @@ from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.utils import timezone
 
-from billing.models import DiscountRequest, Invoice, Payment
+from billing.models import DiscountRequest, Invoice, Payment, Refund
 from core.models import Centre
 from patients.models import Visit
 
@@ -108,7 +108,10 @@ def build_accountant_report(user, period='daily', centre_id=None, start=None, en
     ).select_related('patient', 'centre')
     outstanding = Invoice.objects.filter(status__in=['UNPAID', 'PART_PAID']).select_related(
         'visit__patient', 'visit__centre',
-    ).prefetch_related('payments')
+    ).prefetch_related('payments', 'refunds')
+    refunds = Refund.objects.filter(
+        status='COMPLETED', created_at__gte=start_dt, created_at__lte=end_dt,
+    )
 
     if centre_ids is not None:
         payments = payments.filter(invoice__visit__centre_id__in=centre_ids)
@@ -116,16 +119,25 @@ def build_accountant_report(user, period='daily', centre_id=None, start=None, en
         discounts = discounts.filter(invoice__visit__centre_id__in=centre_ids)
         visits = visits.filter(centre_id__in=centre_ids)
         outstanding = outstanding.filter(visit__centre_id__in=centre_ids)
+        refunds = refunds.filter(invoice__visit__centre_id__in=centre_ids)
 
     collections = _money(payments.aggregate(total=Sum('amount'))['total'])
+    refunds_total = _money(refunds.aggregate(total=Sum('amount'))['total'])
+    gross_charges = _money(invoices.exclude(status='CANCELLED').aggregate(total=Sum('subtotal'))['total'])
     invoice_billed = _money(invoices.exclude(status='CANCELLED').aggregate(total=Sum('total'))['total'])
     discount_applied = _money(
         discounts.filter(status='APPROVED').aggregate(total=Sum('applied_amount'))['total']
     )
+    invoice_discounts = _money(
+        invoices.exclude(status='CANCELLED').aggregate(total=Sum('discount_amount'))['total']
+    )
+    net_receipts = _money(collections - refunds_total)
     outstanding_total = Decimal('0')
     for invoice in outstanding:
         paid = sum((p.amount for p in invoice.payments.all() if p.status == 'CONFIRMED'), Decimal('0'))
-        outstanding_total += (invoice.total or Decimal('0')) - paid
+        refunded = sum((r.amount for r in invoice.refunds.all() if r.status == 'COMPLETED'), Decimal('0'))
+        net_paid = max(Decimal('0'), paid - refunded)
+        outstanding_total += max(Decimal('0'), (invoice.total or Decimal('0')) - net_paid)
     outstanding_total = _money(outstanding_total)
 
     payments_by_method = [
@@ -217,9 +229,13 @@ def build_accountant_report(user, period='daily', centre_id=None, start=None, en
         'selected_centre': selected_centre,
         'centre_id': str(selected_centre.pk) if selected_centre else '',
         'kpis': {
+            'gross_charges': gross_charges,
             'collections': collections,
+            'refunds': refunds_total,
+            'net_receipts': net_receipts,
             'invoice_billed': invoice_billed,
             'discount_applied': discount_applied,
+            'invoice_discounts': invoice_discounts,
             'outstanding': outstanding_total,
             'payment_count': payments.count(),
             'invoice_count': invoices.count(),
@@ -268,10 +284,14 @@ def _dataset_table(report, dataset):
         kpis = report['kpis']
         rows = [
             ['Period', report['period_label']],
+            ['Gross charges (₦)', kpis.get('gross_charges', 0)],
+            ['Invoice discounts (₦)', kpis.get('invoice_discounts', 0)],
+            ['Invoice value / billed (₦)', kpis['invoice_billed']],
             ['Collections (₦)', kpis['collections']],
-            ['Invoice billed (₦)', kpis['invoice_billed']],
-            ['Discounts applied (₦)', kpis['discount_applied']],
-            ['Outstanding balance (₦)', kpis['outstanding']],
+            ['Refunds (₦)', kpis.get('refunds', 0)],
+            ['Net receipts (₦)', kpis.get('net_receipts', 0)],
+            ['Approved discount requests (₦)', kpis['discount_applied']],
+            ['Outstanding receivables (₦)', kpis['outstanding']],
             ['Payments', kpis['payment_count']],
             ['Invoices', kpis['invoice_count']],
             ['Visits', kpis['visit_count']],

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}PACS failures | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="Instruments" title="PACS failures" subtitle="Orthanc reconcile queue." %}
+<form method="get" class="mb-3">
+  <select name="show" class="form-select w-auto d-inline-block" onchange="this.form.submit()">
+    <option value="open" {% if show == 'open' %}selected{% endif %}>Open</option>
+    <option value="resolved" {% if show == 'resolved' %}selected{% endif %}>Resolved</option>
+    <option value="all" {% if show == 'all' %}selected{% endif %}>All</option>
+  </select>
+</form>
+<div class="card p-3">
+  <table class="table align-middle"><thead><tr><th>When</th><th>Exam / centre</th><th>Reason</th><th></th></tr></thead>
+    <tbody>
+      {% for row in directory %}
+      <tr>
+        <td class="small">{{ row.created_at }}</td>
+        <td>{{ row.exam.order.visit.centre.code }} · {{ row.exam.order.visit.visit_id }}</td>
+        <td>{{ row.reason }}</td>
+        <td>
+          {% if not row.resolved_at %}
+          <form method="post">{% csrf_token %}<input type="hidden" name="action" value="resolve"><input type="hidden" name="failure" value="{{ row.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Mark resolved</button></form>
+          {% else %}<span class="small muted">Resolved {{ row.resolved_at }}</span>{% endif %}
+        </td>
+      </tr>
+      {% empty %}<tr><td colspan="4" class="muted text-center py-3">No PACS failures.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% include "includes/pagination.html" with page=directory %}
+</div>
+{% endblock %}

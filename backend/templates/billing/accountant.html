@@ -43,16 +43,19 @@
 </form>
 
 <div class="row g-3 mb-4">
+  <div class="col-6 col-xl-3"><div class="kpi"><span class="kpi-icon text-white" style="background:#1b314d"><i class="bi bi-receipt"></i></span><div><div class="kpi-label">GROSS CHARGES</div><div class="kpi-value">₦{{ kpis.gross_charges|floatformat:2 }}</div></div></div></div>
   <div class="col-6 col-xl-3"><div class="kpi"><span class="kpi-icon text-white" style="background:#0f766e"><i class="bi bi-cash-stack"></i></span><div><div class="kpi-label">COLLECTIONS</div><div class="kpi-value">₦{{ kpis.collections|floatformat:2 }}</div></div></div></div>
-  <div class="col-6 col-xl-3"><div class="kpi"><span class="kpi-icon text-white" style="background:#1b314d"><i class="bi bi-receipt"></i></span><div><div class="kpi-label">INVOICED</div><div class="kpi-value">₦{{ kpis.invoice_billed|floatformat:2 }}</div></div></div></div>
-  <div class="col-6 col-xl-3"><div class="kpi"><span class="kpi-icon text-white" style="background:#8a5a00"><i class="bi bi-percent"></i></span><div><div class="kpi-label">DISCOUNTS APPLIED</div><div class="kpi-value">₦{{ kpis.discount_applied|floatformat:2 }}</div></div></div></div>
+  <div class="col-6 col-xl-3"><div class="kpi"><span class="kpi-icon text-white" style="background:#334155"><i class="bi bi-arrow-left-right"></i></span><div><div class="kpi-label">NET RECEIPTS</div><div class="kpi-value">₦{{ kpis.net_receipts|floatformat:2 }}</div></div></div></div>
   <div class="col-6 col-xl-3"><div class="kpi"><span class="kpi-icon text-white" style="background:#9b2c2c"><i class="bi bi-exclamation-circle"></i></span><div><div class="kpi-label">OUTSTANDING</div><div class="kpi-value">₦{{ kpis.outstanding|floatformat:2 }}</div></div></div></div>
 </div>
 <div class="row g-3 mb-4">
+  <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">INVOICE VALUE</div><div class="h4 mb-0">₦{{ kpis.invoice_billed|floatformat:2 }}</div></div></div>
+  <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">REFUNDS</div><div class="h4 mb-0">₦{{ kpis.refunds|floatformat:2 }}</div></div></div>
+  <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">DISCOUNTS APPLIED</div><div class="h4 mb-0">₦{{ kpis.discount_applied|floatformat:2 }}</div></div></div>
+  <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">PENDING DISCOUNTS</div><div class="h4 mb-0">{{ kpis.pending_discounts }}</div></div></div>
   <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">PAYMENTS</div><div class="h4 mb-0">{{ kpis.payment_count }}</div></div></div>
   <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">INVOICES</div><div class="h4 mb-0">{{ kpis.invoice_count }}</div></div></div>
   <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">VISITS</div><div class="h4 mb-0">{{ kpis.visit_count }}</div></div></div>
-  <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">PENDING DISCOUNTS</div><div class="h4 mb-0">{{ kpis.pending_discounts }}</div></div></div>
 </div>
 
 <div class="card p-4 mb-4">

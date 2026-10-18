@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Platform controls | HFDN{% endblock %}
+{% block content %}
+<header class="pc-head">
+  <div class="eyebrow">Settings</div>
+  <h1>Platform controls</h1>
+  <p>Catalogue, people, workflows, instruments, finance, and portals.</p>
+</header>
+
+<div class="pc-sections">
+  {% for section in sections %}
+  <section class="pc-section">
+    <h2>{{ section.title }}</h2>
+    <div class="pc-panel">
+      {% for label, url, icon, blurb in section.items %}
+      <a class="pc-row" href="{{ url }}">
+        <span class="pc-icon" aria-hidden="true"><i class="bi {{ icon }}"></i></span>
+        <span class="pc-copy">
+          <span class="pc-label">{{ label }}</span>
+          <span class="pc-blurb">{{ blurb }}</span>
+        </span>
+        <i class="bi bi-chevron-right pc-chev" aria-hidden="true"></i>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+
+<style>
+  .pc-head { margin-bottom: 1.35rem; }
+  .pc-head h1 { margin-bottom: .2rem; }
+  .pc-head p { margin: 0; color: #78716c; max-width: 38rem; }
+  .pc-sections { display: flex; flex-direction: column; gap: 1.2rem; }
+  .pc-section h2 {
+    font-family: Newsreader, Georgia, serif;
+    font-size: 1.35rem;
+    font-weight: 460;
+    letter-spacing: -0.02em;
+    margin: 0 0 .45rem;
+  }
+  .pc-panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .25rem;
+    background: #fff;
+    border: 1px solid #e7e2d9;
+    border-radius: 18px;
+    padding: .35rem;
+  }
+  .pc-row {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    min-width: 0;
+    padding: .62rem .7rem;
+    border-radius: 14px;
+    text-decoration: none;
+    color: #1c1917;
+  }
+  .pc-row:hover { background: #f7f5f0; }
+  .pc-icon {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    display: grid;
+    place-items: center;
+    border-radius: 11px;
+    background: #e7f0ea;
+    color: #1f6b4a;
+    font-size: 1rem;
+  }
+  .pc-copy { min-width: 0; flex: 1; }
+  .pc-label { display: block; font-weight: 600; line-height: 1.25; }
+  .pc-blurb {
+    display: block;
+    margin-top: .05rem;
+    color: #78716c;
+    font-size: .84rem;
+    line-height: 1.3;
+  }
+  .pc-chev { color: #c4bfb6; font-size: .8rem; }
+  @media (max-width: 991.98px) {
+    .pc-panel { grid-template-columns: 1fr; }
+  }
+</style>
+{% endblock %}

@@ -6,7 +6,7 @@ from django.test import Client, TestCase
 from rest_framework.test import APIClient
 from core.models import Centre, UserCentreAccess
 from patients.models import Patient, Visit
-from laboratory.models import Test, Tariff, TestPrice
+from laboratory.models import ServiceGroup, Test, Tariff, TestPrice
 from .models import Invoice, InvoiceItem, Payment, DiscountRequest
 
 User=get_user_model()
@@ -19,7 +19,8 @@ class PhaseTwoAccountsTests(TestCase):
         self.user.groups.add(Group.objects.get_or_create(name='Accounts')[0])
         self.patient=Patient.objects.create(first_name='Ada',last_name='Okafor',phone_number='8000000001')
         self.visit=Visit.objects.create(patient=self.patient,centre=self.centre,registered_by=self.user)
-        self.test=Test.objects.create(code='CBC',name='Full Blood Count')
+        group=ServiceGroup.objects.create(name='Haematology',code='1')
+        self.test=Test.objects.create(code='CBC',name='Full Blood Count',service_group=group)
         self.tariff=Tariff.objects.create(name='Standard')
         TestPrice.objects.create(tariff=self.tariff,test=self.test,price=Decimal('5500.00'))
         self.invoice=Invoice.objects.create(visit=self.visit,created_by=self.user,status='UNPAID')

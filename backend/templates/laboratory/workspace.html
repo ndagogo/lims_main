@@ -1,124 +1,419 @@
 {% extends "base.html" %}
 {% block title %}Laboratory | HFDN{% endblock %}
 {% block content %}
-<div class="mb-4">
-  <div class="muted small">LABORATORY</div>
-  <h1 class="h3">Laboratory workflow</h1>
-  <p class="muted">Unpaid visits stay with the paypoint. Collection starts after payment is complete. Release needs a different person from the one who authenticated, and a referral or registration form on the visit.</p>
+<div class="hero-band dash-enter">
+  <div class="muted small mb-1">LABORATORY WORKFLOW · STEPS 4–10</div>
+  <h1 class="h3 mb-1">Department laboratory</h1>
+  <p class="muted mb-0">Batch → receive → process → enter → review → authenticate → controlled release. Collection and barcodes stay on Phlebotomy.</p>
 </div>
+
+<style>
+  .lab-stage-nav .nav-link { border: 1px solid var(--hfdn-line); background: #fff; color: var(--hfdn-ink); }
+  .lab-stage-nav .nav-link.active { background: var(--hfdn-navy); border-color: var(--hfdn-navy); color: #fff; }
+  .activity-log { font-size: .82rem; max-height: 9rem; overflow: auto; background: var(--hfdn-paper); border-radius: .75rem; padding: .65rem .8rem; }
+</style>
+<ul class="nav lab-stage-nav nav-pills flex-wrap gap-2 mb-4">
+  {% for key, label, hint in lab_stages %}
+    <li class="nav-item">
+      <a class="nav-link {% if active_stage == key %}active{% endif %}" href="?stage={{ key }}" title="{{ hint }}">
+        {{ label }}
+        {% if key == 'batch' %}<span class="badge ms-1">{{ stage_counts.batch }}</span>
+        {% elif key == 'receive' %}<span class="badge ms-1">{{ stage_counts.receive }}</span>
+        {% elif key == 'process' %}<span class="badge ms-1">{{ stage_counts.process }}</span>
+        {% elif key == 'entry' %}<span class="badge ms-1">{{ stage_counts.entry }}</span>
+        {% elif key == 'review' %}<span class="badge ms-1">{{ stage_counts.review }}</span>
+        {% elif key == 'auth' %}<span class="badge ms-1">{{ stage_counts.auth }}</span>
+        {% elif key == 'release' %}<span class="badge ms-1">{{ stage_counts.release }}</span>
+        {% else %}<span class="badge ms-1">{{ stage_counts.overview }}</span>{% endif %}
+      </a>
+    </li>
+  {% endfor %}
+</ul>
+
+{% if active_stage == 'batch' %}
+<div class="row g-3">
+  <div class="col-lg-7">
+    <form method="post" class="card p-4">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="batch">
+      <input type="hidden" name="stage" value="batch">
+      <h2 class="h5">4 · Create batch</h2>
+      <p class="muted small">Select collected samples for one centre and department, then create a batch for dispatch.</p>
+      <div class="row g-2 mb-3">
+        <div class="col-md-6">
+          <label class="form-label small">Centre</label>
+          <select name="centre" class="form-select" required>
+            {% for centre in batch_centres %}<option value="{{ centre.pk }}">{{ centre.code }} — {{ centre.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small">Department</label>
+          <select name="department" class="form-select" required>
+            {% for department in departments %}<option>{{ department }}</option>{% empty %}<option value="">No collected samples</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      {% for sample in collected_samples %}
+        <div class="form-check border-bottom py-2">
+          <input class="form-check-input" type="checkbox" name="sample_ids" value="{{ sample.sample_id }}" id="batch-{{ sample.pk }}">
+          <label class="form-check-label" for="batch-{{ sample.pk }}">
+            <span class="font-monospace fw-semibold">{{ sample.sample_id }}</span>
+            — {{ sample.order.test.name }} — {{ sample.order.test.department }} — {{ sample.centre.code }}
+            <a class="open-link ms-1" href="{% url 'sample-label' sample.pk %}" target="_blank">label</a>
+          </label>
+        </div>
+      {% empty %}
+        <p class="muted mb-0">No collected samples ready to batch. Collect on <a href="{% url 'phlebotomy-workspace' %}">Phlebotomy</a>.</p>
+      {% endfor %}
+      {% if collected_samples %}<button class="btn btn-primary mt-3" type="submit">Create batch</button>{% endif %}
+      {% include "includes/pagination.html" with page=collected_samples %}
+    </form>
+  </div>
+  <div class="col-lg-5">
+    <div class="card p-4">
+      <h2 class="h5">Batches</h2>
+      {% for batch in recent_batches %}
+        <div class="d-flex flex-wrap gap-2 align-items-center border-top py-2">
+          <div class="me-auto">
+            <div class="fw-semibold">{{ batch.batch_code }}</div>
+            <div class="small muted">{{ batch.department }} · {{ batch.get_status_display }} · {{ batch.items.count }} sample(s)</div>
+          </div>
+          {% if batch.status == 'OPEN' %}
+            <form method="post">{% csrf_token %}<input type="hidden" name="action" value="dispatch"><input type="hidden" name="stage" value="batch"><input type="hidden" name="batch" value="{{ batch.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Dispatch</button></form>
+          {% endif %}
+        </div>
+      {% empty %}<p class="muted mb-0">No batches yet.</p>{% endfor %}
+      {% include "includes/pagination.html" with page=recent_batches %}
+    </div>
+  </div>
+</div>
+
+{% elif active_stage == 'receive' %}
+<div class="card p-4">
+  <h2 class="h5">5 · Department receiving</h2>
+  <p class="muted small">Receive dispatched batches to move every sample to department-received status.</p>
+  {% for batch in open_batches %}
+    <div class="border-top py-3">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <div class="me-auto">
+          <div class="fw-semibold">{{ batch.batch_code }} — {{ batch.department }}</div>
+          <div class="small muted">{{ batch.centre.code }} · {{ batch.get_status_display }}
+            {% if batch.dispatched_at %} · dispatched {{ batch.dispatched_at|date:"Y-m-d H:i" }}{% endif %}
+            {% if batch.received_at %} · received {{ batch.received_at|date:"Y-m-d H:i" }}{% endif %}
+          </div>
+          <div class="small mt-1">
+            {% for item in batch.items.all %}
+              <span class="badge badge-soft me-1 font-monospace">{{ item.sample.sample_id }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% if batch.status == 'OPEN' %}
+          <form method="post">{% csrf_token %}<input type="hidden" name="action" value="dispatch"><input type="hidden" name="stage" value="receive"><input type="hidden" name="batch" value="{{ batch.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Dispatch</button></form>
+        {% elif batch.status == 'DISPATCHED' %}
+          <form method="post">{% csrf_token %}<input type="hidden" name="action" value="receive"><input type="hidden" name="stage" value="receive"><input type="hidden" name="batch" value="{{ batch.pk }}"><button class="btn btn-sm btn-primary" type="submit">Receive at department</button></form>
+        {% else %}
+          <span class="badge badge-soft">Received</span>
+        {% endif %}
+      </div>
+    </div>
+  {% empty %}<p class="muted mb-0">No open or dispatched batches.</p>{% endfor %}
+  {% include "includes/pagination.html" with page=open_batches %}
+</div>
+
+{% elif active_stage == 'process' %}
+<div class="card p-4">
+  <h2 class="h5">6 · Sample processing &amp; activity</h2>
+  <p class="muted small">Start and complete processing. Each action is logged with user, time, and IP.</p>
+  {% for sample in process_samples %}
+    <div class="border-top py-3">
+      <div class="fw-semibold font-monospace">{{ sample.sample_id }} — {{ sample.order.test.name }}</div>
+      <div class="small muted mb-2">{{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }} · {{ sample.get_status_display }} · {{ sample.centre.code }}
+        · <a class="open-link" href="{% url 'sample-label' sample.pk %}">barcode</a>
+      </div>
+      {% if sample.status == 'RECEIVED' %}
+        <form method="post" class="row g-2 align-items-end">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="start_processing">
+          <input type="hidden" name="stage" value="process">
+          <input type="hidden" name="sample" value="{{ sample.pk }}">
+          <div class="col-md-8"><input class="form-control form-control-sm" name="notes" placeholder="Processing notes (optional)"></div>
+          <div class="col-md-4"><button class="btn btn-sm btn-primary" type="submit">Start processing</button></div>
+        </form>
+      {% elif sample.status == 'PROCESSING' and sample.open_processing %}
+        <form method="post" class="row g-2 align-items-end">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="complete_processing">
+          <input type="hidden" name="stage" value="process">
+          <input type="hidden" name="sample" value="{{ sample.pk }}">
+          <div class="col-md-8"><input class="form-control form-control-sm" name="notes" placeholder="Completion notes"></div>
+          <div class="col-md-4"><button class="btn btn-sm btn-primary" type="submit">Complete processing</button></div>
+        </form>
+      {% elif sample.status == 'PROCESSING' %}
+        <div class="alert alert-success py-2 mb-2">Processing complete — continue on the Results stage.</div>
+      {% endif %}
+      {% if sample.recent_activities %}
+        <div class="activity-log mt-2">
+          {% for row in sample.recent_activities %}
+            <div>{{ row.created_at|date:"Y-m-d H:i" }} · {{ row.action }}{% if row.performed_by %} · {{ row.performed_by.get_username }}{% endif %}{% if row.note %} — {{ row.note }}{% endif %}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% if sample.status != 'RELEASED' and sample.status != 'CANCELLED' and sample.status != 'REJECTED' and sample.status != 'SUPERSEDED' %}
+        <form method="post" class="row g-2 mt-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="reject">
+          <input type="hidden" name="stage" value="process">
+          <input type="hidden" name="sample" value="{{ sample.pk }}">
+          <div class="col-md-4"><input name="reason" class="form-control form-control-sm" placeholder="Rejection reason" required></div>
+          <div class="col-md-3">
+            <select name="disposition" class="form-select form-select-sm">
+              <option value="REJECTED">Rejected</option>
+              <option value="UNSUITABLE">Unsuitable</option>
+            </select>
+          </div>
+          <div class="col-md-3"><input name="corrective_action" class="form-control form-control-sm" placeholder="Corrective action"></div>
+          <div class="col-md-2"><button class="btn btn-sm btn-outline-danger w-100" type="submit">Reject</button></div>
+        </form>
+      {% endif %}
+    </div>
+  {% empty %}<p class="muted mb-0">No samples awaiting processing.</p>{% endfor %}
+  {% include "includes/pagination.html" with page=process_samples %}
+</div>
+
+{% elif active_stage == 'entry' %}
+<div class="card p-4">
+  <h2 class="h5">7 · Result entry</h2>
+  <p class="muted small">Fields follow the published result template (units, choices, differentials, calculated values). Reference intervals are matched server-side by age/sex/population — not hardcoded here.</p>
+  {% for sample in entry_samples %}
+    <div class="border-top py-3">
+      <div class="fw-semibold font-monospace">{{ sample.sample_id }} — {{ sample.order.test.name }}</div>
+      <div class="small muted mb-2">
+        {{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }}
+        · {{ sample.get_status_display }}
+        {% if sample.entry_template %}· template {{ sample.entry_template.name }} v{{ sample.entry_template.version }} ({{ sample.entry_template.status }}){% endif %}
+      </div>
+      {% if sample.open_processing %}
+        <p class="text-warning small mb-0">Complete processing before entering results.</p>
+      {% else %}
+        <form method="post" class="row g-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="enter_result">
+          <input type="hidden" name="stage" value="entry">
+          <input type="hidden" name="sample" value="{{ sample.pk }}">
+          {% if sample.entry_template %}<input type="hidden" name="template" value="{{ sample.entry_template.pk }}">{% endif %}
+          {% for field in sample.entry_fields %}
+            {% if field.widget == 'section' %}
+              <div class="col-12 mt-2">
+                <div class="fw-semibold border-bottom pb-1">{{ field.section_label|default:field.parameter.name }}</div>
+                {% if field.parameter.name and field.section_label %}<div class="small muted">{{ field.parameter.name }}</div>{% endif %}
+              </div>
+            {% elif field.widget == 'calculated' %}
+              <div class="col-md-4">
+                <label class="form-label small">{{ field.parameter.name }}{% if field.unit %} ({{ field.unit }}){% endif %} · calculated</label>
+                <input class="form-control form-control-sm" name="param-{{ field.parameter.pk }}" value="" readonly placeholder="{{ field.calculation|default:'auto' }}">
+                {% if field.show_reference_range and field.reference_display %}<div class="small muted">Ref (v{{ field.matched_range_version|default:"—" }}): {{ field.reference_display }}</div>{% endif %}
+              </div>
+            {% elif field.widget == 'select' %}
+              <div class="col-md-4">
+                <label class="form-label small">{{ field.parameter.name }}{% if field.is_required %} *{% endif %}</label>
+                <select class="form-select form-select-sm" name="param-{{ field.parameter.pk }}" {% if field.is_required %}required{% endif %}>
+                  <option value="">—</option>
+                  {% if field.choices %}
+                    {% for choice in field.choices %}<option value="{{ choice }}">{{ choice }}</option>{% endfor %}
+                  {% elif field.result_type == 'BOOLEAN' %}
+                    <option>Yes</option><option>No</option>
+                  {% endif %}
+                </select>
+                {% if field.show_reference_range and field.reference_display %}<div class="small muted">Ref: {{ field.reference_display }}</div>{% endif %}
+              </div>
+            {% elif field.widget == 'multiselect' %}
+              <div class="col-md-6">
+                <label class="form-label small">{{ field.parameter.name }}{% if field.is_required %} *{% endif %} · multi-select</label>
+                <div class="border rounded p-2">
+                  {% for choice in field.choices %}
+                    <div class="form-check form-check-inline">
+                      <input class="form-check-input" type="checkbox" name="param-{{ field.parameter.pk }}" value="{{ choice }}" id="mc-{{ sample.pk }}-{{ field.parameter.pk }}-{{ forloop.counter }}">
+                      <label class="form-check-label small" for="mc-{{ sample.pk }}-{{ field.parameter.pk }}-{{ forloop.counter }}">{{ choice }}</label>
+                    </div>
+                  {% empty %}<span class="small muted">No choices configured on catalogue.</span>{% endfor %}
+                </div>
+              </div>
+            {% elif field.widget == 'textarea' %}
+              <div class="col-md-6">
+                <label class="form-label small">{{ field.parameter.name }}{% if field.is_required %} *{% endif %}</label>
+                <textarea class="form-control form-control-sm" name="param-{{ field.parameter.pk }}" rows="2" {% if field.is_required %}required{% endif %}></textarea>
+              </div>
+            {% else %}
+              <div class="col-md-4">
+                <label class="form-label small">
+                  {{ field.parameter.name }}{% if field.unit %} ({{ field.unit }}){% endif %}{% if field.is_required %} *{% endif %}
+                  {% if field.section_code %}<span class="muted"> · {{ field.section_code }}</span>{% endif %}
+                </label>
+                <input class="form-control form-control-sm" name="param-{{ field.parameter.pk }}" {% if field.widget == 'number' %}inputmode="decimal"{% endif %} {% if field.decimal_places != None %}step="any"{% endif %} {% if field.is_required %}required{% endif %}>
+                {% if field.show_reference_range and field.reference_display %}
+                  <div class="small muted">Ref{% if field.matched_range_version %} v{{ field.matched_range_version }}{% endif %}: {{ field.reference_display }}{% if field.matched_range.population_label %} · {{ field.matched_range.population_label }}{% endif %}</div>
+                {% endif %}
+                {% if field.parameter.require_comment_if_abnormal or field.parameter.critical_comment_required %}
+                  <input class="form-control form-control-sm mt-1" name="comment-{{ field.parameter.pk }}" placeholder="Comment if abnormal/critical">
+                {% endif %}
+              </div>
+            {% endif %}
+          {% empty %}
+            <div class="col-12"><p class="muted small mb-0">No catalogue parameters. Configure them under Catalog → Tests, then build a result template.</p></div>
+          {% endfor %}
+          <div class="col-12"><input class="form-control form-control-sm" name="narrative" placeholder="Approved report narrative / interpretation"></div>
+          <div class="col-12"><button class="btn btn-sm btn-primary" type="submit">Save draft result</button></div>
+        </form>
+      {% endif %}
+      {% if sample.recent_activities %}
+        <div class="activity-log mt-2">
+          {% for row in sample.recent_activities %}
+            <div>{{ row.created_at|date:"Y-m-d H:i" }} · {{ row.action }}{% if row.performed_by %} · {{ row.performed_by.get_username }}{% endif %}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+  {% empty %}<p class="muted mb-0">No samples ready for result entry.</p>{% endfor %}
+  {% include "includes/pagination.html" with page=entry_samples %}
+</div>
+
+{% elif active_stage == 'review' %}
+<div class="card p-4">
+  <h2 class="h5">8 · First review / result validation</h2>
+  <p class="muted small">Submit drafts for review, then approve or reject. The author cannot review their own result.</p>
+  {% for result in review_results %}
+    <div class="border-top py-3">
+      <div class="fw-semibold font-monospace">{{ result.sample.sample_id }} — {{ result.sample.order.test.name }}</div>
+      <div class="small muted mb-2">{{ result.sample.order.visit.patient.first_name }} {{ result.sample.order.visit.patient.last_name }} · {{ result.get_status_display }} · entered by {{ result.entered_by.get_username|default:"—" }}</div>
+      {% if result.narrative %}<div class="small mb-2">{{ result.narrative }}</div>{% endif %}
+      {% if result.values.all %}
+        <ul class="small mb-2">{% for v in result.values.all %}<li>{{ v.parameter.name }}: {{ v.value }}{% if v.flag %} ({{ v.flag }}){% endif %}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if result.status == 'DRAFT' %}
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="submit_review"><input type="hidden" name="stage" value="review"><input type="hidden" name="result" value="{{ result.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Submit for review</button></form>
+      {% elif result.status == 'SUBMITTED' %}
+        <form method="post" class="row g-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="review">
+          <input type="hidden" name="stage" value="review">
+          <input type="hidden" name="result" value="{{ result.pk }}">
+          <div class="col-md-3"><select name="decision" class="form-select form-select-sm"><option value="APPROVE">Approve</option><option value="REJECT">Reject</option></select></div>
+          <div class="col-md-5"><input name="note" class="form-control form-control-sm" placeholder="Note (required if rejecting)"></div>
+          <div class="col-md-2"><button class="btn btn-sm btn-primary" type="submit">Record review</button></div>
+        </form>
+      {% endif %}
+    </div>
+  {% empty %}<p class="muted mb-0">No drafts or submitted results waiting for validation.</p>{% endfor %}
+  {% include "includes/pagination.html" with page=review_results %}
+</div>
+
+{% elif active_stage == 'auth' %}
+<div class="card p-4">
+  <h2 class="h5">9 · Result authentication</h2>
+  <p class="muted small">Authorised personnel only. Neither the author nor the first reviewer may authenticate the same result.</p>
+  {% for result in auth_results %}
+    <div class="border-top py-3 d-flex flex-wrap gap-2 align-items-center">
+      <div class="me-auto">
+        <div class="fw-semibold font-monospace">{{ result.sample.sample_id }} — {{ result.sample.order.test.name }}</div>
+        <div class="small muted">Reviewed by {{ result.reviewed_by.get_username|default:"—" }} · entered by {{ result.entered_by.get_username|default:"—" }}</div>
+      </div>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="authenticate"><input type="hidden" name="stage" value="auth"><input type="hidden" name="result" value="{{ result.pk }}"><button class="btn btn-sm btn-primary" type="submit">Authenticate</button></form>
+    </div>
+  {% empty %}<p class="muted mb-0">No reviewed results awaiting authentication.</p>{% endfor %}
+  {% include "includes/pagination.html" with page=auth_results %}
+</div>
+
+{% elif active_stage == 'release' %}
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card p-4">
+      <h2 class="h5">10 · Controlled result release</h2>
+      <p class="muted small">Release requires eligibility checks and a different person from the authenticator.</p>
+      {% for result in release_results %}
+        <div class="border-top py-3 d-flex flex-wrap gap-2 align-items-center">
+          <div class="me-auto">
+            <div class="fw-semibold font-monospace">{{ result.sample.sample_id }} — {{ result.sample.order.test.name }}</div>
+            <div class="small muted">Authenticated by {{ result.authenticated_by.get_username|default:"—" }} · {{ result.authenticated_at|date:"Y-m-d H:i" }}</div>
+          </div>
+          <form method="post">{% csrf_token %}<input type="hidden" name="action" value="release"><input type="hidden" name="stage" value="release"><input type="hidden" name="result" value="{{ result.pk }}"><button class="btn btn-sm btn-success" type="submit">Release</button></form>
+        </div>
+      {% empty %}<p class="muted mb-0">No authenticated results ready to release.</p>{% endfor %}
+      {% include "includes/pagination.html" with page=release_results %}
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card p-4">
+      <h2 class="h5">Recently released</h2>
+      {% for result in recent_released %}
+        <div class="border-top py-2">
+          <div class="fw-semibold font-monospace">{{ result.sample.sample_id }}</div>
+          <div class="small muted">{{ result.get_status_display }} · v{{ result.version }}
+            · <a href="/api/lab-results/{{ result.pk }}/pdf/">PDF</a>
+          </div>
+          {% if result.status == 'RELEASED' or result.status == 'AMENDED' %}
+            <form method="post" class="mt-2">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="amend">
+              <input type="hidden" name="stage" value="release">
+              <input type="hidden" name="result" value="{{ result.pk }}">
+              <input name="reason" class="form-control form-control-sm mb-1" placeholder="Amendment reason" required>
+              <button class="btn btn-sm btn-outline-danger" type="submit">Amend</button>
+            </form>
+          {% endif %}
+        </div>
+      {% empty %}<p class="muted mb-0">No released results yet.</p>{% endfor %}
+    </div>
+  </div>
+</div>
+
+{% else %}
 <div class="row g-2 mb-4">
   {% for key, count in sample_counts.items %}
     <div class="col-6 col-md-4 col-xl-3"><div class="card p-3"><div class="muted small">{{ key }}</div><div class="h4 mb-0">{{ count }}</div></div></div>
   {% endfor %}
 </div>
-<div class="card p-4 mb-4">
-  <h2 class="h5">Collect</h2>
-  {% for order in pending_orders %}
-    <form method="post" class="d-flex flex-wrap gap-2 align-items-center border-top py-2">
-      {% csrf_token %}
-      <input type="hidden" name="action" value="collect">
-      <input type="hidden" name="order" value="{{ order.pk }}">
-      <div class="me-auto">{{ order.visit.visit_id }} — {{ order.visit.patient.first_name }} {{ order.visit.patient.last_name }} — {{ order.test.name }} — {{ order.status }}</div>
-      <button class="btn btn-sm btn-primary" type="submit">Collect</button>
-    </form>
-  {% empty %}<p class="muted mb-0">No paid laboratory orders are waiting for collection.</p>{% endfor %}
-  {% include "includes/pagination.html" with page=pending_orders %}
-</div>
-{% if collected_samples %}
-<form method="post" class="card p-4 mb-4">
-  {% csrf_token %}
-  <h2 class="h5">Batch collected samples</h2>
-  <input type="hidden" name="action" value="batch">
-  <div class="row g-2 mb-3">
-    <div class="col-md-4"><select name="centre" class="form-select" required>{% for centre in batch_centres %}<option value="{{ centre.pk }}">{{ centre.code }}</option>{% endfor %}</select></div>
-    <div class="col-md-4"><select name="department" class="form-select" required>{% for department in departments %}<option>{{ department }}</option>{% endfor %}</select></div>
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card p-4">
+      <h2 class="h5">TAT overview</h2>
+      <p class="muted mb-2">Open {{ tat_summary.open_total }} · overdue {{ tat_summary.overdue_total }} · warning {{ tat_summary.warning_total|default:0 }} · <a href="{% url 'laboratory-tat' %}">Full TAT dashboard</a></p>
+      <ul class="mb-0">{% for s in tat_summary.overdue_samples|slice:":8" %}<li><a href="{% url 'sample-timeline' s.pk %}">{{ s.sample_id }}</a> — {{ s.test }} — {{ s.effective_hours }}h ({{ s.tat_status }})</li>{% empty %}<li class="muted">No overdue samples</li>{% endfor %}</ul>
+    </div>
   </div>
-  {% for sample in collected_samples %}
-    <div class="form-check"><input class="form-check-input" type="checkbox" name="sample_ids" value="{{ sample.sample_id }}" id="batch-{{ sample.pk }}"><label class="form-check-label" for="batch-{{ sample.pk }}">{{ sample.sample_id }} — {{ sample.order.test.name }} — {{ sample.order.test.department }} — {{ sample.centre.code }}</label></div>
-  {% endfor %}
-  <button class="btn btn-primary mt-3" type="submit">Create batch</button>
-  {% include "includes/pagination.html" with page=collected_samples %}
-</form>
-{% endif %}
-<div class="card p-4 mb-4">
-  <h2 class="h5">Batches</h2>
-  {% for batch in recent_batches %}
-    <div class="d-flex flex-wrap gap-2 align-items-center border-top py-2">
-      <div class="me-auto">{{ batch.batch_code }} — {{ batch.department }} — {{ batch.status }}</div>
-      {% if batch.status == 'OPEN' %}
-        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="dispatch"><input type="hidden" name="batch" value="{{ batch.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Dispatch</button></form>
-      {% elif batch.status == 'DISPATCHED' %}
-        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="receive"><input type="hidden" name="batch" value="{{ batch.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Receive</button></form>
-      {% endif %}
+  <div class="col-lg-6">
+    <div class="card p-4">
+      <h2 class="h5">Recent activity</h2>
+      <div class="activity-log" style="max-height:16rem">
+        {% for row in recent_activity %}
+          <div>{{ row.created_at|date:"Y-m-d H:i" }} · {{ row.sample.sample_id }} · {{ row.action }}{% if row.performed_by %} · {{ row.performed_by.get_username }}{% endif %}</div>
+        {% empty %}<div class="muted">No activity yet.</div>{% endfor %}
+      </div>
     </div>
-  {% empty %}<p class="muted mb-0">No batches yet.</p>{% endfor %}
-  {% include "includes/pagination.html" with page=recent_batches %}
-</div>
-<div class="card p-4 mb-4">
-  <h2 class="h5">Samples</h2>
-  {% for sample in actionable_samples %}
-    <div class="border-top py-3">
-      <div class="fw-semibold">{{ sample.sample_id }} — {{ sample.order.test.name }} — {{ sample.get_status_display }}</div>
-      <div class="small muted mb-2">{{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }} — {{ sample.order.visit.visit_id }} — {{ sample.centre.code }}</div>
-      {% if sample.status == 'RECEIVED' %}
-        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="start_processing"><input type="hidden" name="sample" value="{{ sample.pk }}"><button class="btn btn-sm btn-primary" type="submit">Start processing</button></form>
-      {% elif sample.status == 'PROCESSING' and sample.open_processing %}
-        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="complete_processing"><input type="hidden" name="sample" value="{{ sample.pk }}"><button class="btn btn-sm btn-primary" type="submit">Complete processing</button></form>
-      {% elif sample.status == 'PROCESSING' %}
-        <form method="post" class="row g-2">
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-4">
+      <h2 class="h5">Analyzer messages</h2>
+      {% for message in analyzer_messages %}
+        <form method="post" class="d-flex flex-wrap gap-2 align-items-center border-top py-2">
           {% csrf_token %}
-          <input type="hidden" name="action" value="enter_result">
-          <input type="hidden" name="sample" value="{{ sample.pk }}">
-          {% for parameter in sample.order.test.parameters.all %}
-            <div class="col-md-4"><label class="form-label">{{ parameter.name }}{% if parameter.unit %} ({{ parameter.unit }}){% endif %}</label><input class="form-control" name="param-{{ parameter.pk }}" {% if parameter.is_required %}required{% endif %}></div>
-          {% endfor %}
-          <div class="col-12"><input class="form-control" name="narrative" placeholder="Narrative (optional)"></div>
-          <div class="col-12"><button class="btn btn-sm btn-primary" type="submit">Save draft result</button></div>
+          <input type="hidden" name="action" value="apply_message">
+          <input type="hidden" name="stage" value="overview">
+          <input type="hidden" name="message" value="{{ message.pk }}">
+          <div class="me-auto small">{{ message.analyzer.name }} — {{ message.status }} — {{ message.sample.sample_id|default:"unmatched" }}</div>
+          <button class="btn btn-sm btn-outline-dark" type="submit">Apply to draft</button>
         </form>
-      {% endif %}
-      {% if sample.result_row %}
-        <div class="mt-2">Result {{ sample.result_row.get_status_display }} version {{ sample.result_row.version }}
-          {% if sample.result_row.status == 'RELEASED' or sample.result_row.status == 'AMENDED' %}<a href="/api/lab-results/{{ sample.result_row.pk }}/pdf/">PDF</a>{% endif %}
-        </div>
-        {% if sample.result_row.status == 'DRAFT' %}
-          <form method="post" class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="submit_review"><input type="hidden" name="result" value="{{ sample.result_row.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Submit for review</button></form>
-        {% elif sample.result_row.status == 'SUBMITTED' %}
-          <form method="post" class="row g-2 mt-1">{% csrf_token %}<input type="hidden" name="action" value="review"><input type="hidden" name="result" value="{{ sample.result_row.pk }}"><div class="col-md-3"><select name="decision" class="form-select form-select-sm"><option value="APPROVE">Approve</option><option value="REJECT">Reject</option></select></div><div class="col-md-5"><input name="note" class="form-control form-control-sm" placeholder="Note"></div><div class="col-md-2"><button class="btn btn-sm btn-outline-dark" type="submit">Review</button></div></form>
-        {% elif sample.result_row.status == 'REVIEWED' %}
-          <form method="post" class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="authenticate"><input type="hidden" name="result" value="{{ sample.result_row.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Authenticate</button></form>
-        {% elif sample.result_row.status == 'AUTHENTICATED' %}
-          <form method="post" class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="release"><input type="hidden" name="result" value="{{ sample.result_row.pk }}"><button class="btn btn-sm btn-success" type="submit">Release</button></form>
-        {% elif sample.result_row.status == 'RELEASED' or sample.result_row.status == 'AMENDED' %}
-          <form method="post" class="row g-2 mt-1">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="amend">
-            <input type="hidden" name="result" value="{{ sample.result_row.pk }}">
-            <div class="col-12"><input name="reason" class="form-control form-control-sm" placeholder="Reason for amendment" required></div>
-            {% for parameter in sample.order.test.parameters.all %}
-              <div class="col-md-4"><label class="form-label">{{ parameter.name }}</label><input class="form-control form-control-sm" name="amend-{{ parameter.pk }}"></div>
-            {% endfor %}
-            <div class="col-12"><button class="btn btn-sm btn-outline-danger" type="submit">Amend released result</button></div>
-          </form>
-        {% endif %}
-      {% endif %}
-      {% if sample.status != 'RELEASED' and sample.status != 'CANCELLED' %}
-        <form method="post" class="row g-2 mt-2">{% csrf_token %}<input type="hidden" name="action" value="reject"><input type="hidden" name="sample" value="{{ sample.pk }}"><div class="col-md-6"><input name="reason" class="form-control form-control-sm" placeholder="Rejection reason" required></div><div class="col-md-3"><button class="btn btn-sm btn-outline-danger" type="submit">Reject sample</button></div></form>
-      {% endif %}
+      {% empty %}<p class="muted mb-0">No parsed analyzer messages.</p>{% endfor %}
+      {% include "includes/pagination.html" with page=analyzer_messages %}
     </div>
-  {% empty %}<p class="muted mb-0">No active samples.</p>{% endfor %}
-  {% include "includes/pagination.html" with page=actionable_samples %}
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-4">
+      <h2 class="h5">QC</h2>
+      <ul>{% for m in qc_materials %}<li>{{ m.centre.code }} / {{ m.name }} — {{ m.test.name }}</li>{% empty %}<li class="muted">No active QC materials</li>{% endfor %}</ul>
+      <h3 class="h6 mt-3">Recent runs</h3>
+      <ul class="mb-0">{% for r in recent_qc_runs %}<li>{{ r.run_at|date:"Y-m-d H:i" }} — {{ r.material.name }} / {{ r.parameter.name }} = {{ r.value }}{% if not r.acceptable %} <span class="text-danger">out</span>{% endif %}</li>{% empty %}<li class="muted">No QC runs yet</li>{% endfor %}</ul>
+    </div>
+  </div>
 </div>
-<div class="card p-4">
-  <h2 class="h5">Analyzer messages waiting for a draft</h2>
-  {% for message in analyzer_messages %}
-    <form method="post" class="d-flex flex-wrap gap-2 align-items-center border-top py-2">
-      {% csrf_token %}
-      <input type="hidden" name="action" value="apply_message">
-      <input type="hidden" name="message" value="{{ message.pk }}">
-      <div class="me-auto">{{ message.analyzer.name }} — {{ message.status }} — sample {{ message.sample.sample_id|default:"not matched" }}</div>
-      <button class="btn btn-sm btn-outline-dark" type="submit">Apply to draft</button>
-    </form>
-  {% empty %}<p class="muted mb-0">No parsed analyzer messages.</p>{% endfor %}
-  {% include "includes/pagination.html" with page=analyzer_messages %}
-</div>
+{% endif %}
 {% endblock %}

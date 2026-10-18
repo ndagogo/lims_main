@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}Audit trail | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="People & access" title="Enterprise audit trail" subtitle="Trace who did what, when (UTC stored · Africa/Lagos displayed), at which centre — with searchable identifiers and downloadable reports." %}
+
+<div class="alert alert-light border small mb-3">
+  <strong>Audit metadata policy:</strong> events record user, action, UTC timestamp (shown in Africa/Lagos), centre/department,
+  patient/visit/order/result identifiers, previous/new values where captured, source IP and browser/device, plus reason/approval/evidence when required.
+  IP addresses and browser strings are useful metadata but <em>do not prove identity or physical location</em>. Precise geolocation is not collected.
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-3"><div class="kpi"><div><div class="kpi-label">MATCHING EVENTS</div><div class="kpi-value">{{ stats.total_matching }}</div></div></div></div>
+  <div class="col-md-9">
+    <div class="card p-3 h-100">
+      <div class="small muted mb-2">Top actions in this filter</div>
+      <div class="d-flex flex-wrap gap-2">
+        {% for row in stats.by_action %}
+          <span class="badge text-bg-light border">{{ row.action }} · {{ row.count }}</span>
+        {% empty %}<span class="muted small">No events match.</span>{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<form method="get" class="card p-3 mb-3">
+  <div class="row g-2">
+    <div class="col-lg-4"><label class="form-label small">Search</label><input class="form-control" name="q" value="{{ query }}" placeholder="Action, user, object, patient, visit, path…"></div>
+    <div class="col-md-2"><label class="form-label small">Username</label><input class="form-control" name="username" value="{{ filters.username }}" placeholder="username"></div>
+    <div class="col-md-2"><label class="form-label small">Action</label><input class="form-control" name="action" value="{{ filters.action }}" placeholder="e.g. LOGIN_SUCCESS"></div>
+    <div class="col-md-2"><label class="form-label small">Object type</label><input class="form-control" name="object_type" value="{{ filters.object_type }}" placeholder="e.g. RadiologyReport"></div>
+    <div class="col-md-2"><label class="form-label small">Category</label>
+      <select class="form-select" name="category">
+        <option value="">All categories</option>
+        {% for value, label in categories %}
+          <option value="{{ value }}" {% if filters.category == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2"><label class="form-label small">Centre</label>
+      <select class="form-select" name="centre">
+        <option value="">All centres</option>
+        {% for c in centres %}
+          <option value="{{ c.pk }}" {% if filters.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.code }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2"><label class="form-label small">Department</label><input class="form-control" name="department" value="{{ filters.department }}"></div>
+    <div class="col-md-2"><label class="form-label small">Patient</label><input class="form-control" name="patient" value="{{ filters.patient }}" placeholder="UHID"></div>
+    <div class="col-md-2"><label class="form-label small">Visit</label><input class="form-control" name="visit" value="{{ filters.visit }}"></div>
+    <div class="col-md-2"><label class="form-label small">Order</label><input class="form-control" name="order" value="{{ filters.order }}"></div>
+    <div class="col-md-2"><label class="form-label small">Result</label><input class="form-control" name="result" value="{{ filters.result }}"></div>
+    <div class="col-md-2"><label class="form-label small">Source IP</label><input class="form-control" name="ip" value="{{ filters.ip }}"></div>
+    <div class="col-md-2"><label class="form-label small">From</label><input class="form-control" type="date" name="date_from" value="{{ filters.date_from }}"></div>
+    <div class="col-md-2"><label class="form-label small">To</label><input class="form-control" type="date" name="date_to" value="{{ filters.date_to }}"></div>
+    <div class="col-md-3 d-flex align-items-end gap-3 flex-wrap">
+      <input type="hidden" name="exclude_http" value="0">
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="exclude_http" value="1" id="ex-http" {% if filters.exclude_http != '0' %}checked{% endif %}>
+        <label class="form-check-label small" for="ex-http">Hide HTTP noise</label>
+      </div>
+      <input type="hidden" name="significant" value="0">
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="significant" value="1" id="sig-only" {% if filters.significant == '1' %}checked{% endif %}>
+        <label class="form-check-label small" for="sig-only">Significant only</label>
+      </div>
+    </div>
+    <div class="col-12 d-flex flex-wrap gap-2 mt-1">
+      <button class="btn btn-primary" type="submit">Apply filters</button>
+      <a class="btn btn-outline-dark" href="{% url 'platform-audit' %}">Reset</a>
+      <a class="btn btn-outline-success" href="?{{ export_query }}&amp;export=1&amp;format=csv">Download CSV</a>
+      <a class="btn btn-outline-success" href="?{{ export_query }}&amp;export=1&amp;format=xlsx">Download Excel</a>
+      <a class="btn btn-outline-success" href="?{{ export_query }}&amp;export=1&amp;format=pdf">Download PDF</a>
+    </div>
+  </div>
+</form>
+
+<div class="row g-4">
+  <div class="{% if selected %}col-xl-7{% else %}col-12{% endif %}">
+    <div class="card p-3">
+      <div class="table-responsive">
+        <table class="table align-middle table-sm">
+          <thead>
+            <tr>
+              <th>When (Lagos)</th>
+              <th>User</th>
+              <th>Action</th>
+              <th>Object</th>
+              <th>Centre</th>
+              <th>Identifiers</th>
+              <th>IP</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in directory %}
+            <tr class="{% if selected and selected.pk == row.pk %}table-active{% endif %}">
+              <td class="small">
+                <div>{{ row.when_lagos }}</div>
+                <div class="muted" style="font-size:.72rem">{{ row.when_utc }}</div>
+              </td>
+              <td>
+                <div class="fw-semibold">{{ row.actor.username|default:"—" }}</div>
+                {% if row.department %}<div class="small muted">{{ row.department }}</div>{% endif %}
+              </td>
+              <td>
+                <div class="fw-semibold">{{ row.action }}</div>
+                <span class="badge badge-soft">{{ row.get_category_display }}</span>
+              </td>
+              <td class="small">{{ row.object_type }}<br><span class="muted">{{ row.object_id|truncatechars:18 }}</span></td>
+              <td>{{ row.centre.code|default:"—" }}</td>
+              <td class="small">
+                {% if row.patient_ref %}Pt {{ row.patient_ref }}<br>{% endif %}
+                {% if row.visit_ref %}Visit {{ row.visit_ref }}<br>{% endif %}
+                {% if row.order_ref %}Order {{ row.order_ref }}<br>{% endif %}
+                {% if row.result_ref %}Result {{ row.result_ref }}{% endif %}
+                {% if not row.patient_ref and not row.visit_ref and not row.order_ref and not row.result_ref %}<span class="muted">—</span>{% endif %}
+              </td>
+              <td class="small muted">{{ row.ip_address|default:"—" }}</td>
+              <td><a class="btn btn-sm btn-outline-dark" href="?{{ export_query }}&amp;event={{ row.pk }}">View</a></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="8" class="muted text-center py-4">No audit events match these filters.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+  </div>
+
+  {% if selected %}
+  <div class="col-xl-5">
+    <div class="card p-4 sticky-top" style="top:1rem">
+      <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+          <div class="muted small">EVENT DETAIL</div>
+          <h2 class="h5 mb-0">{{ selected.action }}</h2>
+        </div>
+        <a class="btn btn-sm btn-outline-secondary" href="?{{ export_query }}">Close</a>
+      </div>
+      <dl class="row small mb-0">
+        <dt class="col-sm-4">Lagos</dt><dd class="col-sm-8">{{ selected.when_lagos }}</dd>
+        <dt class="col-sm-4">UTC</dt><dd class="col-sm-8">{{ selected.when_utc }}</dd>
+        <dt class="col-sm-4">User</dt><dd class="col-sm-8">{{ selected.actor|default:"—" }} ({{ selected.actor.username|default:"—" }})</dd>
+        <dt class="col-sm-4">Category</dt><dd class="col-sm-8">{{ selected.get_category_display }}</dd>
+        <dt class="col-sm-4">Object</dt><dd class="col-sm-8">{{ selected.object_type }} · {{ selected.object_id|default:"—" }}</dd>
+        <dt class="col-sm-4">Centre</dt><dd class="col-sm-8">{{ selected.centre|default:"—" }}</dd>
+        <dt class="col-sm-4">Department</dt><dd class="col-sm-8">{{ selected.department|default:"—" }}</dd>
+        <dt class="col-sm-4">Patient</dt><dd class="col-sm-8">{{ selected.patient_ref|default:"—" }}</dd>
+        <dt class="col-sm-4">Visit</dt><dd class="col-sm-8">{{ selected.visit_ref|default:"—" }}</dd>
+        <dt class="col-sm-4">Order</dt><dd class="col-sm-8">{{ selected.order_ref|default:"—" }}</dd>
+        <dt class="col-sm-4">Result</dt><dd class="col-sm-8">{{ selected.result_ref|default:"—" }}</dd>
+        <dt class="col-sm-4">Reason</dt><dd class="col-sm-8">{{ selected.reason|default:"—" }}</dd>
+        <dt class="col-sm-4">Approval</dt>
+        <dd class="col-sm-8">
+          {% if selected.approval_by %}{{ selected.approval_by }}{% else %}—{% endif %}
+          {% if selected.approval_note %}<div class="muted">{{ selected.approval_note }}</div>{% endif %}
+        </dd>
+        <dt class="col-sm-4">Evidence</dt>
+        <dd class="col-sm-8">
+          {{ selected.evidence_ref|default:"—" }}
+          {% if selected.evidence_note %}<div class="muted">{{ selected.evidence_note }}</div>{% endif %}
+        </dd>
+        <dt class="col-sm-4">Source IP</dt><dd class="col-sm-8">{{ selected.ip_address|default:"—" }}</dd>
+        <dt class="col-sm-4">Browser</dt><dd class="col-sm-8 text-break">{{ selected.browser|default:"—" }}</dd>
+        <dt class="col-sm-4">Request</dt><dd class="col-sm-8">{{ selected.method }} {{ selected.path }}</dd>
+      </dl>
+      {% if selected.previous_values %}
+        <h3 class="h6 mt-3">Previous values</h3>
+        <pre class="small bg-light border rounded p-2" style="white-space:pre-wrap">{{ selected.previous_values }}</pre>
+      {% endif %}
+      {% if selected.new_values %}
+        <h3 class="h6 mt-3">New values</h3>
+        <pre class="small bg-light border rounded p-2" style="white-space:pre-wrap">{{ selected.new_values }}</pre>
+      {% endif %}
+      {% if selected.detail %}
+        <h3 class="h6 mt-3">Detail</h3>
+        <pre class="small bg-light border rounded p-2" style="white-space:pre-wrap">{{ selected.detail }}</pre>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

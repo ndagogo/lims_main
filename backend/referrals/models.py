@@ -20,9 +20,58 @@ class ReferralDoctor(TimeStampedModel):
     commission_type=models.CharField(max_length=10,choices=[('PERCENT','Percentage'),('FIXED','Fixed per eligible invoice')],default='PERCENT')
     commission_value=models.DecimalField(max_digits=10,decimal_places=2,validators=[MinValueValidator(Decimal('0'))])
     is_active=models.BooleanField(default=True)
+    is_default_placeholder=models.BooleanField(
+        default=False,
+        help_text='Centre placeholder used when the referring physician is unknown at registration.',
+    )
     notes=models.TextField(blank=True)
-    class Meta: ordering=['last_name','first_name']
+    centres=models.ManyToManyField(
+        Centre, blank=True, related_name='assigned_referral_doctors',
+        help_text='Every centre this doctor can be chosen for. The home centre is always included.',
+    )
+    onboarded_by=models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='referral_doctors_onboarded',
+        help_text='Staff member, usually marketing, who introduced this doctor.',
+    )
+    bank_name=models.CharField(max_length=120, blank=True, default='')
+    account_name=models.CharField(max_length=160, blank=True, default='')
+    account_number=models.CharField(max_length=20, blank=True, default='')
+    appear_on_reports=models.BooleanField(
+        default=True,
+        help_text='When unticked, this doctor’s name is left off laboratory and radiology reports.',
+    )
+    class Meta:
+        ordering=['last_name','first_name']
+        constraints=[
+            models.UniqueConstraint(
+                fields=['centre'],
+                condition=models.Q(is_default_placeholder=True),
+                name='uniq_default_referral_doctor_per_centre',
+            ),
+        ]
     def __str__(self): return f'{self.doctor_code} — {self.first_name} {self.last_name}'
+
+    def serves_centre(self, centre):
+        centre_id = getattr(centre, 'pk', centre)
+        if self.centre_id == centre_id:
+            return True
+        return self.centres.filter(pk=centre_id).exists()
+
+    def assign_centres(self, centres):
+        """Store every centre this doctor works with, always keeping the home centre."""
+        chosen = []
+        seen = set()
+        for centre in centres:
+            if centre is None or centre.pk in seen:
+                continue
+            seen.add(centre.pk)
+            chosen.append(centre)
+        if self.centre_id not in seen:
+            chosen.insert(0, self.centre)
+        if self.is_default_placeholder:
+            chosen = [self.centre]
+        self.centres.set(chosen)
 
 class ReferralInstitution(TimeStampedModel):
     """A hospital, clinic, or organisation through which one referring doctor sends patients."""
@@ -41,6 +90,11 @@ class ReferralAttribution(TimeStampedModel):
     institutions=models.ManyToManyField(ReferralInstitution,blank=True,related_name='attributions')
     recorded_by=models.ForeignKey(settings.AUTH_USER_MODEL,null=True,on_delete=models.SET_NULL)
     note=models.CharField(max_length=255,blank=True)
+
+    class Meta:
+        permissions = [
+            ('change_referring_doctor', 'Can change referring doctor on a visit'),
+        ]
 
 class CommissionLedgerEntry(TimeStampedModel):
     TYPES=[('ACCRUAL','Accrual'),('REVERSAL','Reversal'),('ADJUSTMENT','Adjustment'),('SETTLEMENT','Settlement')]

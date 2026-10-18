@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}TAT & timelines | HFDN{% endblock %}
+{% block content %}
+<div class="hero-band dash-enter">
+  <div class="muted small mb-1">TURNAROUND · TIMELINE · ESCALATION</div>
+  <h1 class="h3 mb-1">Laboratory TAT</h1>
+  <p class="muted mb-0">Total turnaround (pauses excluded), time in each stage, pending work, overdue/escalation alerts, recollection and rejection rates.</p>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3"><div class="kpi"><span class="kpi-icon" style="background:#e7f4f2;color:#0f5c56"><i class="bi bi-collection"></i></span><div><div class="kpi-label">OPEN</div><div class="kpi-value">{{ tat.open_total }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="kpi"><span class="kpi-icon" style="background:#fff4df;color:#8a5a00"><i class="bi bi-exclamation-triangle"></i></span><div><div class="kpi-label">WARNING</div><div class="kpi-value">{{ tat.warning_total }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="kpi"><span class="kpi-icon" style="background:#fdecec;color:#9b2c2c"><i class="bi bi-alarm"></i></span><div><div class="kpi-label">OVERDUE</div><div class="kpi-value">{{ tat.overdue_total }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="kpi"><span class="kpi-icon" style="background:#eef3ff;color:#314e8c"><i class="bi bi-pause-circle"></i></span><div><div class="kpi-label">PAUSED</div><div class="kpi-value">{{ tat.paused_total }}</div></div></div></div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-4">
+    <div class="card p-4 h-100">
+      <h2 class="h5">Quality ({{ tat.quality.window_days }}d)</h2>
+      <div class="status-pill"><span>Samples</span><strong>{{ tat.quality.samples_total }}</strong></div>
+      <div class="status-pill"><span>Recollection rate</span><strong>{{ tat.quality.recollection_rate }}%</strong></div>
+      <div class="status-pill"><span>Rejection rate</span><strong>{{ tat.quality.rejection_rate }}%</strong></div>
+      <p class="small muted mb-0 mt-2">{{ tat.quality.recollections }} recollections · {{ tat.quality.rejections }} rejections</p>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card p-4 h-100">
+      <h2 class="h5">Pending by centre</h2>
+      {% for row in tat.pending.by_centre %}
+        <div class="status-pill"><span>{{ row.key }}</span><strong>{{ row.count }}</strong></div>
+      {% empty %}<p class="muted mb-0">No open samples.</p>{% endfor %}
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card p-4 h-100">
+      <h2 class="h5">Pending by department / role</h2>
+      <div class="muted small mb-1">Department</div>
+      {% for row in tat.pending.by_department %}
+        <div class="status-pill"><span>{{ row.key }}</span><strong>{{ row.count }}</strong></div>
+      {% empty %}<p class="muted">—</p>{% endfor %}
+      <div class="muted small mb-1 mt-3">Responsible role</div>
+      {% for row in tat.pending.by_role %}
+        <div class="status-pill"><span>{{ row.key }}</span><strong>{{ row.count }}</strong></div>
+      {% empty %}<p class="muted mb-0">—</p>{% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-7">
+    <div class="card p-4">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="h5 mb-0">Overdue &amp; escalated</h2>
+        <a class="open-link" href="{% url 'platform-tat-rules' %}">Configure rules</a>
+      </div>
+      <table class="table align-middle mb-0">
+        <thead><tr><th>Sample</th><th>Stage</th><th>Elapsed</th><th>Target</th><th></th></tr></thead>
+        <tbody>
+          {% for s in tat.overdue_samples %}
+          <tr>
+            <td><span class="font-monospace fw-semibold">{{ s.sample_id }}</span><div class="small muted">{{ s.test }} · {{ s.centre }}</div></td>
+            <td class="small">{{ s.status }}<div class="muted">{{ s.role }}</div></td>
+            <td>{{ s.effective_hours }}h <span class="badge badge-danger-soft">{{ s.tat_status }}</span></td>
+            <td class="small">{{ s.expected_hours }}h<div class="muted">{{ s.rule }}</div></td>
+            <td><a class="btn btn-sm btn-outline-dark" href="{% url 'sample-timeline' s.pk %}">Timeline</a></td>
+          </tr>
+          {% empty %}<tr><td colspan="5" class="muted text-center py-3">No overdue samples.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card p-4">
+      <h2 class="h5">Escalation alerts</h2>
+      {% for e in tat.escalations %}
+        <div class="border-top py-2">
+          <div class="d-flex justify-content-between gap-2">
+            <div>
+              <span class="badge {% if e.level == 'ESCALATED' %}badge-danger-soft{% elif e.level == 'OVERDUE' %}badge-warn{% else %}badge-soft{% endif %}">{{ e.level }}</span>
+              <span class="font-monospace">{{ e.sample_id }}</span>
+              <div class="small muted">{{ e.message }}</div>
+              <div class="small muted">{{ e.centre }} · {{ e.department }}{% if e.roles %} · {{ e.roles|join:", " }}{% endif %}</div>
+            </div>
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="ack_escalation">
+              <input type="hidden" name="escalation" value="{{ e.id }}">
+              <button class="btn btn-sm btn-outline-dark" type="submit">Ack</button>
+            </form>
+          </div>
+        </div>
+      {% empty %}<p class="muted mb-0">No open escalation alerts.</p>{% endfor %}
+    </div>
+    <div class="card p-4 mt-3">
+      <h2 class="h5">Warning band</h2>
+      {% for s in tat.warning_samples %}
+        <div class="status-pill">
+          <span><a class="open-link" href="{% url 'sample-timeline' s.pk %}">{{ s.sample_id }}</a> · {{ s.test }}</span>
+          <strong>{{ s.effective_hours }}h</strong>
+        </div>
+      {% empty %}<p class="muted mb-0">Nothing in the warning band.</p>{% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="card p-4">
+  <h2 class="h5">Result milestone timestamps</h2>
+  <p class="muted small mb-0">{{ tat.result_milestones_note }} Open any sample timeline for entry, review, authentication and release stamps plus actor attribution.</p>
+  <div class="mt-3"><a class="btn btn-outline-dark btn-sm" href="{% url 'laboratory-workspace' %}?stage=overview">Laboratory overview</a>
+  <a class="btn btn-outline-dark btn-sm" href="/api/reports/tat/">API JSON</a></div>
+</div>
+{% endblock %}

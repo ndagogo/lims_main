@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Report Template · {{ template.name }}{% endblock %}
+{% block content %}
+<link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet">
+<style>
+  .rt-shell { background:#fff; border:1px solid var(--hfdn-line); border-radius:1rem; overflow:hidden; box-shadow:0 14px 36px #10203312; }
+  .rt-top { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem 1.25rem; border-bottom:1px solid var(--hfdn-line); }
+  .rt-grid { display:grid; grid-template-columns: minmax(260px, 320px) 1fr; min-height: 62vh; }
+  @media (max-width: 991px) { .rt-grid { grid-template-columns: 1fr; } }
+  .rt-meta { border-right:1px solid var(--hfdn-line); padding:1.15rem 1.25rem; background:#fbfcfe; }
+  .rt-editor-pane { padding:1rem 1.15rem 0; display:flex; flex-direction:column; min-height: 62vh; }
+  #rt-editor { flex:1; min-height: 420px; }
+  .ql-toolbar.ql-snow { border-radius:.65rem .65rem 0 0; border-color:var(--hfdn-line); background:#f8fafc; }
+  .ql-container.ql-snow { border-radius:0 0 .65rem .65rem; border-color:var(--hfdn-line); font-size:1rem; }
+  .ql-editor { min-height: 380px; }
+  .ql-editor h1, .ql-editor h2, .ql-editor h3, .ql-editor strong { color: var(--hfdn-ink); }
+  .rt-stats { display:flex; justify-content:flex-end; gap:1rem; padding:.45rem .25rem .85rem; color:var(--hfdn-muted); font-size:.78rem; letter-spacing:.04em; }
+  .rt-footer { display:flex; justify-content:flex-end; gap:.65rem; flex-wrap:wrap; padding:1rem 1.25rem; border-top:1px solid var(--hfdn-line); background:#fbfcfe; }
+  .rt-req::after { content:" *"; color:#c53030; }
+</style>
+
+<div class="rt-shell dash-enter">
+  <div class="rt-top">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <h1 class="h4 mb-0">Report Template</h1>
+      <span class="badge badge-soft">{% if template.scope == 'PERSONAL' %}Custom Template{% else %}Platform Template{% endif %}</span>
+      <span class="badge {% if template.status == 'PUBLISHED' %}badge-soft{% elif template.status == 'DRAFT' %}badge-warn{% else %}badge-danger-soft{% endif %}">{{ template.status }} · v{{ template.version }}</span>
+    </div>
+    <a class="btn btn-sm btn-outline-dark" href="{% if platform_mode %}{% url 'platform-radiology-templates' %}{% else %}{% url 'radiology-templates' %}{% endif %}" title="Close">
+      <i class="bi bi-x-lg"></i>
+    </a>
+  </div>
+
+  <form method="post" id="rt-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" id="rt-action" value="update">
+    <input type="hidden" name="body_html" id="rt-body-html" value="">
+    <div class="rt-grid">
+      <aside class="rt-meta">
+        <div class="mb-3">
+          <label class="form-label rt-req">Template Name</label>
+          <input class="form-control" name="name" id="rt-name" value="{{ template.name }}" required {% if not can_edit_meta %}readonly{% endif %}>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Variant Name</label>
+          <input class="form-control" name="variant_name" id="rt-variant" value="{{ template.variant_name }}" placeholder="Variant Name" {% if not can_edit_meta %}readonly{% endif %}>
+        </div>
+        <div class="mb-3">
+          <label class="form-label rt-req">Modality</label>
+          <select class="form-select" name="modality_type" id="rt-modality" required {% if not can_edit_meta %}disabled{% endif %}>
+            {% for value, label in modality_types %}
+              <option value="{{ value }}" {% if template.modality_type == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          {% if not can_edit_meta %}<input type="hidden" name="modality_type" value="{{ template.modality_type }}">{% endif %}
+        </div>
+        <div class="mb-3">
+          <label class="form-label rt-req">Body Part</label>
+          <input class="form-control" name="body_part" id="rt-body-part" value="{{ template.body_part }}" placeholder="Body Part" required {% if not can_edit_meta %}readonly{% endif %}>
+        </div>
+        <div class="mb-3">
+          <label class="form-label rt-req">Visibility</label>
+          <select class="form-select" name="visibility" id="rt-visibility" required {% if not can_edit_meta %}disabled{% endif %}>
+            {% for value, label in visibility_choices %}
+              <option value="{{ value }}" {% if template.visibility == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          {% if not can_edit_meta %}<input type="hidden" name="visibility" value="{{ template.visibility }}">{% endif %}
+        </div>
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" name="is_active" id="rt-active" {% if template.is_active %}checked{% endif %} {% if not can_edit_meta %}disabled{% endif %}>
+          <label class="form-check-label" for="rt-active">Mark as Active Template</label>
+          {% if not can_edit_meta and template.is_active %}<input type="hidden" name="is_active" value="on">{% endif %}
+        </div>
+        <p class="small muted mb-0">Use the editor for <strong>bold</strong>, <em>italic</em>, <u>underline</u>, lists, alignment, colours, links and more.</p>
+      </aside>
+
+      <section class="rt-editor-pane">
+        <div id="rt-editor"></div>
+        <div class="rt-stats"><span id="rt-chars">CHARS: 0</span><span id="rt-words">WORDS: 0</span></div>
+      </section>
+    </div>
+
+    <div class="rt-footer">
+      <a class="btn btn-outline-dark" href="{% if platform_mode %}{% url 'platform-radiology-templates' %}{% else %}{% url 'radiology-templates' %}{% endif %}">Cancel</a>
+      <button class="btn btn-outline-dark" type="submit" name="action_btn" value="save_variant" id="rt-save-variant" {% if not can_save %}disabled{% endif %}>Save As New Variant Template</button>
+      <button class="btn btn-primary" type="submit" name="action_btn" value="update" id="rt-update" {% if not can_edit_meta %}disabled{% endif %}>Update Template</button>
+      {% if template.status == 'DRAFT' and can_edit_meta %}
+        <button class="btn btn-success" type="submit" name="action_btn" value="publish">Publish</button>
+      {% endif %}
+    </div>
+  </form>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
+<script>
+(function () {
+  const initialHtml = {{ body_html_json|safe }};
+  const canEditMeta = {{ can_edit_meta|yesno:"true,false" }};
+  const canEditBody = {{ can_edit_body|yesno:"true,false" }};
+  const quill = new Quill('#rt-editor', {
+    theme: 'snow',
+    readOnly: !canEditBody,
+    placeholder: 'Compose the report template…',
+    modules: {
+      toolbar: canEditBody ? [
+        [{ header: [1, 2, 3, false] }],
+        ['bold', 'italic', 'underline', 'strike'],
+        [{ color: [] }, { background: [] }],
+        [{ list: 'ordered' }, { list: 'bullet' }],
+        [{ align: [] }],
+        ['blockquote', 'code-block'],
+        ['link', 'image'],
+        ['clean'],
+      ] : false,
+      history: { delay: 500, maxStack: 100, userOnly: true },
+    },
+  });
+  if (initialHtml) {
+    quill.clipboard.dangerouslyPasteHTML(initialHtml);
+  } else {
+    quill.setText('');
+  }
+
+  const charsEl = document.getElementById('rt-chars');
+  const wordsEl = document.getElementById('rt-words');
+  const updateBtn = document.getElementById('rt-update');
+  const variantBtn = document.getElementById('rt-save-variant');
+  const form = document.getElementById('rt-form');
+  const actionInput = document.getElementById('rt-action');
+  const bodyInput = document.getElementById('rt-body-html');
+
+  const snapshot = () => JSON.stringify({
+    name: document.getElementById('rt-name').value,
+    variant: document.getElementById('rt-variant').value,
+    modality: document.getElementById('rt-modality').value,
+    bodyPart: document.getElementById('rt-body-part').value,
+    visibility: document.getElementById('rt-visibility').value,
+    active: document.getElementById('rt-active').checked,
+    html: quill.root.innerHTML,
+  });
+  let baseline = snapshot();
+
+  function refreshStats() {
+    const text = quill.getText().trim();
+    const chars = text.length;
+    const words = text ? text.split(/\s+/).filter(Boolean).length : 0;
+    charsEl.textContent = 'CHARS: ' + chars;
+    wordsEl.textContent = 'WORDS: ' + words;
+  }
+  function refreshDirty() {
+    const dirty = snapshot() !== baseline;
+    if (updateBtn) updateBtn.disabled = !canEditMeta || !dirty;
+    if (variantBtn) variantBtn.disabled = !canEditBody || !dirty;
+  }
+  quill.on('text-change', function () { refreshStats(); refreshDirty(); });
+  ['rt-name','rt-variant','rt-modality','rt-body-part','rt-visibility','rt-active'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', refreshDirty);
+    if (el) el.addEventListener('change', refreshDirty);
+  });
+  refreshStats();
+  refreshDirty();
+
+  form.addEventListener('submit', function (ev) {
+    const btn = ev.submitter;
+    const value = (btn && btn.value) || 'update';
+    actionInput.value = value === 'save_variant' ? 'save_variant' : (value === 'publish' ? 'publish' : 'update');
+    bodyInput.value = quill.root.innerHTML;
+  });
+})();
+</script>
+{% endblock %}

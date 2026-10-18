@@ -17,12 +17,97 @@ class PhaseOneSecurityTests(TestCase):
     def test_invalid_login_rejected(self):
         response=self.client.post('/api/auth/login/',{'username':'staff1','password':'wrong'},format='json')
         self.assertEqual(response.status_code,401)
+
+    def test_three_wrong_passwords_lock_the_account(self):
+        from core.auth_services import LOCKED
+        for _ in range(2):
+            response = self.client.post('/api/auth/login/', {'username': 'staff1', 'password': 'wrong'}, format='json')
+            self.assertEqual(response.status_code, 401)
+            self.assertNotEqual(response.data['detail'], LOCKED)
+        locked = self.client.post('/api/auth/login/', {'username': 'staff1', 'password': 'wrong'}, format='json')
+        self.assertEqual(locked.status_code, 401)
+        self.assertEqual(locked.data['detail'], LOCKED)
+        self.user.refresh_from_db()
+        self.assertIsNotNone(self.user.locked_until)
+        still = self.client.post('/api/auth/login/', {'username': 'staff1', 'password': 'A-long-unique-password-2026!'}, format='json')
+        self.assertEqual(still.status_code, 401)
+        self.assertEqual(still.data['detail'], LOCKED)
+        page = self.client.post('/login/', {'username': 'staff1', 'password': 'wrong'})
+        self.assertContains(page, LOCKED)
     def test_profile_requires_authentication(self):
         self.assertEqual(self.client.get('/api/auth/me/').status_code,401)
     def test_profile_contains_assigned_centres(self):
         self.client.force_authenticate(self.user)
         response=self.client.get('/api/auth/me/')
         self.assertEqual(response.status_code,200); self.assertEqual(len(response.data['centres']),1)
+
+    def test_account_profile_page_updates_credentials(self):
+        from django.test import Client
+        web = Client()
+        web.force_login(self.user)
+        page = web.get('/account/profile/')
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'Professional credentials')
+        saved = web.post('/account/profile/', {
+            'action': 'save',
+            'first_name': 'Ada',
+            'last_name': 'Okeke',
+            'display_name': 'Dr Ada Okeke',
+            'email': 'staff1@example.test',
+            'job_title': 'Consultant Radiologist',
+            'staff_id': 'NWS-RAD-01',
+            'department': 'Radiology',
+            'specialty': 'CT / MRI',
+            'qualifications': 'MBBS, FWACS',
+            'license_number': 'MDCN-12345',
+            'license_authority': 'Medical and Dental Council of Nigeria',
+            'phone_work': '08030001111',
+            'phone_mobile': '08030002222',
+            'office_extension': '214',
+            'bio': 'Cross-sectional imaging.',
+        })
+        self.assertEqual(saved.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.job_title, 'Consultant Radiologist')
+        self.assertEqual(self.user.signature_title, 'Consultant Radiologist')
+        self.assertEqual(self.user.staff_id, 'NWS-RAD-01')
+        self.assertEqual(self.user.license_number, 'MDCN-12345')
+        # Old signature URL redirects into the profile page.
+        self.assertEqual(web.get('/account/signature/').status_code, 302)
+
+    def test_account_profile_page_updates_credentials(self):
+        from django.test import Client
+        web = Client()
+        web.force_login(self.user)
+        page = web.get('/account/profile/')
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'Professional credentials')
+        saved = web.post('/account/profile/', {
+            'action': 'save',
+            'first_name': 'Ada',
+            'last_name': 'Okeke',
+            'display_name': 'Dr Ada Okeke',
+            'email': 'staff1@example.test',
+            'job_title': 'Consultant Radiologist',
+            'staff_id': 'NWS-RAD-01',
+            'department': 'Radiology',
+            'specialty': 'CT / MRI',
+            'qualifications': 'MBBS, FWACS',
+            'license_number': 'MDCN-12345',
+            'license_authority': 'Medical and Dental Council of Nigeria',
+            'phone_work': '08030001111',
+            'phone_mobile': '08030002222',
+            'office_extension': '214',
+            'bio': 'Cross-sectional imaging.',
+        })
+        self.assertEqual(saved.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.job_title, 'Consultant Radiologist')
+        self.assertEqual(self.user.signature_title, 'Consultant Radiologist')
+        self.assertEqual(self.user.staff_id, 'NWS-RAD-01')
+        self.assertEqual(self.user.license_number, 'MDCN-12345')
+        # Old signature URL redirects into the profile page.
+        self.assertEqual(web.get('/account/signature/').status_code, 302)
     def test_user_cannot_list_unassigned_centre(self):
         other=Centre.objects.create(code='IND',name='Independence')
         self.client.force_authenticate(self.user)
@@ -75,8 +160,9 @@ class StaffWorkspaceTests(TestCase):
         visible_search = screen.get('/patients/register/', {'q': visible.uhid})
         self.assertContains(visible_search, visible.uhid)
         from decimal import Decimal
-        from laboratory.models import Tariff, Test, TestPrice
-        priced = Test.objects.create(code='CBC', name='Complete Blood Count')
+        from laboratory.models import ServiceGroup, Tariff, Test, TestPrice
+        group = ServiceGroup.objects.create(name='Haematology', code='1')
+        priced = Test.objects.create(code='CBC', name='Complete Blood Count', service_group=group)
         tariff = Tariff.objects.create(name='Standard')
         TestPrice.objects.create(tariff=tariff, test=priced, price=Decimal('1000.00'))
         opened = screen.post('/patients/register/', {
@@ -121,6 +207,37 @@ class StaffWorkspaceTests(TestCase):
         assigned = screen.post('/roles/', {'action': 'add_member', 'role': str(role.pk), 'user': str(staff.pk)})
         self.assertEqual(assigned.status_code, 302)
         self.assertTrue(staff.groups.filter(name='Front Desk').exists())
+        created = screen.post('/users/', {
+            'action': 'create',
+            'username': 'new.staff',
+            'email': 'new.staff@example.test',
+            'password': 'A-long-unique-password-2026!',
+            'title': 'Mrs',
+            'first_name': 'Ngozi',
+            'other_names': 'Ada',
+            'last_name': 'Eze',
+            'phone_mobile': '08031112222',
+            'date_of_birth': '1992-03-14',
+            'sex': 'Female',
+            'marital_status': 'MARRIED',
+            'department': 'Haematology',
+            'groups': [str(role.pk)],
+        })
+        self.assertEqual(created.status_code, 302)
+        person = User.objects.get(username='new.staff')
+        self.assertEqual(person.first_name, 'Ngozi')
+        self.assertEqual(person.phone_mobile, '08031112222')
+        self.assertEqual(person.sex, 'Female')
+        self.assertEqual(person.marital_status, 'MARRIED')
+        self.assertEqual(person.date_of_birth.isoformat(), '1992-03-14')
+        self.assertIn('Ngozi', person.display_name)
+        missing = screen.post('/users/', {
+            'action': 'create',
+            'username': 'incomplete',
+            'email': 'incomplete@example.test',
+            'password': 'A-long-unique-password-2026!',
+        }, follow=True)
+        self.assertContains(missing, 'First name and last name are required')
 
     def test_each_role_opens_only_its_own_workspace(self):
         from django.test import Client
@@ -132,10 +249,12 @@ class StaffWorkspaceTests(TestCase):
             screen.force_login(user)
             return screen
         radio = person('radio.only', 'Radiographer')
-        self.assertEqual(radio.get('/radiology/').status_code, 200)
-        self.assertContains(radio.get('/'), 'Radiology dashboard')
-        self.assertNotContains(radio.get('/'), 'Laboratory sample pipeline')
-        self.assertNotContains(radio.get('/'), 'Accounts & receipts')
+        self.assertRedirects(radio.get('/'), '/radiology/')
+        worklist = radio.get('/radiology/')
+        self.assertEqual(worklist.status_code, 200)
+        self.assertContains(worklist, 'Radiology worklist')
+        self.assertNotContains(worklist, 'Laboratory sample pipeline')
+        self.assertNotContains(worklist, 'Accounts & receipts')
         self.assertEqual(radio.get('/accounts/').status_code, 403)
         self.assertEqual(radio.get('/laboratory/').status_code, 403)
         self.assertEqual(radio.get('/patients/register/').status_code, 403)
@@ -155,7 +274,7 @@ class StaffWorkspaceTests(TestCase):
         self.assertEqual(lab.get('/phlebotomy/').status_code, 403)
         phleb = person('phleb.only', 'Phlebotomist')
         self.assertEqual(phleb.get('/phlebotomy/').status_code, 200)
-        self.assertContains(phleb.get('/phlebotomy/'), 'Phlebotomy dashboard')
+        self.assertContains(phleb.get('/phlebotomy/'), 'barcode generation')
         self.assertNotContains(phleb.get('/'), 'Laboratory sample pipeline')
         self.assertEqual(phleb.get('/laboratory/').status_code, 403)
         self.assertEqual(phleb.get('/accounts/').status_code, 403)
@@ -176,8 +295,9 @@ class StaffWorkspaceTests(TestCase):
         other_centre = Centre.objects.create(code='IND', name='Independence')
         other_doctor = ReferralDoctor.objects.create(centre=other_centre, doctor_code='IND-DR9', title='Dr', first_name='Tunde', last_name='Bello', commission_type='PERCENT', commission_value=Decimal('0'))
         foreign = ReferralInstitution.objects.create(doctor=other_doctor, name='Other Clinic')
-        from laboratory.models import Tariff, Test, TestPrice
-        priced = Test.objects.create(code='CBC', name='Complete Blood Count')
+        from laboratory.models import ServiceGroup, Tariff, Test, TestPrice
+        group = ServiceGroup.objects.create(name='Haematology', code='1')
+        priced = Test.objects.create(code='CBC', name='Complete Blood Count', service_group=group)
         tariff = Tariff.objects.create(name='Standard')
         TestPrice.objects.create(tariff=tariff, test=priced, price=Decimal('1000.00'))
         screen = Client()
@@ -212,9 +332,10 @@ class StaffWorkspaceTests(TestCase):
     def test_hmo_and_corporate_clients_come_from_the_centre_list(self):
         from decimal import Decimal
         from django.test import Client
-        from laboratory.models import Tariff, Test, TestPrice
+        from laboratory.models import ServiceGroup, Tariff, Test, TestPrice
         from patients.models import OrganisationClient, Visit
-        priced = Test.objects.create(code='CBC', name='Complete Blood Count')
+        group = ServiceGroup.objects.create(name='Haematology', code='1')
+        priced = Test.objects.create(code='CBC', name='Complete Blood Count', service_group=group)
         tariff = Tariff.objects.create(name='Standard')
         TestPrice.objects.create(tariff=tariff, test=priced, price=Decimal('1000.00'))
         corporate = OrganisationClient.objects.create(centre=self.centre, kind='CORPORATE', name='MTN Nigeria')
@@ -258,10 +379,11 @@ class StaffWorkspaceTests(TestCase):
         from decimal import Decimal
         from django.test import Client
         from billing.models import Invoice
-        from laboratory.models import Tariff, Test, TestPrice
+        from laboratory.models import ServiceGroup, Tariff, Test, TestPrice
         from patients.models import Visit
         from radiology.models import ImagingModality, ImagingPrice, ImagingProcedure
-        priced = Test.objects.create(code='CBC', name='Complete Blood Count')
+        group = ServiceGroup.objects.create(name='Haematology', code='1')
+        priced = Test.objects.create(code='CBC', name='Complete Blood Count', service_group=group)
         tariff = Tariff.objects.create(name='Standard')
         TestPrice.objects.create(tariff=tariff, test=priced, price=Decimal('5500.00'))
         procedure = ImagingProcedure.objects.create(code='XR-CHEST', name='Chest X-ray', modality_type='XRAY')
@@ -413,6 +535,28 @@ class StaffWorkspaceTests(TestCase):
         self.assertEqual(created_test.status_code, 302)
         test = Test.objects.get(code='FBC')
         self.assertEqual(test.service_group_id, group.pk)
+        missing_group = screen.post('/catalog/tests/', {
+            'action': 'create', 'code': 'ESR', 'name': 'ESR', 'department': 'HAEMATOLOGY',
+            'department_code': '1', 'specimen': 'Citrate', 'is_active': 'on', 'is_active_submitted': '1',
+        })
+        self.assertEqual(missing_group.status_code, 302)
+        self.assertFalse(Test.objects.filter(code='ESR').exists())
+        duplicate_group = screen.post('/catalog/service-groups/', {
+            'action': 'create', 'name': 'haematology', 'code': '9', 'is_active': 'on', 'is_active_submitted': '1',
+        })
+        self.assertEqual(duplicate_group.status_code, 302)
+        self.assertEqual(ServiceGroup.objects.filter(name__iexact='haematology').count(), 1)
+        missing_group = screen.post('/catalog/tests/', {
+            'action': 'create', 'code': 'ESR', 'name': 'ESR', 'department': 'HAEMATOLOGY',
+            'department_code': '1', 'specimen': 'Citrate', 'is_active': 'on', 'is_active_submitted': '1',
+        })
+        self.assertEqual(missing_group.status_code, 302)
+        self.assertFalse(Test.objects.filter(code='ESR').exists())
+        duplicate_group = screen.post('/catalog/service-groups/', {
+            'action': 'create', 'name': 'haematology', 'code': '9', 'is_active': 'on', 'is_active_submitted': '1',
+        })
+        self.assertEqual(duplicate_group.status_code, 302)
+        self.assertEqual(ServiceGroup.objects.filter(name__iexact='haematology').count(), 1)
         deactivated = screen.post('/catalog/tests/', {'action': 'deactivate', 'test': str(test.pk)})
         self.assertEqual(deactivated.status_code, 302)
         test.refresh_from_db()
@@ -431,3 +575,63 @@ class StaffWorkspaceTests(TestCase):
         super_screen.force_login(superuser)
         self.assertEqual(super_screen.get('/catalog/').status_code, 200)
         self.assertContains(super_screen.get('/'), 'Open catalog')
+
+
+class RoadmapSecurityHardeningTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.centre_a = Centre.objects.create(code='NWS', name='NOWAS')
+        self.centre_b = Centre.objects.create(code='IND', name='Independence')
+        self.scientist = User.objects.create_user(username='lab.sci', email='lab.sci@example.test', password='A-long-unique-password-2026!')
+        self.scientist.groups.add(Group.objects.get_or_create(name='Laboratory Scientist')[0])
+        UserCentreAccess.objects.create(user=self.scientist, centre=self.centre_a, can_view=True, can_edit=True)
+        self.manager = User.objects.create_user(username='lab.mgr', email='lab.mgr@example.test', password='A-long-unique-password-2026!')
+        self.manager.groups.add(Group.objects.get_or_create(name='Lab Manager')[0])
+        UserCentreAccess.objects.create(user=self.manager, centre=self.centre_a, can_view=True, can_edit=True, can_approve=True)
+
+    def test_cross_centre_patient_list_is_scoped(self):
+        from patients.models import Patient, Visit
+        other_user = User.objects.create_user(username='other', email='other@example.test', password='A-long-unique-password-2026!')
+        UserCentreAccess.objects.create(user=other_user, centre=self.centre_b, can_view=True, can_register=True)
+        patient = Patient.objects.create(first_name='Cross', last_name='Centre', phone_number='08012345678')
+        Visit.objects.create(patient=patient, centre=self.centre_b, registered_by=other_user)
+        self.client.force_authenticate(self.scientist)
+        response = self.client.get('/api/patients/')
+        self.assertEqual(response.status_code, 200)
+        ids = [row['uhid'] for row in response.data.get('results', response.data)]
+        self.assertNotIn(patient.uhid, ids)
+
+    def test_unauthorised_user_cannot_release_result(self):
+        from decimal import Decimal
+        from django.core.files.base import ContentFile
+        from django.utils import timezone
+        from laboratory.models import LabOrder, LabResult, Sample, SampleCodeConfig, ServiceGroup, Tariff, Test, TestPrice
+        from patients.models import Patient, PatientDocument, Visit
+        patient = Patient.objects.create(first_name='Rel', last_name='Ease', phone_number='08022223333')
+        visit = Visit.objects.create(patient=patient, centre=self.centre_a, registered_by=self.manager)
+        PatientDocument.objects.create(visit=visit, document_type='REGISTRATION', file=ContentFile(b'%PDF-1.4\n', name='f.pdf'), uploaded_by=self.manager)
+        group = ServiceGroup.objects.create(name='Chem', code='2', is_active=True)
+        test = Test.objects.create(code='GLU', name='Glucose', department='CHEMISTRY', department_code='1', service_group=group)
+        tariff = Tariff.objects.create(name='Std')
+        TestPrice.objects.create(test=test, tariff=tariff, price=Decimal('1000'))
+        order = LabOrder.objects.create(visit=visit, test=test, tariff=tariff, price=Decimal('1000'), status='IN_PROGRESS')
+        SampleCodeConfig.objects.get_or_create(centre=self.centre_a, defaults={'numeric_code': '1', 'is_active': True})
+        sample = Sample.objects.create(order=order, centre=self.centre_a, status='AUTHENTICATED', collected_by=self.manager, collected_at=timezone.now())
+        result = LabResult.objects.create(sample=sample, status='AUTHENTICATED', entered_by=self.scientist, authenticated_by=self.manager)
+        self.client.force_authenticate(self.scientist)
+        response = self.client.post(f'/api/lab-results/{result.pk}/release/', {}, format='json')
+        self.assertIn(response.status_code, (403, 400))
+
+    def test_password_reset_request_page_ok(self):
+        from django.test import Client
+        screen = Client()
+        response = screen.get('/account/password-reset/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_mfa_secret_generation(self):
+        from core.mfa import generate_mfa_secret, verify_totp, _hotp
+        secret = generate_mfa_secret()
+        self.assertTrue(len(secret) >= 16)
+        import time
+        token = _hotp(secret, int(time.time()) // 30)
+        self.assertTrue(verify_totp(secret, token))

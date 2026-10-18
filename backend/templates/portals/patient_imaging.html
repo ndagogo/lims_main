@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Imaging report{% endblock %}
+{% block content %}
+<p class="muted mb-1"><a href="{% url 'portal-patient-home' %}">Back to portal</a></p>
+<h1>{{ report.exam.order.procedure.name|default:"Imaging report" }}</h1>
+<p class="muted">{{ report.status }}</p>
+<div class="card p-3 p-md-4">
+  {% if report.impression %}<h2 class="h6">Impression</h2><p>{{ report.impression }}</p>{% endif %}
+  {% if report.findings %}<h2 class="h6">Findings</h2><p>{{ report.findings }}</p>{% endif %}
+  <a class="btn btn-dark btn-sm" href="{% url 'portal-patient-imaging-pdf' report.pk %}">Download report</a>
+</div>
+{% endblock %}

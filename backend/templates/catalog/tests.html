@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Laboratory tests | Catalog | HFDN{% endblock %}
 {% block content %}
-{% include "catalog/_page_header.html" with eyebrow="LABORATORY" title="Laboratory tests" subtitle="Codes, departments, service groups, specimen, and basic parameters." %}
+{% include "catalog/_page_header.html" with eyebrow="LABORATORY" title="Laboratory tests" subtitle="Catalogue configuration: specimen, workflow, TAT, outsourcing, parameters, reference ranges, and result templates." %}
 <div class="row g-4">
-  <div class="col-xl-7">
+  <div class="col-xl-5">
     <div class="card p-4 mb-4 catalog-enter">
       {% include "catalog/_filter_bar.html" with page=directory search_placeholder="Code, name, or department" %}
       <div class="table-responsive">
@@ -17,7 +17,7 @@
                   <div class="small muted">{{ test.name }}</div>
                 </td>
                 <td class="small">{{ test.department }} <span class="muted">({{ test.department_code }})</span></td>
-                <td class="small">{% if test.service_group %}{{ test.service_group.name }} · {{ test.service_group.code }}{% else %}—{% endif %}</td>
+                <td class="small">{% if test.service_group %}{{ test.service_group.name }}{% else %}—{% endif %}</td>
                 <td>{{ test.param_count }}</td>
                 <td>{% include "catalog/_active_badge.html" with is_active=test.is_active %}</td>
               </tr>
@@ -41,18 +41,30 @@
         <div class="col-md-2"><label class="form-label">Dept digit</label><input class="form-control" name="department_code" value="1" maxlength="1"></div>
         <div class="col-md-5">
           <label class="form-label">Service group</label>
-          <select class="form-select" name="service_group">
-            <option value="">None</option>
+          <select class="form-select" name="service_group" required>
+            <option value="" disabled selected>Select a service group</option>
             {% for group in service_groups %}<option value="{{ group.pk }}">{{ group.name }} ({{ group.code }})</option>{% endfor %}
           </select>
         </div>
-        <div class="col-md-8"><label class="form-label">Specimen</label><input class="form-control" name="specimen"></div>
-        <div class="col-md-4 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="create-test-active" checked><label class="form-check-label" for="create-test-active">Active</label></div></div>
+        <div class="col-md-6"><label class="form-label">Specimen type</label><input class="form-control" name="specimen" placeholder="EDTA whole blood"></div>
+        <div class="col-md-3"><label class="form-label">Volume</label><input class="form-control" name="sample_volume" placeholder="3 mL"></div>
+        <div class="col-md-3"><label class="form-label">Container</label><input class="form-control" name="container" placeholder="Lavender EDTA"></div>
+        <div class="col-12"><label class="form-label">Collection requirements</label><textarea class="form-control" name="collection_requirements" rows="2"></textarea></div>
+        <div class="col-12"><label class="form-label">Handling instructions</label><textarea class="form-control" name="handling_instructions" rows="2"></textarea></div>
+        <div class="col-md-4"><label class="form-label">Workflow</label>
+          <select class="form-select" name="default_workflow_code"><option value="">Auto</option>{% for code in workflow_codes %}<option>{{ code }}</option>{% endfor %}</select>
+        </div>
+        <div class="col-md-4"><label class="form-label">TAT target (min)</label><input class="form-control" name="tat_target_minutes" type="number" min="1"></div>
+        <div class="col-md-4 d-flex align-items-end gap-3">
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="is_outsourceable" id="c-out"><label class="form-check-label" for="c-out">Outsourceable</label></div>
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="create-test-active" checked><label class="form-check-label" for="create-test-active">Active</label></div>
+        </div>
+        <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="comments_required" id="c-comments"><label class="form-check-label" for="c-comments">Require clinical comment</label></div></div>
         <div class="col-12"><button class="btn btn-primary" type="submit">Create test</button></div>
       </form>
     </div>
   </div>
-  <div class="col-xl-5">
+  <div class="col-xl-7">
     {% if selected %}
       <div class="card p-4 mb-4 catalog-enter">
         <div class="d-flex justify-content-between align-items-start">
@@ -74,50 +86,112 @@
           <div class="col-md-3 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="edit-test-active" {% if selected.is_active %}checked{% endif %}><label class="form-check-label" for="edit-test-active">Active</label></div></div>
           <div class="col-12">
             <label class="form-label">Service group</label>
-            <select class="form-select" name="service_group">
-              <option value="">None</option>
+            <select class="form-select" name="service_group" required>
               {% for group in service_groups %}<option value="{{ group.pk }}" {% if selected.service_group_id == group.pk %}selected{% endif %}>{{ group.name }} ({{ group.code }})</option>{% endfor %}
             </select>
           </div>
-          <div class="col-12"><label class="form-label">Specimen</label><input class="form-control" name="specimen" value="{{ selected.specimen }}"></div>
-          <div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Save test</button></div>
+          <div class="col-md-6"><label class="form-label">Specimen</label><input class="form-control" name="specimen" value="{{ selected.specimen }}"></div>
+          <div class="col-md-3"><label class="form-label">Volume</label><input class="form-control" name="sample_volume" value="{{ selected.sample_volume }}"></div>
+          <div class="col-md-3"><label class="form-label">Container</label><input class="form-control" name="container" value="{{ selected.container }}"></div>
+          <div class="col-12"><label class="form-label">Collection requirements</label><textarea class="form-control" name="collection_requirements" rows="2">{{ selected.collection_requirements }}</textarea></div>
+          <div class="col-12"><label class="form-label">Handling instructions</label><textarea class="form-control" name="handling_instructions" rows="2">{{ selected.handling_instructions }}</textarea></div>
+          <div class="col-md-4"><label class="form-label">Workflow</label>
+            <select class="form-select" name="default_workflow_code">
+              <option value="">Auto</option>
+              {% for code in workflow_codes %}<option {% if selected.default_workflow_code == code %}selected{% endif %}>{{ code }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4"><label class="form-label">TAT target (min)</label><input class="form-control" name="tat_target_minutes" type="number" min="1" value="{{ selected.tat_target_minutes|default_if_none:'' }}"></div>
+          <div class="col-md-4"><label class="form-label">Default result template</label>
+            <select class="form-select" name="default_template">
+              <option value="">— None —</option>
+              {% for t in templates %}<option value="{{ t.pk }}" {% if selected.default_template_id == t.pk %}selected{% endif %}>{{ t.name }} v{{ t.version }} ({{ t.status }})</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_outsourceable" id="e-out" {% if selected.is_outsourceable %}checked{% endif %}><label class="form-check-label" for="e-out">Outsourceable (tariff outsource price applies)</label></div></div>
+          <div class="col-md-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="comments_required" id="e-comments" {% if selected.comments_required %}checked{% endif %}><label class="form-check-label" for="e-comments">Require clinical comment</label></div></div>
+          <div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Save test</button>
+            <a class="btn btn-outline-dark btn-sm" href="{% url 'platform-result-templates' %}?q={{ selected.code }}">Result templates</a>
+            <a class="btn btn-outline-dark btn-sm" href="{% url 'platform-analyzer-mappings' %}">Instrument mappings</a>
+            <a class="btn btn-outline-dark btn-sm" href="{% url 'platform-tat-rules' %}">TAT rules</a>
+          </div>
         </form>
       </div>
-      <div class="card p-4 catalog-enter">
-        <h2 class="h6">Parameters</h2>
+
+      <div class="card p-4 mb-4 catalog-enter">
+        <h2 class="h6">Parameters (structured result fields)</h2>
         {% for param in selected.parameters.all %}
           <div class="border-bottom py-2">
-            <div class="d-flex justify-content-between">
-              <div><span class="fw-semibold">{{ param.code }}</span> · {{ param.name }}</div>
+            <div class="d-flex justify-content-between gap-2">
+              <div>
+                <span class="fw-semibold">{{ param.code }}</span> · {{ param.name }}
+                <div class="small muted">{{ param.get_result_type_display }}{% if param.unit %} · {{ param.unit }}{% endif %}{% if param.decimal_places != None %} · {{ param.decimal_places }} dp{% endif %}{% if param.section_code %} · section {{ param.section_code }}{% endif %}</div>
+                {% if param.choices %}<div class="small muted">Choices: {{ param.choices|join:", " }}</div>{% endif %}
+                {% if param.calculation %}<div class="small muted">Calc: {{ param.calculation }}</div>{% endif %}
+              </div>
               <form method="post">{% csrf_token %}<input type="hidden" name="action" value="delete_parameter"><input type="hidden" name="test" value="{{ selected.pk }}"><input type="hidden" name="parameter" value="{{ param.pk }}"><button class="btn btn-sm btn-outline-danger" type="submit">Remove</button></form>
             </div>
-            <div class="small muted">{{ param.get_result_type_display }}{% if param.unit %} · {{ param.unit }}{% endif %}{% if param.reference_range %} · {{ param.reference_range }}{% endif %}</div>
+            {% if param.reference_ranges.all %}
+              <ul class="small mb-1 mt-1">
+                {% for r in param.reference_ranges.all %}
+                  <li>{{ r.population_label|default:"Any pop." }} · sex {{ r.sex|default:"Any" }} · age {{ r.age_min_years|default_if_none:"*" }}–{{ r.age_max_years|default_if_none:"*" }} · {{ r.low|default_if_none:"*" }}–{{ r.high|default_if_none:"*" }}{% if r.critical_low or r.critical_high %} · crit {{ r.critical_low|default_if_none:"*" }}–{{ r.critical_high|default_if_none:"*" }}{% endif %} · v{{ r.version }}
+                    <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="delete_range"><input type="hidden" name="test" value="{{ selected.pk }}"><input type="hidden" name="parameter" value="{{ param.pk }}"><input type="hidden" name="range" value="{{ r.pk }}"><button class="btn btn-link btn-sm p-0" type="submit">remove</button></form>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+            <form method="post" class="row g-1 mt-1">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="save_range">
+              <input type="hidden" name="test" value="{{ selected.pk }}">
+              <input type="hidden" name="parameter" value="{{ param.pk }}">
+              <div class="col-md-3"><input class="form-control form-control-sm" name="population_label" placeholder="Population"></div>
+              <div class="col-md-2"><select class="form-select form-select-sm" name="sex">{% for val,label in sex_choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}</select></div>
+              <div class="col-md-1"><input class="form-control form-control-sm" name="age_min_years" placeholder="Age≥"></div>
+              <div class="col-md-1"><input class="form-control form-control-sm" name="age_max_years" placeholder="Age≤"></div>
+              <div class="col-md-1"><input class="form-control form-control-sm" name="low" placeholder="Low"></div>
+              <div class="col-md-1"><input class="form-control form-control-sm" name="high" placeholder="High"></div>
+              <div class="col-md-1"><input class="form-control form-control-sm" name="critical_low" placeholder="C-lo"></div>
+              <div class="col-md-1"><input class="form-control form-control-sm" name="critical_high" placeholder="C-hi"></div>
+              <div class="col-md-2"><input class="form-control form-control-sm" name="display_text" placeholder="Display"></div>
+              <div class="col-md-1"><input class="form-control form-control-sm" name="range_version" value="1" title="Version"></div>
+              <div class="col-md-2"><button class="btn btn-sm btn-outline-dark" type="submit">+ range</button></div>
+            </form>
           </div>
-        {% empty %}<p class="muted">No parameters yet.</p>{% endfor %}
+        {% empty %}<p class="muted">No parameters yet. Add haemoglobin, WBC, platelets, etc. for a CBC.</p>{% endfor %}
+
         <form method="post" class="row g-2 mt-3">
           {% csrf_token %}
           <input type="hidden" name="action" value="save_parameter">
           <input type="hidden" name="test" value="{{ selected.pk }}">
           <input type="hidden" name="is_required_submitted" value="1">
-          <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" name="param_code" required></div>
-          <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="param_name" required></div>
+          <div class="col-md-3"><label class="form-label">Code</label><input class="form-control" name="param_code" required placeholder="HGB"></div>
+          <div class="col-md-5"><label class="form-label">Name</label><input class="form-control" name="param_name" required placeholder="Haemoglobin"></div>
           <div class="col-md-4">
-            <label class="form-label">Result type</label>
+            <label class="form-label">Field type</label>
             <select class="form-select" name="result_type">
               {% for value, label in result_types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
             </select>
           </div>
-          <div class="col-md-4"><label class="form-label">Unit</label><input class="form-control" name="unit"></div>
-          <div class="col-md-4"><label class="form-label">Order</label><input class="form-control" name="display_order" value="0"></div>
-          <div class="col-12"><label class="form-label">Reference range</label><input class="form-control" name="reference_range"></div>
-          <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_required" id="param-required" checked><label class="form-check-label" for="param-required">Required</label></div></div>
+          <div class="col-md-3"><label class="form-label">Unit</label><input class="form-control" name="unit" placeholder="g/dL"></div>
+          <div class="col-md-2"><label class="form-label">Decimals</label><input class="form-control" name="decimal_places" type="number" min="0" max="6"></div>
+          <div class="col-md-2"><label class="form-label">Order</label><input class="form-control" name="display_order" value="0"></div>
+          <div class="col-md-2"><label class="form-label">Section</label><input class="form-control" name="section_code" placeholder="DIFF"></div>
+          <div class="col-md-3"><label class="form-label">Legacy range text</label><input class="form-control" name="reference_range" placeholder="optional fallback"></div>
+          <div class="col-md-6"><label class="form-label">Choices (comma or JSON)</label><input class="form-control" name="choices" placeholder="Positive, Negative, Equivocal"></div>
+          <div class="col-md-6"><label class="form-label">Calculation</label><input class="form-control" name="calculation" placeholder="WBC * NEUT_PCT / 100"></div>
+          <div class="col-12 d-flex flex-wrap gap-3">
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="is_required" id="param-required" checked><label class="form-check-label" for="param-required">Required</label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="require_comment_if_abnormal" id="param-abn"><label class="form-check-label" for="param-abn">Comment if abnormal</label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="critical_comment_required" id="param-crit"><label class="form-check-label" for="param-crit">Comment if critical</label></div>
+          </div>
           <div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Add parameter</button></div>
         </form>
       </div>
     {% else %}
       <div class="card p-4 catalog-enter">
         <h2 class="h5">Select a test</h2>
-        <p class="muted mb-0">Open a test from the directory to edit it, deactivate it, or manage parameters.</p>
+        <p class="muted mb-0">Open a test to configure specimen handling, workflow/TAT, parameters, age/sex reference intervals, and link published result templates. Instrument analyser codes are managed under Platform → Analyzer mappings.</p>
       </div>
     {% endif %}
   </div>

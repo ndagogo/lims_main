@@ -252,4 +252,25 @@ def export_accountant_report(request):
         start=request.GET.get('start'),
         end=request.GET.get('end'),
     )
-    return export_report(report, fmt=request.GET.get('format') or 'csv', dataset=request.GET.get('dataset') or 'payments')
+    fmt = request.GET.get('format') or 'csv'
+    dataset = request.GET.get('dataset') or 'payments'
+    from reporting.exports import log_report_export
+    centre = report['selected_centre'].code if report.get('selected_centre') else ''
+    row_map = {
+        'payments': report.get('payment_rows') or [],
+        'invoices': report.get('invoice_rows') or [],
+        'discounts': report.get('discount_rows') or [],
+        'visits': report.get('visit_rows') or [],
+        'summary': list((report.get('kpis') or {}).keys()),
+    }
+    include_ids = dataset in ('payments', 'invoices', 'discounts', 'visits')
+    log_report_export(
+        request,
+        report_type=f'accountant_{dataset}',
+        fmt=fmt,
+        period_label=report.get('period_label', ''),
+        centre=centre,
+        row_count=len(row_map.get(dataset, [])),
+        include_patient_ids=include_ids,
+    )
+    return export_report(report, fmt=fmt, dataset=dataset)

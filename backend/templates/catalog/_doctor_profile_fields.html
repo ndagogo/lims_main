@@ -1,0 +1,31 @@
+<div class="col-12">
+  <label class="form-label">Assigned centres</label>
+  <select class="form-select" name="centres" multiple size="5">
+    {% for centre in centres %}
+      <option value="{{ centre.pk }}" {% if selected %}{% if centre.pk == selected.centre_id or centre in selected.centres.all %}selected{% endif %}{% endif %}>{{ centre.code }} — {{ centre.name }}</option>
+    {% endfor %}
+  </select>
+  <div class="form-text">Choose every centre this doctor can be selected at. The home centre is always kept.</div>
+</div>
+<div class="col-12">
+  <label class="form-label">Introduced by</label>
+  <input type="search" class="form-control staff-search mb-2" placeholder="Search staff by name, username, or staff ID" autocomplete="off">
+  <select class="form-select staff-select" name="onboarded_by" size="6">
+    <option value="">— Not recorded</option>
+    {% for person in staff %}
+      <option value="{{ person.pk }}" {% if selected and selected.onboarded_by_id == person.pk %}selected{% endif %}>{{ person.get_full_name|default:person.username }} ({{ person.username }}{% if person.staff_id %} · {{ person.staff_id }}{% endif %})</option>
+    {% endfor %}
+  </select>
+  <div class="form-text">Search, then choose the staff member who brought this doctor in.</div>
+</div>
+<div class="col-md-4"><label class="form-label">Bank</label><input class="form-control" name="bank_name" value="{{ selected.bank_name|default:'' }}"></div>
+<div class="col-md-4"><label class="form-label">Account name</label><input class="form-control" name="account_name" value="{{ selected.account_name|default:'' }}"></div>
+<div class="col-md-4"><label class="form-label">Account number</label><input class="form-control" name="account_number" value="{{ selected.account_number|default:'' }}" inputmode="numeric"></div>
+<div class="col-12">
+  <input type="hidden" name="appear_on_reports_submitted" value="1">
+  <div class="form-check">
+    <input class="form-check-input" type="checkbox" name="appear_on_reports" id="{{ appear_id }}" {% if not selected or selected.appear_on_reports %}checked{% endif %}>
+    <label class="form-check-label" for="{{ appear_id }}">Show this doctor’s name on laboratory and radiology reports</label>
+  </div>
+  <div class="form-text">Untick this when the physician does not want their name printed.</div>
+</div>

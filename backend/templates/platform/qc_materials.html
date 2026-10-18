@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}QC materials | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="QC" title="QC materials" subtitle="Lots and targets used for quality control." %}
+<div class="row g-4">
+  <div class="col-xl-4">
+    <div class="card p-4">
+      <h2 class="h5">Add material</h2>
+      <form method="post" class="row g-2">
+        {% csrf_token %}<input type="hidden" name="action" value="create">
+        <div class="col-12"><label class="form-label">Centre</label><select name="centre" class="form-select" required>{% for c in centres %}<option value="{{ c.pk }}">{{ c.code }}</option>{% endfor %}</select></div>
+        <div class="col-12"><label class="form-label">Test</label><select name="test" class="form-select" required>{% for t in tests %}<option value="{{ t.pk }}">{{ t.code }} — {{ t.name }}</option>{% endfor %}</select></div>
+        <div class="col-12"><label class="form-label">Name</label><input name="name" class="form-control" required></div>
+        <div class="col-md-6"><label class="form-label">Lot</label><input name="lot_number" class="form-control"></div>
+        <div class="col-md-6"><label class="form-label">Expires</label><input name="expires_on" type="date" class="form-control"></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create</button></div>
+      </form>
+    </div>
+  </div>
+  <div class="col-xl-8">
+    <form method="get" class="mb-3"><input class="form-control" name="q" value="{{ query }}" placeholder="Search name, lot, or test"></form>
+    <div class="card p-3">
+      <table class="table align-middle"><thead><tr><th>Material</th><th>Centre / test</th><th>Expires</th><th></th></tr></thead>
+        <tbody>
+          {% for row in directory %}
+          <tr>
+            <td class="fw-semibold">{{ row.name }}<div class="small muted">Lot {{ row.lot_number|default:"—" }}</div></td>
+            <td>{{ row.centre.code }} · {{ row.test.code }}</td>
+            <td>{{ row.expires_on|default:"—" }}</td>
+            <td>
+              <form method="post">{% csrf_token %}<input type="hidden" name="action" value="toggle"><input type="hidden" name="material" value="{{ row.pk }}">
+                <button class="btn btn-sm btn-outline-dark" type="submit">{% if row.is_active %}Deactivate{% else %}Activate{% endif %}</button>
+              </form>
+            </td>
+          </tr>
+          {% empty %}<tr><td colspan="4" class="muted text-center py-3">No QC materials.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -21,6 +21,9 @@ class Patient(TimeStampedModel):
     notify_sms=models.BooleanField(default=True, help_text='Patient consents to SMS notifications.')
     notify_email=models.BooleanField(default=False, help_text='Patient consents to email notifications.')
     notify_whatsapp=models.BooleanField(default=False, help_text='Patient consents to WhatsApp notifications.')
+    guardian_name=models.CharField(max_length=120, blank=True, default='')
+    guardian_relationship=models.CharField(max_length=40, blank=True, default='')
+    guardian_phone=models.CharField(max_length=30, blank=True, default='')
     date_of_birth=models.DateField(null=True,blank=True)
     sex=models.CharField(max_length=20,blank=True,choices=SEX_CHOICES)
     race=models.CharField(max_length=20,blank=True,default='',choices=RACE_CHOICES)
@@ -29,6 +32,12 @@ class Patient(TimeStampedModel):
     state=models.CharField(max_length=40,blank=True,default='',choices=STATE_CHOICES)
     health_card_number=models.CharField(max_length=40,blank=True,default='')
     passport_number=models.CharField(max_length=40,blank=True,default='')
+
+    class Meta:
+        permissions = [
+            ('can_modify_patient_data', 'Can modify patient demographic data'),
+        ]
+
     def save(self,*args,**kwargs):
         if not self.uhid:
             with transaction.atomic():

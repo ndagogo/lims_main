@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Analyzer messages | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="Instruments" title="Analyzer messages" subtitle="Raw instrument traffic across centres." %}
+<form method="get" class="card p-3 mb-3 row g-2">
+  <div class="col-md-4"><select name="status" class="form-select"><option value="">All statuses</option>{% for v,l in statuses %}<option value="{{ v }}" {% if status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+  <div class="col-md-2"><button class="btn btn-outline-dark" type="submit">Filter</button></div>
+  <div class="col-md-6 text-md-end"><a class="btn btn-outline-secondary" href="{% url 'integration-review' %}">Open quarantine review</a></div>
+</form>
+<div class="card p-3">
+  <table class="table align-middle"><thead><tr><th>Received</th><th>Analyzer</th><th>Status</th><th>Sample</th><th>Error</th></tr></thead>
+    <tbody>
+      {% for row in directory %}
+      <tr>
+        <td class="small">{{ row.received_at }}</td>
+        <td>{{ row.analyzer.centre.code }} / {{ row.analyzer.name }}</td>
+        <td>{{ row.get_status_display }}</td>
+        <td>{{ row.sample.sample_id|default:"—" }}</td>
+        <td class="small muted">{{ row.error_message|truncatechars:80 }}</td>
+      </tr>
+      {% empty %}<tr><td colspan="5" class="muted text-center py-3">No messages.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% include "includes/pagination.html" with page=directory %}
+</div>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Physician invites | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="Portals" title="Physician invites" subtitle="Invite tokens for referring doctors." %}
+<div class="card p-4 mb-4">
+  <h2 class="h5">Create invite</h2>
+  <form method="post" class="row g-2">
+    {% csrf_token %}<input type="hidden" name="action" value="create">
+    <div class="col-md-5"><label class="form-label">Doctor</label><select name="doctor" class="form-select" required>{% for d in doctors %}<option value="{{ d.pk }}">{{ d.centre.code }} · {{ d.first_name }} {{ d.last_name }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Email</label><input name="email" type="email" class="form-control" required></div>
+    <div class="col-md-2"><label class="form-label">Days</label><input name="days" type="number" min="1" value="7" class="form-control"></div>
+    <div class="col-md-1 d-flex align-items-end"><button class="btn btn-primary w-100" type="submit">Invite</button></div>
+  </form>
+</div>
+<div class="card p-3">
+  <table class="table align-middle"><thead><tr><th>Doctor</th><th>Email</th><th>Expires</th><th>Accepted</th><th>Token</th></tr></thead>
+    <tbody>
+      {% for row in directory %}
+      <tr>
+        <td>{{ row.doctor.first_name }} {{ row.doctor.last_name }}</td>
+        <td>{{ row.email }}</td>
+        <td class="small">{{ row.expires_at }}</td>
+        <td class="small">{{ row.accepted_at|default:"—" }}</td>
+        <td class="small"><code>{{ row.invite_token|truncatechars:24 }}</code></td>
+      </tr>
+      {% empty %}<tr><td colspan="5" class="muted text-center py-3">No invites.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% include "includes/pagination.html" with page=directory %}
+</div>
+{% endblock %}

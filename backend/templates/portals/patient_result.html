@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Result {{ result.sample.sample_id }}{% endblock %}
+{% block content %}
+<p class="muted mb-1"><a href="{% url 'portal-patient-home' %}">Back to portal</a></p>
+<h1>{{ result.sample.order.test.name }}</h1>
+<p class="muted">Sample {{ result.sample.sample_id }} · visit {{ result.sample.order.visit.visit_id }} · {{ result.status }}</p>
+<div class="card p-3 p-md-4">
+  {% if result.narrative %}<p>{{ result.narrative }}</p>{% endif %}
+  <table class="table mb-0">
+    <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+    <tbody>
+      {% for row in result.values.all %}
+      <tr><td>{{ row.parameter.name }}</td><td>{{ row.value }}</td></tr>
+      {% empty %}<tr><td colspan="2" class="muted">No parameter values on this report.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <a class="btn btn-dark btn-sm mt-3" href="{% url 'portal-patient-result-pdf' result.pk %}">Download report</a>
+</div>
+{% endblock %}

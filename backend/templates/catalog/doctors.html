@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Referral doctors | Catalog | HFDN{% endblock %}
 {% block content %}
-{% include "catalog/_page_header.html" with eyebrow="REFERRALS" title="Referral doctors" subtitle="Doctor profiles, commission defaults, and linked institutions." %}
+{% include "catalog/_page_header.html" with eyebrow="REFERRALS" title="Referral doctors" subtitle="Profiles, the centres they serve, bank details, and who introduced them." %}
 <div class="row g-4">
   <div class="col-xl-7">
     <div class="card p-4 mb-4 catalog-enter">
       {% include "catalog/_filter_bar.html" with page=directory search_placeholder="Code, name, facility, phone" show_centre=True %}
       <div class="table-responsive">
         <table class="table align-middle">
-          <thead><tr><th>Doctor</th><th>Centre</th><th>Institutions</th><th>Status</th></tr></thead>
+          <thead><tr><th>Doctor</th><th>Centres</th><th>Introduced by</th><th>Institutions</th><th>Status</th></tr></thead>
           <tbody>
             {% for doctor in directory %}
               <tr class="{% if selected and selected.pk == doctor.pk %}table-active{% endif %}">
@@ -16,12 +16,13 @@
                   <a class="fw-semibold text-decoration-none" href="?doctor={{ doctor.pk }}&q={{ query|urlencode }}&status={{ status }}&centre={{ centre_id }}&per={{ directory.paginator.per_page }}&page={{ directory.number }}">{{ doctor.doctor_code }}</a>
                   <div class="small muted">{{ doctor.title }} {{ doctor.first_name }} {{ doctor.last_name }}</div>
                 </td>
-                <td class="small">{{ doctor.centre.code }}</td>
+                <td class="small">{{ doctor.centre.code }}{% for extra in doctor.centres.all %}{% if extra.pk != doctor.centre_id %}, {{ extra.code }}{% endif %}{% endfor %}</td>
+                <td class="small">{% if doctor.onboarded_by %}{{ doctor.onboarded_by.get_full_name|default:doctor.onboarded_by.username }}{% else %}—{% endif %}</td>
                 <td>{{ doctor.institution_count }}</td>
                 <td>{% include "catalog/_active_badge.html" with is_active=doctor.is_active %}</td>
               </tr>
             {% empty %}
-              <tr><td colspan="4" class="text-center muted py-4">No doctors match that filter.</td></tr>
+              <tr><td colspan="5" class="text-center muted py-4">No doctors match that filter.</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -35,7 +36,7 @@
         <input type="hidden" name="action" value="create">
         <input type="hidden" name="is_active_submitted" value="1">
         <div class="col-md-6">
-          <label class="form-label">Centre</label>
+          <label class="form-label">Home centre</label>
           <select class="form-select" name="centre" required>
             <option value="">Choose centre</option>
             {% for centre in centres %}<option value="{{ centre.pk }}">{{ centre.code }} — {{ centre.name }}</option>{% endfor %}
@@ -48,6 +49,7 @@
         <div class="col-md-6"><label class="form-label">Facility</label><input class="form-control" name="facility_name"></div>
         <div class="col-md-6"><label class="form-label">Phone</label><input class="form-control" name="phone"></div>
         <div class="col-md-6"><label class="form-label">Email</label><input class="form-control" type="email" name="email"></div>
+        {% include "catalog/_doctor_profile_fields.html" with appear_id="create-appear-on-reports" selected=None %}
         <div class="col-md-3">
           <label class="form-label">Commission</label>
           <select class="form-select" name="commission_type">
@@ -77,7 +79,7 @@
           <input type="hidden" name="action" value="update">
           <input type="hidden" name="doctor" value="{{ selected.pk }}">
           <div class="col-md-6">
-            <label class="form-label">Centre</label>
+            <label class="form-label">Home centre</label>
             <select class="form-select" name="centre" required>
               {% for centre in centres %}<option value="{{ centre.pk }}" {% if selected.centre_id == centre.pk %}selected{% endif %}>{{ centre.code }} — {{ centre.name }}</option>{% endfor %}
             </select>
@@ -89,6 +91,7 @@
           <div class="col-md-6"><label class="form-label">Facility</label><input class="form-control" name="facility_name" value="{{ selected.facility_name }}"></div>
           <div class="col-md-6"><label class="form-label">Phone</label><input class="form-control" name="phone" value="{{ selected.phone }}"></div>
           <div class="col-md-6"><label class="form-label">Email</label><input class="form-control" type="email" name="email" value="{{ selected.email }}"></div>
+          {% include "catalog/_doctor_profile_fields.html" with appear_id="edit-appear-on-reports" %}
           <div class="col-md-3">
             <label class="form-label">Commission</label>
             <select class="form-select" name="commission_type">
@@ -135,4 +138,31 @@
     {% endif %}
   </div>
 </div>
+<script>
+document.querySelectorAll('.staff-search').forEach((input) => {
+  const select = input.parentElement.querySelector('.staff-select');
+  if (!select) return;
+  const options = [...select.options].map((option) => ({
+    value: option.value,
+    text: option.textContent,
+    selected: option.selected,
+  }));
+  const paint = () => {
+    const query = input.value.trim().toLowerCase();
+    const current = select.value;
+    select.replaceChildren();
+    options.forEach((row) => {
+      const blank = row.value === '';
+      const matches = !query || blank || row.text.toLowerCase().includes(query) || row.value === current;
+      if (!matches) return;
+      const option = document.createElement('option');
+      option.value = row.value;
+      option.textContent = row.text;
+      if (row.value === current) option.selected = true;
+      select.appendChild(option);
+    });
+  };
+  input.addEventListener('input', paint);
+});
+</script>
 {% endblock %}

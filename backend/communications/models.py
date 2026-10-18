@@ -20,6 +20,7 @@ class NotificationOutbox(TimeStampedModel):
     last_error=models.TextField(blank=True)
     scheduled_for=models.DateTimeField(null=True,blank=True)
     sent_at=models.DateTimeField(null=True,blank=True)
+    idempotency_key=models.CharField(max_length=120, blank=True, default='', db_index=True)
     created_by=models.ForeignKey(settings.AUTH_USER_MODEL,null=True,on_delete=models.SET_NULL)
     class Meta: ordering=['-created_at']
     def __str__(self): return f'{self.channel} to {self.recipient} ({self.status})'

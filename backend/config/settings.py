@@ -36,7 +36,7 @@ INSTALLED_APPS = [
     "rest_framework", "rest_framework_simplejwt", "rest_framework_simplejwt.token_blacklist",
     "django_filters", "corsheaders",
     "core", "patients", "laboratory", "billing", "radiology", "integrations",
-    "referrals", "communications",
+    "referrals", "communications", "workflows", "portals", "inventory", "reporting",
 ]
 
 MIDDLEWARE = [
@@ -82,7 +82,7 @@ else:
 
 AUTH_USER_MODEL = "core.User"
 AUTHENTICATION_BACKENDS = ["core.auth_backend.LockoutBackend"]
-LOGIN_FAILURE_LIMIT = int(os.getenv("LOGIN_FAILURE_LIMIT", "5"))
+LOGIN_FAILURE_LIMIT = int(os.getenv("LOGIN_FAILURE_LIMIT", "3"))
 LOGIN_LOCK_MINUTES = int(os.getenv("LOGIN_LOCK_MINUTES", "15"))
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -193,6 +193,21 @@ WHATSAPP_PROVIDER_TOKEN = os.getenv("WHATSAPP_PROVIDER_TOKEN", "").strip()
 NOTIFICATION_LOG_PROVIDER = env_bool("NOTIFICATION_LOG_PROVIDER", DEBUG)
 CRITICAL_ALERT_EMAIL = os.getenv("CRITICAL_ALERT_EMAIL", "").strip()
 PATIENT_PORTAL_URL = os.getenv("PATIENT_PORTAL_URL", "https://www.example.com/patients").strip()
+PUBLIC_APP_URL = os.getenv("PUBLIC_APP_URL", "http://127.0.0.1:8000").strip()
+ORTHANC_URL = os.getenv("ORTHANC_URL", "").strip()
+ORTHANC_USERNAME = os.getenv("ORTHANC_USERNAME", "").strip()
+ORTHANC_PASSWORD = os.getenv("ORTHANC_PASSWORD", "").strip()
+RIS_MWL_AE_TITLE = os.getenv("RIS_MWL_AE_TITLE", "HFDN_MWL").strip()[:16] or "HFDN_MWL"
+RIS_MWL_PORT = int(os.getenv("RIS_MWL_PORT", "11112"))
+RIS_CALLING_AE = os.getenv("RIS_CALLING_AE", "HFDN_SCU").strip()[:16] or "HFDN_SCU"
+RIS_MWL_ENABLED = env_bool("RIS_MWL_ENABLED", False)
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "").strip()
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL).strip()
+CELERY_TASK_ALWAYS_EAGER = env_bool("CELERY_TASK_ALWAYS_EAGER", not bool(CELERY_BROKER_URL))
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
 
 LOGGING = {
     "version": 1,

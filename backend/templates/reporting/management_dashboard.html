@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Management dashboard | HFDN{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <div class="muted small">ENTERPRISE REPORTING</div>
+    <h1 class="h3 mb-1">Management dashboard</h1>
+    <p class="muted mb-0">Live KPIs from invoices, payments, refunds, lab TAT, and the commission ledger — not separate editable totals.</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'report-catalogue' %}">Report catalogue</a>
+</div>
+
+<form method="get" class="card p-4 mb-4">
+  <input type="hidden" name="kind" value="management">
+  <input type="hidden" name="detail" value="1">
+  <div class="row g-3 align-items-end">
+    <div class="col-md-2">
+      <label class="form-label">Period</label>
+      <select class="form-select" name="period">
+        {% for value, label in period_choices %}
+          <option value="{{ value }}" {% if period == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">From</label>
+      <input class="form-control" type="date" name="start" value="{{ start_date }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">To</label>
+      <input class="form-control" type="date" name="end" value="{{ end_date }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Centre</label>
+      <select class="form-select" name="centre">
+        <option value="">All my centres</option>
+        {% for centre in centres %}
+          <option value="{{ centre.pk }}" {% if centre_id == centre.pk|stringformat:"s" %}selected{% endif %}>{{ centre.code }} — {{ centre.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3"><button class="btn btn-primary w-100" type="submit">Refresh</button></div>
+  </div>
+  <div class="muted small mt-2 mb-3">Showing <strong>{{ period_label }}</strong> ({{ start_date }} → {{ end_date }})</div>
+  <div class="fw-semibold mb-2">Detailed reports</div>
+  <p class="small muted mb-2">Select a section, then show the line-by-line report here or download it. These files list each transaction. Patient names are not included.</p>
+  <div class="row g-2 mb-3">
+    {% for key, label in management_sections %}
+    <div class="col-md-6">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="section" value="{{ key }}" id="section-{{ key }}" {% if key in selected_sections %}checked{% endif %}>
+        <label class="form-check-label" for="section-{{ key }}">{{ label }}</label>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <button class="btn btn-primary btn-sm" type="submit">Show detailed report</button>
+    <button class="btn btn-outline-dark btn-sm" type="submit" formaction="{% url 'report-export' %}" name="format" value="xlsx">Export Excel</button>
+    <button class="btn btn-outline-dark btn-sm" type="submit" formaction="{% url 'report-export' %}" name="format" value="pdf">Export PDF</button>
+  </div>
+</form>
+
+{% for report in detail_reports %}
+<section class="mb-4" id="detail-{{ report.key }}">
+  <h2 class="h5">{{ report.title }}</h2>
+  <p class="small muted mb-2">{{ report.note }} {{ report.rows|length }} row{{ report.rows|length|pluralize }}.{% if report.truncated %} Showing the first rows only; narrow the period to see the rest.{% endif %}</p>
+  <div class="card p-0 overflow-auto">
+    <table class="table table-sm mb-0">
+      <thead><tr>{% for head in report.headers %}<th>{{ head }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for row in report.rows %}
+        <tr>{% for cell in row %}<td>{% if cell == '' %}{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>
+        {% empty %}
+        <tr><td colspan="{{ report.headers|length }}" class="muted p-3">No rows for this period and centre.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endfor %}
+
+<section class="mb-4">
+  <h2 class="h5">Financial — revenue and collections</h2>
+  <p class="muted small">Gross charges ≠ collections ≠ net receipts. Outstanding is a current open-balance snapshot.</p>
+  <div class="row g-3">
+    <div class="col-6 col-xl-3"><div class="card p-3"><div class="kpi-label">GROSS CHARGES</div><div class="h4 mb-0">₦{{ financial.gross_charges|floatformat:2 }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="card p-3"><div class="kpi-label">DISCOUNTS</div><div class="h4 mb-0">₦{{ financial.discounts|floatformat:2 }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="card p-3"><div class="kpi-label">INVOICE VALUE</div><div class="h4 mb-0">₦{{ financial.invoice_value|floatformat:2 }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="card p-3"><div class="kpi-label">COLLECTIONS</div><div class="h4 mb-0">₦{{ financial.collections|floatformat:2 }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="card p-3"><div class="kpi-label">REFUNDS</div><div class="h4 mb-0">₦{{ financial.refunds|floatformat:2 }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="card p-3"><div class="kpi-label">NET RECEIPTS</div><div class="h4 mb-0">₦{{ financial.net_receipts|floatformat:2 }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="card p-3"><div class="kpi-label">OUTSTANDING RECEIVABLES</div><div class="h4 mb-0">₦{{ financial.outstanding_receivables|floatformat:2 }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="card p-3"><div class="kpi-label">PAYMENTS / INVOICES</div><div class="h4 mb-0">{{ financial.payment_count }} / {{ financial.invoice_count }}</div></div></div>
+  </div>
+  {% if payments_by_method %}
+  <div class="card p-3 mt-3">
+    <div class="fw-semibold mb-2">Collections by method</div>
+    <ul class="mb-0 small">{% for row in payments_by_method %}<li>{{ row.method }}: ₦{{ row.total|floatformat:2 }} ({{ row.count }})</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+</section>
+
+<section class="mb-4">
+  <h2 class="h5">Clinical operations — workload and turnaround</h2>
+  <div class="row g-3">
+    <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">PENDING TESTS</div><div class="h4 mb-0">{{ clinical.pending_tests }}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">OPEN SAMPLES</div><div class="h4 mb-0">{{ clinical.open_samples }}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">OVERDUE</div><div class="h4 mb-0">{{ clinical.overdue_samples }}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">RELEASED REPORTS</div><div class="h4 mb-0">{{ clinical.released_reports }}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">REJECTION RATE</div><div class="h4 mb-0">{{ clinical.rejection_rate }}%</div></div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">RECOLLECTION RATE</div><div class="h4 mb-0">{{ clinical.recollection_rate }}%</div></div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">TAT WARNINGS</div><div class="h4 mb-0">{{ clinical.warning_samples }}</div></div></div>
+  </div>
+  {% if clinical.pending_by_department %}
+  <div class="card p-3 mt-3">
+    <div class="fw-semibold mb-2">Pending work by department</div>
+    <div class="table-responsive"><table class="table table-sm mb-0">
+      <thead><tr><th>Department</th><th class="text-end">Open</th></tr></thead>
+      <tbody>{% for row in clinical.pending_by_department %}<tr><td>{{ row.department }}</td><td class="text-end">{{ row.count }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <a class="small" href="{% url 'laboratory-tat' %}">Open full TAT dashboard</a>
+  </div>
+  {% endif %}
+</section>
+
+<section class="mb-4">
+  <h2 class="h5">Centres — performance</h2>
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card p-3">
+        <div class="fw-semibold mb-2">Revenue by centre</div>
+        <div class="table-responsive"><table class="table table-sm mb-0">
+          <thead><tr><th>Centre</th><th class="text-end">Invoices</th><th class="text-end">Gross</th><th class="text-end">Discounts</th><th class="text-end">Invoice value</th></tr></thead>
+          <tbody>
+            {% for row in centres_panel.by_centre %}
+            <tr>
+              <td>{{ row.code }} — {{ row.name }}</td>
+              <td class="text-end">{{ row.invoice_count }}</td>
+              <td class="text-end">₦{{ row.gross_charges|floatformat:2 }}</td>
+              <td class="text-end">₦{{ row.discounts|floatformat:2 }}</td>
+              <td class="text-end">₦{{ row.invoice_value|floatformat:2 }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="muted">No invoices in this period.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="card p-3">
+        <div class="fw-semibold mb-2">Service mix (lab orders)</div>
+        <ul class="mb-0 small">
+          {% for row in centres_panel.service_mix %}<li>{{ row.service_group }}: {{ row.count }}</li>
+          {% empty %}<li class="muted">No lab orders in this period.</li>{% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="mb-4">
+  <h2 class="h5">Referral network — physicians and partners</h2>
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">REFERRAL VISITS</div><div class="h4 mb-0">{{ referral.referral_visits }}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">ACCRUALS</div><div class="h4 mb-0">₦{{ referral.accruals|floatformat:2 }}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">REVERSALS</div><div class="h4 mb-0">₦{{ referral.reversals|floatformat:2 }}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">PENDING PAYOUT LIABILITY</div><div class="h4 mb-0">₦{{ referral.pending_payout_liability|floatformat:2 }}</div></div></div>
+  </div>
+  <div class="card p-3">
+    <div class="fw-semibold mb-2">Top referring physicians</div>
+    <div class="table-responsive"><table class="table table-sm mb-0">
+      <thead><tr><th>Code</th><th>Physician</th><th class="text-end">Visits</th><th class="text-end">Accruals</th><th class="text-end">Net</th></tr></thead>
+      <tbody>
+        {% for row in referral.doctors %}
+        <tr>
+          <td class="font-monospace">{{ row.doctor_code }}</td>
+          <td>{{ row.name }}</td>
+          <td class="text-end">{{ row.visits }}</td>
+          <td class="text-end">₦{{ row.accruals|floatformat:2 }}</td>
+          <td class="text-end">₦{{ row.net|floatformat:2 }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="muted">No referral attributions in this period.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card p-3 mt-3">
+    <div class="fw-semibold mb-1">Staff who introduced referring doctors</div>
+    <p class="small muted mb-2">Each name is a referring doctor that staff member introduced. Visits are the referrals those doctors sent in the selected period.</p>
+    <div class="table-responsive"><table class="table table-sm mb-0">
+      <thead><tr><th>Staff</th><th>Doctors introduced</th><th class="text-end">Visits in period</th></tr></thead>
+      <tbody>
+        {% for row in referral.marketers %}
+        <tr>
+          <td>{{ row.name }} <span class="muted">{{ row.username }}</span></td>
+          <td>
+            {% for doctor_name in row.doctor_names %}
+            <div>{{ doctor_name }}</div>
+            {% endfor %}
+          </td>
+          <td class="text-end">{{ row.visits }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3" class="muted">No referring doctor has an introducing staff member yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<details class="mb-4">
+  <summary class="small muted">Metric definitions</summary>
+  <ul class="small mt-2">
+    {% for key, text in definitions.items %}<li><strong>{{ key }}</strong> — {{ text }}</li>{% endfor %}
+  </ul>
+</details>
+{% endblock %}

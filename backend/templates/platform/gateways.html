@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Gateway registration | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="Instruments" title="Gateway registration" subtitle="Local analyser gateway API keys." %}
+{% if new_api_key %}
+<div class="alert alert-warning"><strong>New API key (shown once):</strong> <code>{{ new_api_key }}</code></div>
+{% endif %}
+<div class="card p-4 mb-4">
+  <h2 class="h5">Register gateway</h2>
+  <form method="post" class="row g-2">
+    {% csrf_token %}<input type="hidden" name="action" value="create">
+    <div class="col-md-4"><label class="form-label">Centre</label><select name="centre" class="form-select" required>{% for c in centres %}<option value="{{ c.pk }}">{{ c.code }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Name</label><input name="name" class="form-control" required></div>
+    <div class="col-md-4"><label class="form-label">Hostname</label><input name="hostname" class="form-control"></div>
+    <div class="col-12"><button class="btn btn-primary" type="submit">Register</button></div>
+  </form>
+</div>
+<div class="card p-3">
+  <table class="table align-middle"><thead><tr><th>Gateway</th><th>Hostname</th><th>Last seen</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for row in directory %}
+      <tr>
+        <td class="fw-semibold">{{ row.centre.code }} / {{ row.name }}</td>
+        <td>{{ row.hostname|default:"—" }}</td>
+        <td class="small">{{ row.last_seen_at|default:"—" }}</td>
+        <td>{% if row.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-danger-soft">Inactive</span>{% endif %}</td>
+        <td class="text-nowrap">
+          <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="toggle"><input type="hidden" name="gateway" value="{{ row.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">{% if row.is_active %}Deactivate{% else %}Activate{% endif %}</button></form>
+          <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="rotate_key"><input type="hidden" name="gateway" value="{{ row.pk }}"><button class="btn btn-sm btn-outline-danger" type="submit">Rotate key</button></form>
+        </td>
+      </tr>
+      {% empty %}<tr><td colspan="5" class="muted text-center py-3">No gateways.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% include "includes/pagination.html" with page=directory %}
+</div>
+{% endblock %}

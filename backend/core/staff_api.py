@@ -35,3 +35,10 @@ def call_create(viewset, user, data, files=None):
 
 def call_action(viewset, action, user, pk, data=None, files=None):
     return _invoke(viewset, {'post': action}, user, data, pk=pk, files=files)
+
+
+def call_update(viewset, user, pk, data):
+    request = _factory.patch('/', data or {}, format='json')
+    force_authenticate(request, user=user)
+    response = viewset.as_view({'patch': 'partial_update'})(request, pk=pk)
+    return response.status_code, getattr(response, 'data', None)

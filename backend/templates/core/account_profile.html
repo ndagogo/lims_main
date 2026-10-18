@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}My profile | HFDN{% endblock %}
+{% block content %}
+<style>
+  .profile-hero {
+    display:flex; gap:1.25rem; align-items:center; flex-wrap:wrap;
+    background: linear-gradient(135deg, #102033 0%, #1b314d 55%, #0f766e 140%);
+    color:#fff; border-radius:1.25rem; padding:1.35rem 1.5rem;
+    box-shadow: 0 18px 40px #10203322;
+  }
+  .profile-avatar {
+    width:88px; height:88px; border-radius:1.1rem; object-fit:cover;
+    background:#d7e2ef; border:3px solid #ffffff55; flex-shrink:0;
+  }
+  .profile-avatar-fallback {
+    width:88px; height:88px; border-radius:1.1rem; display:inline-flex;
+    align-items:center; justify-content:center; font-size:1.8rem; font-weight:600;
+    background:#0f766e; color:#fff; border:3px solid #ffffff55; flex-shrink:0;
+  }
+  .profile-meta { color:#c9d7e8; font-size:.9rem; }
+  .sig-preview {
+    max-height:100px; max-width:100%; object-fit:contain;
+    background:#f8fafc; border:1px solid var(--hfdn-line); border-radius:.65rem; padding:.5rem;
+  }
+</style>
+
+<div class="profile-hero mb-4 dash-enter">
+  {% if avatar_url %}
+    <img class="profile-avatar" src="{{ avatar_url }}" alt="Profile photo">
+  {% else %}
+    <div class="profile-avatar-fallback">{{ profile_user.first_name|default:profile_user.username|slice:":1"|upper }}</div>
+  {% endif %}
+  <div class="flex-grow-1">
+    <div class="small text-uppercase" style="letter-spacing:.08em;opacity:.75">Staff profile</div>
+    <h1 class="h3 mb-1">{{ profile_user.display_name|default:profile_user.get_full_name|default:profile_user.username }}</h1>
+    <div class="profile-meta">
+      {% if profile_user.job_title %}{{ profile_user.job_title }}{% else %}No title set{% endif %}
+      {% if profile_user.department %} · {{ profile_user.department }}{% endif %}
+      {% if profile_user.staff_id %} · Staff ID {{ profile_user.staff_id }}{% endif %}
+    </div>
+    {% if roles %}
+      <div class="mt-2 d-flex flex-wrap gap-1">
+        {% for role in roles %}<span class="badge text-bg-light text-dark">{{ role }}</span>{% endfor %}
+      </div>
+    {% endif %}
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-sm btn-outline-light" href="{% url 'password-change' %}">Change password</a>
+    {% if is_platform_admin %}<a class="btn btn-sm btn-outline-light" href="{% url 'mfa-setup' %}">MFA setup</a>{% endif %}
+  </div>
+</div>
+
+<form method="post" enctype="multipart/form-data" class="row g-4">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="save">
+
+  <div class="col-xl-8">
+    <div class="card p-4 mb-4">
+      <h2 class="h5">Identity</h2>
+      <p class="small muted">Name and contact details used across worklists, audit trails, and reports.</p>
+      <div class="row g-3">
+        <div class="col-md-4"><label class="form-label">First name</label><input class="form-control" name="first_name" value="{{ profile_user.first_name }}"></div>
+        <div class="col-md-4"><label class="form-label">Last name</label><input class="form-control" name="last_name" value="{{ profile_user.last_name }}"></div>
+        <div class="col-md-4"><label class="form-label">Display name</label><input class="form-control" name="display_name" value="{{ profile_user.display_name }}" placeholder="How you appear in the app"></div>
+        <div class="col-md-6"><label class="form-label">Email</label><input class="form-control" type="email" name="email" value="{{ profile_user.email }}" required></div>
+        <div class="col-md-6"><label class="form-label">Username</label><input class="form-control" value="{{ profile_user.username }}" disabled><div class="form-text">Username is managed by an administrator.</div></div>
+        <div class="col-md-4"><label class="form-label">Work phone</label><input class="form-control" name="phone_work" value="{{ profile_user.phone_work }}"></div>
+        <div class="col-md-4"><label class="form-label">Mobile</label><input class="form-control" name="phone_mobile" value="{{ profile_user.phone_mobile }}"></div>
+        <div class="col-md-4"><label class="form-label">Extension</label><input class="form-control" name="office_extension" value="{{ profile_user.office_extension }}"></div>
+      </div>
+    </div>
+
+    <div class="card p-4 mb-4">
+      <h2 class="h5">Professional credentials</h2>
+      <p class="small muted">Shown on authenticated laboratory and radiology reports where centre formatting allows.</p>
+      <div class="row g-3">
+        <div class="col-md-6"><label class="form-label">Professional title</label><input class="form-control" name="job_title" value="{{ profile_user.job_title }}" placeholder="e.g. Consultant Radiologist"></div>
+        <div class="col-md-6"><label class="form-label">Staff / employee ID</label><input class="form-control" name="staff_id" value="{{ profile_user.staff_id }}"></div>
+        <div class="col-md-6"><label class="form-label">Department</label><input class="form-control" name="department" value="{{ profile_user.department }}" placeholder="e.g. Radiology"></div>
+        <div class="col-md-6"><label class="form-label">Specialty</label><input class="form-control" name="specialty" value="{{ profile_user.specialty }}" placeholder="e.g. Cross-sectional imaging"></div>
+        <div class="col-12"><label class="form-label">Qualifications</label><input class="form-control" name="qualifications" value="{{ profile_user.qualifications }}" placeholder="e.g. MBBS, FWACS"></div>
+        <div class="col-md-6"><label class="form-label">License / registration no.</label><input class="form-control" name="license_number" value="{{ profile_user.license_number }}" placeholder="e.g. MDCN number"></div>
+        <div class="col-md-6"><label class="form-label">Licensing authority</label><input class="form-control" name="license_authority" value="{{ profile_user.license_authority }}" placeholder="e.g. Medical and Dental Council of Nigeria"></div>
+        <div class="col-12"><label class="form-label">About</label><textarea class="form-control" name="bio" rows="3" placeholder="Short professional bio (optional)">{{ profile_user.bio }}</textarea></div>
+      </div>
+    </div>
+
+    <div class="card p-4">
+      <h2 class="h5">Photo & report signature</h2>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Profile photo</label>
+          <input class="form-control" type="file" name="avatar" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
+          <div class="form-text">JPEG or PNG, max 2 MB.</div>
+          {% if avatar_url %}
+            <img class="mt-2 profile-avatar" src="{{ avatar_url }}" alt="Current photo">
+          {% endif %}
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Signature image</label>
+          <input class="form-control" type="file" name="signature" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
+          <div class="form-text">Frozen onto reports you authenticate or sign. Prefer a transparent PNG.</div>
+          {% if signature_url %}
+            <img class="mt-2 sig-preview" src="{{ signature_url }}" alt="Signature preview">
+          {% endif %}
+        </div>
+      </div>
+      <div class="mt-3 d-flex flex-wrap gap-2">
+        <button class="btn btn-primary" type="submit">Save profile</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-xl-4">
+    <div class="card p-4 mb-4">
+      <h2 class="h6">Access summary</h2>
+      <div class="small muted mb-2">Centres you can work in</div>
+      {% for row in centre_access %}
+        <div class="d-flex justify-content-between align-items-start border-bottom py-2">
+          <div>
+            <div class="fw-semibold">{{ row.centre.code }} — {{ row.centre.name }}</div>
+            <div class="small muted">
+              {% if row.can_view %}View {% endif %}
+              {% if row.can_register %}· Register {% endif %}
+              {% if row.can_edit %}· Edit {% endif %}
+              {% if row.can_approve %}· Approve {% endif %}
+              {% if row.is_default %}· Default{% endif %}
+            </div>
+          </div>
+        </div>
+      {% empty %}
+        <p class="muted small mb-0">No centre access assigned yet. Ask an administrator.</p>
+      {% endfor %}
+    </div>
+    <div class="card p-4 mb-4">
+      <h2 class="h6">Security</h2>
+      <ul class="small mb-0 ps-3">
+        <li>MFA: {% if mfa_enabled %}<span class="text-success">Enabled</span>{% else %}Not enabled{% endif %}</li>
+        <li>Last password change: {% if profile_user.last_password_change %}{{ profile_user.last_password_change|date:"d M Y H:i" }}{% else %}—{% endif %}</li>
+        <li>Last login: {% if profile_user.last_login %}{{ profile_user.last_login|date:"d M Y H:i" }}{% else %}—{% endif %}</li>
+      </ul>
+    </div>
+  </div>
+</form>
+
+{% if avatar_url or signature_url %}
+<div class="row g-4 mt-1">
+  <div class="col-xl-4 ms-xl-auto">
+    <div class="card p-4">
+      <h2 class="h6">Remove media</h2>
+      <p class="small muted">These actions only clear the image; other profile fields stay unchanged.</p>
+      {% if avatar_url %}
+        <form method="post" class="mb-2" onsubmit="return confirm('Remove profile photo?');">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="clear_avatar">
+          <button class="btn btn-outline-danger btn-sm" type="submit">Remove photo</button>
+        </form>
+      {% endif %}
+      {% if signature_url %}
+        <form method="post" onsubmit="return confirm('Remove signature?');">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="clear_signature">
+          <button class="btn btn-outline-danger btn-sm" type="submit">Remove signature</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

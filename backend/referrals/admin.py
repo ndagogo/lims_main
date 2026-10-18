@@ -5,9 +5,10 @@ class ReferralInstitutionInline(admin.TabularInline):
     extra=1
 @admin.register(ReferralDoctor)
 class ReferralDoctorAdmin(admin.ModelAdmin):
-    list_display=('doctor_code','first_name','last_name','facility_name','centre','commission_type','commission_value','is_active')
-    list_filter=('centre','is_active','commission_type')
-    search_fields=('doctor_code','first_name','last_name','facility_name','phone')
+    list_display=('doctor_code','first_name','last_name','facility_name','centre','onboarded_by','appear_on_reports','commission_type','commission_value','is_active')
+    list_filter=('centre','is_active','commission_type','appear_on_reports')
+    search_fields=('doctor_code','first_name','last_name','facility_name','phone','account_number')
+    filter_horizontal=('centres',)
     inlines=[ReferralInstitutionInline]
 @admin.register(ReferralInstitution)
 class ReferralInstitutionAdmin(admin.ModelAdmin):

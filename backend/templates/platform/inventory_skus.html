@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Inventory SKUs | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="Portals" title="Inventory SKUs" subtitle="Reagent catalogue used by the inventory workspace." %}
+<p class="mb-3"><a class="btn btn-sm btn-outline-dark" href="{% url 'inventory-workspace' %}">Open inventory workspace</a></p>
+<div class="row g-4">
+  <div class="col-xl-4">
+    <div class="card p-4">
+      <h2 class="h5">Add SKU</h2>
+      <form method="post" class="row g-2">
+        {% csrf_token %}<input type="hidden" name="action" value="create">
+        <div class="col-12"><label class="form-label">Centre</label><select name="centre" class="form-select" required>{% for c in centres %}<option value="{{ c.pk }}">{{ c.code }}</option>{% endfor %}</select></div>
+        <div class="col-md-6"><label class="form-label">SKU code</label><input name="sku_code" class="form-control" required></div>
+        <div class="col-md-6"><label class="form-label">Unit</label><input name="unit" class="form-control" value="unit"></div>
+        <div class="col-12"><label class="form-label">Name</label><input name="name" class="form-control" required></div>
+        <div class="col-12"><label class="form-label">Reorder level</label><input name="reorder_level" class="form-control" value="0"></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create</button></div>
+      </form>
+    </div>
+  </div>
+  <div class="col-xl-8">
+    <form method="get" class="mb-3"><input class="form-control" name="q" value="{{ query }}" placeholder="Search SKU or name"></form>
+    <div class="card p-3">
+      <table class="table align-middle"><thead><tr><th>SKU</th><th>Centre</th><th>On hand</th><th>Reorder</th><th></th></tr></thead>
+        <tbody>
+          {% for row in directory %}
+          <tr>
+            <td class="fw-semibold">{{ row.sku_code }}<div class="small muted">{{ row.name }}</div></td>
+            <td>{{ row.centre.code }}</td>
+            <td>{{ row.on_hand }} {{ row.unit }}</td>
+            <td>{{ row.reorder_level }}</td>
+            <td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="toggle"><input type="hidden" name="sku" value="{{ row.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">{% if row.is_active %}Deactivate{% else %}Activate{% endif %}</button></form></td>
+          </tr>
+          {% empty %}<tr><td colspan="5" class="muted text-center py-3">No SKUs.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+  </div>
+</div>
+{% endblock %}

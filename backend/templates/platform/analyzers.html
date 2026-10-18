@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Analyzers | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="Instruments" title="Analyzers" subtitle="Instrument profiles and connection protocols." %}
+<div class="row g-4">
+  <div class="col-xl-5">
+    <div class="card p-4 mb-4">
+      <h2 class="h5">Register analyzer</h2>
+      <form method="post" class="row g-2">
+        {% csrf_token %}<input type="hidden" name="action" value="create">
+        <div class="col-md-6"><label class="form-label">Centre</label><select name="centre" class="form-select" required>{% for c in centres %}<option value="{{ c.pk }}">{{ c.code }}</option>{% endfor %}</select></div>
+        <div class="col-md-6"><label class="form-label">Protocol</label><select name="protocol" class="form-select" required>{% for v,l in protocols %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+        <div class="col-12"><label class="form-label">Name</label><input name="name" class="form-control" required></div>
+        <div class="col-md-6"><label class="form-label">Manufacturer</label><input name="manufacturer" class="form-control"></div>
+        <div class="col-md-6"><label class="form-label">Model</label><input name="model" class="form-control"></div>
+        <div class="col-md-6"><label class="form-label">Host (LAN only)</label><input name="host" class="form-control"></div>
+        <div class="col-md-3"><label class="form-label">Port</label><input name="port" class="form-control"></div>
+        <div class="col-md-3"><label class="form-label">Serial</label><input name="serial_port" class="form-control"></div>
+        <div class="col-12"><label class="form-label">Instrument ID</label><input name="instrument_identifier" class="form-control"></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create</button></div>
+      </form>
+    </div>
+    <div class="card p-3">
+      <form method="get" class="mb-2"><input class="form-control" name="q" value="{{ query }}" placeholder="Search analyzers"></form>
+      <table class="table align-middle"><thead><tr><th>Analyzer</th><th>Protocol</th></tr></thead>
+        <tbody>
+          {% for row in directory %}
+          <tr><td><a href="?analyzer={{ row.pk }}">{{ row.centre.code }} / {{ row.name }}</a></td><td>{{ row.get_protocol_display }}</td></tr>
+          {% empty %}<tr><td colspan="2" class="muted">No analyzers.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+  </div>
+  <div class="col-xl-7">
+    {% if selected %}
+    <div class="card p-4">
+      <h2 class="h5">Edit {{ selected.name }}</h2>
+      <form method="post" class="row g-2">
+        {% csrf_token %}<input type="hidden" name="action" value="update"><input type="hidden" name="analyzer" value="{{ selected.pk }}">
+        <div class="col-md-8"><label class="form-label">Name</label><input name="name" class="form-control" value="{{ selected.name }}"></div>
+        <div class="col-md-4"><label class="form-label">Protocol</label><select name="protocol" class="form-select">{% for v,l in protocols %}<option value="{{ v }}" {% if selected.protocol == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+        <div class="col-md-6"><label class="form-label">Manufacturer</label><input name="manufacturer" class="form-control" value="{{ selected.manufacturer }}"></div>
+        <div class="col-md-6"><label class="form-label">Model</label><input name="model" class="form-control" value="{{ selected.model }}"></div>
+        <div class="col-md-6"><label class="form-label">Host</label><input name="host" class="form-control" value="{{ selected.host }}"></div>
+        <div class="col-md-3"><label class="form-label">Port</label><input name="port" class="form-control" value="{{ selected.port|default_if_none:'' }}"></div>
+        <div class="col-md-3"><label class="form-label">Serial</label><input name="serial_port" class="form-control" value="{{ selected.serial_port }}"></div>
+        <div class="col-md-8"><label class="form-label">Instrument ID</label><input name="instrument_identifier" class="form-control" value="{{ selected.instrument_identifier }}"></div>
+        <div class="col-md-4 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="an-active" {% if selected.is_active %}checked{% endif %}><label class="form-check-label" for="an-active">Active</label></div></div>
+        <div class="col-12"><button class="btn btn-outline-dark" type="submit">Save</button></div>
+      </form>
+    </div>
+    {% else %}<div class="card p-4 muted">Select an analyzer to edit.</div>{% endif %}
+  </div>
+</div>
+{% endblock %}

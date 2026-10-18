@@ -52,6 +52,15 @@ def is_platform_admin(user):
     return user.groups.filter(name=PLATFORM_ADMIN_GROUP).exists()
 
 
+def can_access_platform_controls(user):
+    """Highly sensitive configuration hub — platform admins or explicit grant only."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if user.is_superuser or is_platform_admin(user):
+        return True
+    return user.has_perm('core.access_platform_controls')
+
+
 def can_approve_discount(user):
     """Accountant privilege: approve/reject discount requests. Cashiers do not get this."""
     if not user or not getattr(user, 'is_authenticated', False):
@@ -71,7 +80,59 @@ def is_accountant(user):
         return True
     if user.has_perm('billing.approve_discount') or user.has_perm('billing.cancel_invoice') or user.has_perm('billing.reverse_payment'):
         return True
+    if user.has_perm('billing.payment_refund') or user.has_perm('billing.bill_edit') or user.has_perm('billing.bill_modify'):
+        return True
     return user.groups.filter(name__in=ACCOUNTS_ROLES).exists()
+
+
+def can_modify_patient_data(user):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if user.is_superuser or is_platform_admin(user):
+        return True
+    if user.has_perm('patients.can_modify_patient_data'):
+        return True
+    return user.groups.filter(name__in=('Centre Administrator', 'Platform Administrator')).exists()
+
+
+def can_change_referring_doctor(user):
+    """Remap DEFAULT DOCTOR attributions to a real referring physician."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if user.is_superuser or is_platform_admin(user):
+        return True
+    if user.has_perm('referrals.change_referring_doctor'):
+        return True
+    return user.groups.filter(name__in=('Centre Administrator', 'Platform Administrator', 'Front Desk')).exists()
+
+
+def can_refund_payment(user):
+    """Per-test cancel/refund — payment_refund or Accounts/oversight roles."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if user.is_superuser or is_platform_admin(user):
+        return True
+    if user.has_perm('billing.payment_refund') or user.has_perm('billing.issue_refund'):
+        return True
+    return user.groups.filter(name__in=ACCOUNTS_ROLES).exists()
+
+
+def can_edit_bill(user):
+    """Remove/replace invoice lines — bill_edit or bill_modify."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if user.is_superuser or is_platform_admin(user):
+        return True
+    if user.has_perm('billing.bill_edit') or user.has_perm('billing.bill_modify'):
+        return True
+    return user.groups.filter(name__in=ACCOUNTS_ROLES).exists()
+
+
+def staff_home_url_name(user):
+    """Radiology staff open the worklist. Everyone else opens the operations dashboard."""
+    if allowed_workspaces(user) == {'radiology'}:
+        return 'radiology-workspace'
+    return 'dashboard'
 
 
 def allowed_workspaces(user):

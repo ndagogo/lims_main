@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Accept invitation{% endblock %}
+{% block content %}
+<div class="container py-5" style="max-width:420px">
+  <h1 class="h4">Physician invitation</h1>
+  <p>{{ invite.doctor }} · {{ invite.email }}</p>
+  <form method="post">{% csrf_token %}<button class="btn btn-primary">Accept and continue</button></form>
+</div>
+{% endblock %}

@@ -49,5 +49,24 @@ class AnalyzerMessage(TimeStampedModel):
     received_at = models.DateTimeField(auto_now_add=True)
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     reviewed_at = models.DateTimeField(null=True, blank=True)
+    gateway = models.ForeignKey('GatewayRegistration', null=True, blank=True, on_delete=models.SET_NULL, related_name='messages')
     class Meta: ordering = ['-received_at']
     def __str__(self): return f'{self.analyzer.name} / {self.status} / {self.received_at:%Y-%m-%d %H:%M}'
+
+
+class GatewayRegistration(TimeStampedModel):
+    """Registered local analyser gateway instance (API key auth on central ingest)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    centre = models.ForeignKey(Centre, on_delete=models.PROTECT, related_name='gateways')
+    name = models.CharField(max_length=120)
+    api_key = models.CharField(max_length=64, unique=True)
+    hostname = models.CharField(max_length=120, blank=True)
+    is_active = models.BooleanField(default=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    device_profiles = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['centre__code', 'name']
+
+    def __str__(self):
+        return f'{self.centre.code} / {self.name}'

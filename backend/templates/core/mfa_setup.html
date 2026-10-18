@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}MFA setup{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width:520px">
+  <h1 class="h4">Authenticator MFA</h1>
+  <p class="text-muted">Optional TOTP for platform administrators. Add this secret to your authenticator app.</p>
+  <p><code>{{ secret }}</code></p>
+  <p>Status: {% if enabled %}<span class="text-success">Enabled</span>{% else %}<span class="text-warning">Disabled</span>{% endif %}</p>
+  <form method="post" class="vstack gap-2">{% csrf_token %}
+    <input type="hidden" name="action" value="enable">
+    <label class="form-label">Authenticator code<input class="form-control" name="token" autocomplete="one-time-code"></label>
+    <button class="btn btn-primary">Enable MFA</button>
+  </form>
+  {% if enabled %}
+  <form method="post" class="mt-3">{% csrf_token %}
+    <input type="hidden" name="action" value="disable">
+    <button class="btn btn-outline-danger">Disable MFA</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

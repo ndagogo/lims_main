@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Notification templates | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="Notifications" title="Notification templates" subtitle="SMS / email / WhatsApp message copy. Variables are checked before a template is published." %}
+<p class="small muted">Allowed variables: {% for name in allowed_variables %}<code>&#123;&#123; {{ name }} &#125;&#125;</code>{% if not forloop.last %} {% endif %}{% endfor %}. Do not include passwords or result values.</p>
+<div class="row g-4">
+  <div class="col-xl-4">
+    <div class="card p-4">
+      <h2 class="h5">Create template</h2>
+      <form method="post" class="row g-2">
+        {% csrf_token %}<input type="hidden" name="action" value="create">
+        <div class="col-12"><label class="form-label">Key</label><input name="key" class="form-control" required placeholder="registration-success"></div>
+        <div class="col-12"><label class="form-label">Name</label><input name="name" class="form-control" required></div>
+        <div class="col-12"><label class="form-label">Channel</label><select name="channel" class="form-select">{% for v,l in channels %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+        <div class="col-12"><label class="form-label">Subject</label><input name="subject_template" class="form-control"></div>
+        <div class="col-12"><label class="form-label">Body</label><textarea name="body_template" class="form-control" rows="4" required></textarea></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create</button></div>
+      </form>
+    </div>
+  </div>
+  <div class="col-xl-8">
+    {% for row in directory %}
+    <div class="card p-3 mb-3">
+      <form method="post" class="row g-2">
+        {% csrf_token %}<input type="hidden" name="action" value="update"><input type="hidden" name="template" value="{{ row.pk }}">
+        <div class="col-md-4"><label class="form-label">Key</label><input class="form-control" value="{{ row.key }}" readonly></div>
+        <div class="col-md-4"><label class="form-label">Name</label><input name="name" class="form-control" value="{{ row.name }}"></div>
+        <div class="col-md-4"><label class="form-label">Channel</label><select name="channel" class="form-select">{% for v,l in channels %}<option value="{{ v }}" {% if row.channel == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+        <div class="col-12"><label class="form-label">Subject</label><input name="subject_template" class="form-control" value="{{ row.subject_template }}"></div>
+        <div class="col-12"><label class="form-label">Body</label><textarea name="body_template" class="form-control" rows="3">{{ row.body_template }}</textarea></div>
+        <div class="col-md-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="nt-{{ row.pk }}" {% if row.is_active %}checked{% endif %}><label class="form-check-label" for="nt-{{ row.pk }}">Active</label></div></div>
+        <div class="col-md-6 text-md-end"><button class="btn btn-sm btn-outline-dark" type="submit">Save</button></div>
+      </form>
+    </div>
+    {% empty %}<div class="card p-4 muted">No templates yet.</div>{% endfor %}
+    {% include "includes/pagination.html" with page=directory %}
+  </div>
+</div>
+{% endblock %}

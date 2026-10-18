@@ -9,8 +9,13 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from core.access import ACCOUNTS_ROLES, require_any_role, require_workspace
 from core.models import UserCentreAccess, AuditEvent
 from core.permissions import HasCentreAccess
-from .models import Invoice, InvoiceItem, Payment, DiscountRequest
-from .serializers import InvoiceSerializer, InvoiceItemSerializer, PaymentSerializer, DiscountRequestSerializer
+from communications.messaging import notify_discount_approvers, notify_discount_decision
+from .eligibility import release_eligibility_payload
+from .models import Invoice, InvoiceItem, Payment, DiscountRequest, BillAmendment, Refund
+from .serializers import (
+    InvoiceSerializer, InvoiceItemSerializer, PaymentSerializer, DiscountRequestSerializer,
+    BillAmendmentSerializer, RefundSerializer,
+)
 
 def centre_qs(qs, user, path):
     if user.is_superuser: return qs
@@ -92,7 +97,9 @@ class PaymentViewSet(viewsets.ModelViewSet):
         require_workspace(self.request.user, 'accounts')
         invoice=serializer.validated_data['invoice']; centre=invoice.visit.centre
         if not self.request.user.is_superuser and not UserCentreAccess.objects.filter(user=self.request.user,centre=centre,can_edit=True).exists(): raise PermissionDenied('Billing permission required.')
-        serializer.save(received_by=self.request.user)
+        payment = serializer.save(received_by=self.request.user)
+        from communications.messaging import notify_payment_receipt
+        notify_payment_receipt(payment, user=self.request.user)
     @action(detail=True, methods=['post'])
     def reverse(self, request, pk=None):
         payment=self.get_object()
@@ -120,7 +127,13 @@ class DiscountRequestViewSet(viewsets.ModelViewSet):
         require_workspace(self.request.user, 'accounts')
         invoice=serializer.validated_data['invoice']
         if not self.request.user.is_superuser and not UserCentreAccess.objects.filter(user=self.request.user,centre=invoice.visit.centre,can_register=True).exists(): raise PermissionDenied('Cannot request a discount at this centre.')
-        serializer.save(requested_by=self.request.user)
+        discount = serializer.save(requested_by=self.request.user)
+        notify_discount_approvers(discount, user=self.request.user)
+        AuditEvent.objects.create(
+            actor=self.request.user, action='DISCOUNT_REQUESTED', object_type='DiscountRequest',
+            object_id=str(discount.pk), centre=invoice.visit.centre,
+            detail={'invoice': invoice.invoice_number},
+        )
     @action(detail=True, methods=['post'])
     def review(self, request, pk=None):
         discount=self.get_object()
@@ -139,4 +152,87 @@ class DiscountRequestViewSet(viewsets.ModelViewSet):
             discount.status=decision; discount.reviewed_by=request.user; discount.review_note=request.data.get('note','')
             discount.save(update_fields=['status','reviewed_by','review_note','applied_amount','updated_at'])
             AuditEvent.objects.create(actor=request.user,action=f'DISCOUNT_{decision}',object_type='DiscountRequest',object_id=str(discount.pk),centre=invoice.visit.centre,detail={'invoice':invoice.invoice_number,'amount':str(discount.applied_amount)})
+        notify_discount_decision(discount, user=request.user)
         return Response(self.get_serializer(discount).data)
+
+
+class BillAmendmentViewSet(viewsets.ModelViewSet):
+    serializer_class = BillAmendmentSerializer
+    permission_classes = [IsAuthenticated, HasCentreAccess]
+    http_method_names = ['get', 'post', 'head', 'options']
+
+    def get_queryset(self):
+        return centre_qs(BillAmendment.objects.select_related('invoice__visit__centre'), self.request.user, 'invoice__visit')
+
+    def perform_create(self, serializer):
+        require_any_role(self.request.user, ACCOUNTS_ROLES, perm='billing.bill_edit')
+        invoice = serializer.validated_data['invoice']
+        if invoice.status == 'CANCELLED':
+            raise ValidationError('Cannot amend a cancelled invoice.')
+        amendment = serializer.save(authorised_by=self.request.user)
+        AuditEvent.objects.create(
+            actor=self.request.user, action='BILL_AMENDMENT', object_type='BillAmendment',
+            object_id=str(amendment.pk), centre=invoice.visit.centre,
+            detail={'action': amendment.action, 'delta': str(amendment.amount_delta)},
+        )
+
+
+class RefundViewSet(viewsets.ModelViewSet):
+    serializer_class = RefundSerializer
+    permission_classes = [IsAuthenticated, HasCentreAccess]
+    http_method_names = ['get', 'post', 'head', 'options']
+
+    def get_queryset(self):
+        qs = Refund.objects.select_related(
+            'payment__invoice__visit__centre', 'invoice__visit__centre',
+        )
+        if self.request.user.is_superuser:
+            return qs
+        from django.db.models import Q
+        return qs.filter(
+            Q(payment__invoice__visit__centre__user_access__user=self.request.user,
+              payment__invoice__visit__centre__user_access__can_view=True,
+              payment__invoice__visit__centre__is_active=True)
+            | Q(invoice__visit__centre__user_access__user=self.request.user,
+                invoice__visit__centre__user_access__can_view=True,
+                invoice__visit__centre__is_active=True)
+        ).distinct()
+
+    def perform_create(self, serializer):
+        require_any_role(self.request.user, ACCOUNTS_ROLES, perm='billing.payment_refund')
+        payment = serializer.validated_data.get('payment')
+        invoice = serializer.validated_data.get('invoice')
+        if payment is None and invoice is None:
+            raise ValidationError('A payment or invoice is required.')
+        if payment is not None and payment.status != 'CONFIRMED':
+            raise ValidationError('Only confirmed payments can be refunded.')
+        centre = (payment.invoice.visit.centre if payment else invoice.visit.centre)
+        refund = serializer.save(authorised_by=self.request.user, status='COMPLETED', completed_at=timezone.now())
+        from referrals.services import sync_commission
+        sync_commission(payment.invoice if payment else invoice)
+        AuditEvent.objects.create(
+            actor=self.request.user, action='REFUND_ISSUED', object_type='Refund',
+            object_id=str(refund.pk), centre=centre,
+            detail={'amount': str(refund.amount), 'receipt': getattr(payment, 'receipt_number', '')},
+        )
+
+
+from rest_framework.views import APIView
+
+
+class ReleaseEligibilityView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        visit_id = request.query_params.get('visit')
+        if not visit_id:
+            raise ValidationError({'visit': 'Required.'})
+        from patients.models import Visit
+        visit = Visit.objects.filter(pk=visit_id).first()
+        if not visit:
+            raise ValidationError({'visit': 'Not found.'})
+        if not request.user.is_superuser and not UserCentreAccess.objects.filter(
+            user=request.user, centre=visit.centre, can_view=True,
+        ).exists():
+            raise PermissionDenied('No access to this centre.')
+        return Response(release_eligibility_payload(visit))

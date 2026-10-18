@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}{% if platform_mode %}Radiology templates | Platform{% else %}My radiology templates{% endif %}{% endblock %}
+{% block content %}
+{% if platform_mode %}
+  {% include "platform/_header.html" with section_label="RADIOLOGY TEMPLATES" title="Radiology report templates" subtitle="Platform catalogue by modality (CT, MRI, US, X-ray…). Radiologists can clone unlimited personal variants." %}
+{% else %}
+  <div class="mb-4">
+    <div class="muted small">RADIOLOGY</div>
+    <h1 class="h3">Templates</h1>
+    <p class="muted">All published modality templates, plus your own variants for CT, MRI, ultrasound, X-ray, mammography, and the rest.</p>
+    <a class="btn btn-outline-dark btn-sm" href="{% url 'radiology-workspace' %}">Back to worklist</a>
+  </div>
+{% endif %}
+<div class="row g-4">
+  <div class="col-xl-4">
+    <div class="card p-4 mb-3">
+      <h2 class="h5">Create draft</h2>
+      <form method="post" class="row g-2">
+        {% csrf_token %}<input type="hidden" name="action" value="create">
+        <div class="col-12"><label class="form-label">Template name <span class="text-danger">*</span></label>
+          <input name="name" class="form-control" required placeholder="e.g. ABUAD RADIOLOGY">
+        </div>
+        <div class="col-12"><label class="form-label">Variant name</label>
+          <input name="variant_name" class="form-control" placeholder="Optional, e.g. Adult">
+        </div>
+        <div class="col-12"><label class="form-label">Modality <span class="text-danger">*</span></label>
+          <select name="modality_type" class="form-select" required>
+            {% for value, label in modality_types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-12"><label class="form-label">Body part <span class="text-danger">*</span></label>
+          <input name="body_part" class="form-control" required placeholder="e.g. Abdomen, Chest">
+        </div>
+        <div class="col-12"><label class="form-label">Visibility <span class="text-danger">*</span></label>
+          <select name="visibility" class="form-select" required>
+            {% for value, label in visibility_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create draft v1</button></div>
+      </form>
+    </div>
+    {% if not platform_mode %}
+    <div class="card p-4">
+      <h2 class="h6">Clone from platform</h2>
+      <p class="small muted">Pick a published platform template to fork as your personal variant.</p>
+      <form method="post" class="row g-2">
+        {% csrf_token %}<input type="hidden" name="action" value="clone_personal">
+        <div class="col-12">
+          <select name="template" class="form-select" required>
+            <option value="">— Published platform template —</option>
+            {% for row in platform_published %}
+              <option value="{{ row.pk }}">{{ row.get_modality_type_display }} — {{ row.name }}{% if row.variant_name %} ({{ row.variant_name }}){% endif %} v{{ row.version }}</option>
+            {% empty %}
+              <option value="" disabled>No published platform templates yet</option>
+            {% endfor %}
+          </select>
+          <input class="form-control mt-2" name="name" placeholder="Optional new name">
+        </div>
+        <div class="col-12"><button class="btn btn-outline-dark btn-sm" type="submit">Clone to my templates</button></div>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+    <div class="col-xl-8">
+      {% if not platform_mode %}
+      <div class="card p-3 mb-3">
+        <h2 class="h6">All modality templates</h2>
+        <table class="table align-middle mb-0"><thead><tr><th>Template</th><th>Modality</th><th>Body part</th></tr></thead>
+          <tbody>
+            {% for row in platform_published %}
+            <tr>
+              <td>{{ row.name }}{% if row.variant_name %}<div class="small muted">{{ row.variant_name }}</div>{% endif %}</td>
+              <td>{{ row.get_modality_type_display }}</td>
+              <td>{{ row.body_part|default:"—" }}</td>
+            </tr>
+            {% empty %}<tr><td colspan="3" class="muted">No published templates yet.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+      <form method="get" class="mb-3"><input class="form-control" name="q" value="{{ query }}" placeholder="Search modality, name, or body part"></form>
+    <div class="card p-3">
+      <table class="table align-middle"><thead><tr><th>Template</th><th>Modality</th><th>Body part</th><th>Version</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {% for row in directory %}
+          <tr>
+            <td class="fw-semibold">
+              <a href="{% if platform_mode %}{% url 'platform-radiology-template-builder' row.pk %}{% else %}{% url 'radiology-template-builder' row.pk %}{% endif %}">{{ row.name }}</a>
+              {% if row.variant_name %}<div class="small muted">{{ row.variant_name }}</div>{% endif %}
+            </td>
+            <td>{{ row.get_modality_type_display }}</td>
+            <td>{{ row.body_part|default:"—" }}</td>
+            <td>v{{ row.version }}</td>
+            <td><span class="badge {% if row.status == 'PUBLISHED' %}badge-soft{% elif row.status == 'DRAFT' %}badge-warn{% else %}badge-danger-soft{% endif %}">{{ row.status }}</span></td>
+            <td><a class="btn btn-sm btn-outline-dark" href="{% if platform_mode %}{% url 'platform-radiology-template-builder' row.pk %}{% else %}{% url 'radiology-template-builder' row.pk %}{% endif %}">Builder</a></td>
+          </tr>
+          {% empty %}<tr><td colspan="6" class="muted text-center py-3">No templates yet.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+  </div>
+</div>
+{% endblock %}

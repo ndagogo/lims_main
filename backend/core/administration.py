@@ -9,7 +9,9 @@ from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 
+from core.access import is_platform_admin
 from core.models import AuditEvent, Centre, UserCentreAccess
 from core.paging import PAGE_SIZES, paginate
 
@@ -17,10 +19,12 @@ User = get_user_model()
 
 
 def superuser_only(request):
+    """Allow Django superusers and Platform Administrator group members."""
     if not request.user.is_authenticated:
         raise PermissionDenied('Sign in is required.')
-    if not request.user.is_superuser:
-        raise PermissionDenied('Only a platform superuser can manage users and roles.')
+    if request.user.is_superuser or is_platform_admin(request.user):
+        return
+    raise PermissionDenied('Only a platform administrator can manage users and roles.')
 
 
 def _audit(request, action, target, detail):
@@ -63,10 +67,54 @@ def handle_user_post(request):
     return redirect('user-management')
 
 
+def _choice(value, allowed):
+    value = (value or '').strip()
+    return value if value in allowed else ''
+
+
+def _apply_staff_profile(user, post):
+    """Name, contact, and demographic fields collected when creating or editing staff."""
+    user.title = _choice(post.get('title'), {code for code, _label in User.TITLE_CHOICES})
+    user.first_name = (post.get('first_name') or '').strip()[:150]
+    user.other_names = (post.get('other_names') or '').strip()[:120]
+    user.last_name = (post.get('last_name') or '').strip()[:150]
+    user.sex = _choice(post.get('sex'), {code for code, _label in User.SEX_CHOICES})
+    user.marital_status = _choice(post.get('marital_status'), {code for code, _label in User.MARITAL_CHOICES})
+    raw_dob = (post.get('date_of_birth') or '').strip()
+    if raw_dob:
+        dob = parse_date(raw_dob)
+        if dob is None:
+            raise ValidationError('Enter date of birth as YYYY-MM-DD.')
+        if dob > timezone.localdate():
+            raise ValidationError('Date of birth cannot be in the future.')
+        user.date_of_birth = dob
+    else:
+        user.date_of_birth = None
+    user.phone_mobile = (post.get('phone_mobile') or '').strip()[:30]
+    user.phone_work = (post.get('phone_work') or '').strip()[:30]
+    user.address = (post.get('address') or '').strip()[:255]
+    user.staff_id = (post.get('staff_id') or '').strip()[:40]
+    user.department = (post.get('department') or '').strip()[:120]
+    user.job_title = (post.get('job_title') or '').strip()[:120]
+    display_name = (post.get('display_name') or '').strip()
+    if not display_name:
+        display_name = ' '.join(part for part in (user.title, user.first_name, user.other_names, user.last_name) if part)
+    user.display_name = display_name[:180]
+    if not user.first_name or not user.last_name:
+        raise ValidationError('First name and last name are required.')
+    if not user.phone_mobile:
+        raise ValidationError('A mobile phone number is required.')
+
+
+PROFILE_FIELDS = [
+    'title', 'first_name', 'other_names', 'last_name', 'display_name', 'sex', 'marital_status',
+    'date_of_birth', 'phone_mobile', 'phone_work', 'address', 'staff_id', 'department', 'job_title',
+]
+
+
 def _create_user(request):
     username = (request.POST.get('username') or '').strip()
     email = (request.POST.get('email') or '').strip().lower()
-    display_name = (request.POST.get('display_name') or '').strip()
     password = request.POST.get('password') or ''
     if not username or not email or not password:
         messages.error(request, 'Username, email, and a temporary password are required.')
@@ -77,7 +125,8 @@ def _create_user(request):
             raise ValidationError('That username is already in use.')
         if User.objects.filter(email__iexact=email).exists():
             raise ValidationError('That email is already in use.')
-        candidate = User(username=username, email=email, display_name=display_name)
+        candidate = User(username=username, email=email)
+        _apply_staff_profile(candidate, request.POST)
         validate_password(password, candidate)
         with transaction.atomic():
             candidate.set_password(password)
@@ -88,7 +137,12 @@ def _create_user(request):
                 candidate.is_staff = True
             candidate.save()
             candidate.groups.set(Group.objects.filter(pk__in=request.POST.getlist('groups')))
-            _audit(request, 'USER_CREATED', candidate, {'username': candidate.username, 'roles': list(candidate.groups.values_list('name', flat=True))})
+            _audit(request, 'USER_CREATED', candidate, {
+                'username': candidate.username,
+                'display_name': candidate.display_name,
+                'phone_mobile': candidate.phone_mobile,
+                'roles': list(candidate.groups.values_list('name', flat=True)),
+            })
     except ValidationError as exc:
         messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
         return redirect('user-management')
@@ -168,13 +222,17 @@ def _save_account(request, target):
         messages.error(request, 'Another active superuser is required before this one can be changed.')
         return redirect(f'/users/?user={target.pk}')
     target.email = email
-    target.display_name = display_name
-    target.first_name = (request.POST.get('first_name') or '').strip()
-    target.last_name = (request.POST.get('last_name') or '').strip()
+    try:
+        _apply_staff_profile(target, request.POST)
+    except ValidationError as exc:
+        messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
+        return redirect(f'/users/?user={target.pk}')
+    if display_name:
+        target.display_name = display_name[:180]
     target.is_superuser = make_super
     target.is_staff = make_staff
     target.must_change_password = _checked(request.POST, 'must_change_password')
-    target.save(update_fields=['email', 'display_name', 'first_name', 'last_name', 'is_superuser', 'is_staff', 'must_change_password'])
+    target.save(update_fields=['email', *PROFILE_FIELDS, 'is_superuser', 'is_staff', 'must_change_password'])
     _audit(request, 'USER_ACCOUNT_UPDATED', target, {'username': target.username, 'is_superuser': target.is_superuser, 'is_staff': target.is_staff})
     messages.success(request, f'{target.username} was updated.')
     return redirect(f'/users/?user={target.pk}')
@@ -228,7 +286,11 @@ def build_user_context(request):
     status = request.GET.get('status') or 'all'
     users = User.objects.prefetch_related('groups', 'centre_access__centre').order_by('username')
     if query:
-        users = users.filter(Q(username__icontains=query) | Q(email__icontains=query) | Q(display_name__icontains=query) | Q(first_name__icontains=query) | Q(last_name__icontains=query))
+        users = users.filter(
+            Q(username__icontains=query) | Q(email__icontains=query) | Q(display_name__icontains=query)
+            | Q(first_name__icontains=query) | Q(last_name__icontains=query) | Q(other_names__icontains=query)
+            | Q(phone_mobile__icontains=query) | Q(staff_id__icontains=query)
+        )
     if status == 'suspended':
         users = users.filter(is_active=False)
     elif status == 'locked':
@@ -253,6 +315,9 @@ def build_user_context(request):
         'selected': selected,
         'roles': Group.objects.order_by('name'),
         'centres': Centre.objects.order_by('name'),
+        'title_choices': User.TITLE_CHOICES,
+        'sex_choices': User.SEX_CHOICES,
+        'marital_choices': User.MARITAL_CHOICES,
         'counts': {
             'active': User.objects.filter(is_active=True).filter(Q(locked_until__isnull=True) | Q(locked_until__lte=now)).count(),
             'suspended': User.objects.filter(is_active=False).count(),

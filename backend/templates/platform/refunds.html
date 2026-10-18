@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Refunds history | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="Finance" title="Refunds history" subtitle="All cancel/refund records across centres." %}
+<p class="mb-3"><a class="btn btn-sm btn-outline-dark" href="{% url 'accounts-refunds' %}">Open cancel / refund workspace</a></p>
+<div class="card p-3">
+  <table class="table align-middle"><thead><tr><th>When</th><th>Invoice / patient</th><th>Test</th><th>Mode</th><th>Amount</th><th>By</th></tr></thead>
+    <tbody>
+      {% for row in directory %}
+      <tr>
+        <td class="small">{{ row.created_at }}</td>
+        <td>{% if row.invoice %}{{ row.invoice.invoice_number }} · {{ row.invoice.visit.patient.uhid }}{% elif row.payment %}{{ row.payment.invoice.invoice_number }}{% else %}—{% endif %}</td>
+        <td>{{ row.item_description|default:"—" }}</td>
+        <td>{{ row.get_refund_mode_display }}</td>
+        <td>₦{{ row.amount|floatformat:2 }}</td>
+        <td>{{ row.authorised_by.username }}</td>
+      </tr>
+      {% empty %}<tr><td colspan="6" class="muted text-center py-3">No refunds.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% include "includes/pagination.html" with page=directory %}
+</div>
+{% endblock %}

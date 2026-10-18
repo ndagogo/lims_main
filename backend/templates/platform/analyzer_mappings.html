@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Analyzer mappings | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="Instruments" title="Analyzer mappings" subtitle="Map instrument codes to laboratory tests." %}
+<div class="card p-4 mb-4">
+  <h2 class="h5">Add mapping</h2>
+  <form method="post" class="row g-2">
+    {% csrf_token %}<input type="hidden" name="action" value="create">
+    <div class="col-md-4"><label class="form-label">Analyzer</label><select name="analyzer" class="form-select" required>{% for a in analyzers %}<option value="{{ a.pk }}">{{ a.centre.code }} / {{ a.name }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label">Instrument code</label><input name="instrument_test_code" class="form-control" required></div>
+    <div class="col-md-3"><label class="form-label">Test</label><select name="test" class="form-select" required>{% for t in tests %}<option value="{{ t.pk }}">{{ t.code }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">Unit override</label><input name="unit_override" class="form-control"></div>
+    <div class="col-md-6"><label class="form-label">Parameter (optional)</label><select name="parameter" class="form-select"><option value="">—</option>{% for p in parameters %}<option value="{{ p.pk }}">{{ p.test.code }} / {{ p.code }}</option>{% endfor %}</select></div>
+    <div class="col-md-6 d-flex align-items-end"><button class="btn btn-primary" type="submit">Create mapping</button></div>
+  </form>
+</div>
+<div class="card p-3">
+  <table class="table align-middle"><thead><tr><th>Analyzer</th><th>Code</th><th>Test</th><th>Parameter</th><th></th></tr></thead>
+    <tbody>
+      {% for row in directory %}
+      <tr>
+        <td>{{ row.analyzer.centre.code }} / {{ row.analyzer.name }}</td>
+        <td class="fw-semibold">{{ row.instrument_test_code }}</td>
+        <td>{{ row.test.code }}</td>
+        <td>{{ row.parameter.code|default:"—" }}</td>
+        <td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="toggle"><input type="hidden" name="mapping" value="{{ row.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">{% if row.enabled %}Disable{% else %}Enable{% endif %}</button></form></td>
+      </tr>
+      {% empty %}<tr><td colspan="5" class="muted text-center py-3">No mappings.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% include "includes/pagination.html" with page=directory %}
+</div>
+{% endblock %}

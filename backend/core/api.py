@@ -43,7 +43,31 @@ def login_view(request):
 def me_view(request):
     user=request.user
     access=UserCentreAccess.objects.filter(user=user,centre__is_active=True,can_view=True).select_related('centre')
-    return Response({'id':str(user.pk),'username':user.username,'email':user.email,'display_name':user.display_name or user.get_full_name(),'is_staff':user.is_staff,'is_superuser':user.is_superuser,'must_change_password':user.must_change_password,'groups':list(user.groups.values_list('name',flat=True)),'permissions':list(user.get_all_permissions()),'centres':UserCentreAccessSerializer(access,many=True).data})
+    return Response({
+        'id': str(user.pk),
+        'username': user.username,
+        'email': user.email,
+        'display_name': user.display_name or user.get_full_name(),
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'job_title': user.job_title,
+        'staff_id': user.staff_id,
+        'department': user.department,
+        'specialty': user.specialty,
+        'qualifications': user.qualifications,
+        'license_number': user.license_number,
+        'phone_work': user.phone_work,
+        'phone_mobile': user.phone_mobile,
+        'avatar': user.avatar.url if user.avatar else None,
+        'has_signature': bool(user.signature),
+        'is_staff': user.is_staff,
+        'is_superuser': user.is_superuser,
+        'must_change_password': user.must_change_password,
+        'mfa_enabled': user.mfa_enabled,
+        'groups': list(user.groups.values_list('name', flat=True)),
+        'permissions': list(user.get_all_permissions()),
+        'centres': UserCentreAccessSerializer(access, many=True).data,
+    })
 
 class CentreViewSet(viewsets.ModelViewSet):
     serializer_class=CentreSerializer
@@ -67,9 +91,18 @@ class UserCentreAccessViewSet(viewsets.ModelViewSet):
 class AuditEventSerializer(serializers.ModelSerializer):
     actor_username = serializers.CharField(source='actor.username', read_only=True, allow_null=True)
     centre_name = serializers.CharField(source='centre.name', read_only=True, allow_null=True)
+    approval_by_username = serializers.CharField(source='approval_by.username', read_only=True, allow_null=True)
     class Meta:
         model = AuditEvent
-        fields = ['id','created_at','actor','actor_username','action','object_type','object_id','path','method','ip_address','browser','centre','centre_name','detail']
+        fields = [
+            'id', 'created_at', 'actor', 'actor_username', 'action', 'category',
+            'object_type', 'object_id', 'path', 'method', 'ip_address', 'browser',
+            'centre', 'centre_name', 'department',
+            'patient_ref', 'visit_ref', 'order_ref', 'result_ref',
+            'previous_values', 'new_values', 'reason',
+            'approval_by', 'approval_by_username', 'approval_note',
+            'evidence_ref', 'evidence_note', 'detail',
+        ]
 
 class AuditEventViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class=AuditEventSerializer

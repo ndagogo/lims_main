@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Bill amendments | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="Finance" title="Bill amendments" subtitle="Audited invoice line changes across the network." %}
+<p class="mb-3"><a class="btn btn-sm btn-outline-dark" href="{% url 'accounts-bill-edit' %}">Open bill edit workspace</a></p>
+<div class="card p-3">
+  <table class="table align-middle"><thead><tr><th>When</th><th>Invoice</th><th>Action</th><th>Change</th><th>Δ</th><th>By</th></tr></thead>
+    <tbody>
+      {% for row in directory %}
+      <tr>
+        <td class="small">{{ row.created_at }}</td>
+        <td>{{ row.invoice.invoice_number }}<div class="small muted">{{ row.invoice.visit.patient.uhid }}</div></td>
+        <td>{{ row.get_action_display }}</td>
+        <td class="small">{{ row.description }}</td>
+        <td>₦{{ row.amount_delta|floatformat:2 }}</td>
+        <td>{{ row.authorised_by.username }}</td>
+      </tr>
+      {% empty %}<tr><td colspan="6" class="muted text-center py-3">No amendments.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% include "includes/pagination.html" with page=directory %}
+</div>
+{% endblock %}

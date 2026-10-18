@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Template builder · {{ template.name }} v{{ template.version }} | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="TEMPLATE BUILDER" title=template.name subtitle=builder_subtitle %}
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-outline-dark btn-sm" href="{% url 'platform-result-templates' %}">All templates</a>
+  <a class="btn btn-outline-dark btn-sm" href="{% url 'catalog-tests' %}?test={{ template.test_id }}">Test catalogue</a>
+  <span class="badge {% if template.status == 'PUBLISHED' %}badge-soft{% elif template.status == 'DRAFT' %}badge-warn{% else %}badge-danger-soft{% endif %} align-self-center">{{ template.status }} · v{{ template.version }}</span>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-4">
+    <div class="card p-4 mb-3">
+      <h2 class="h5">Template settings</h2>
+      <form method="post" class="row g-2">
+        {% csrf_token %}<input type="hidden" name="action" value="save_meta">
+        <div class="col-12"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ template.name }}" {% if template.status != 'DRAFT' %}readonly{% endif %}></div>
+        <div class="col-12"><label class="form-label">Instructions</label><textarea class="form-control" name="instructions" rows="2" {% if template.status != 'DRAFT' %}readonly{% endif %}>{{ template.instructions }}</textarea></div>
+        <div class="col-12"><label class="form-label">Approved report header</label><textarea class="form-control" name="report_header" rows="2" {% if template.status != 'DRAFT' %}readonly{% endif %}>{{ template.report_header }}</textarea></div>
+        <div class="col-12"><label class="form-label">Approved report footer</label><textarea class="form-control" name="report_footer" rows="2" {% if template.status != 'DRAFT' %}readonly{% endif %}>{{ template.report_footer }}</textarea></div>
+        {% if template.status == 'DRAFT' %}<div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Save</button></div>{% endif %}
+      </form>
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        {% if template.status == 'DRAFT' %}
+          <form method="post">{% csrf_token %}<input type="hidden" name="action" value="publish"><button class="btn btn-success btn-sm" type="submit">Publish v{{ template.version }}</button></form>
+          <form method="post">{% csrf_token %}<input type="hidden" name="action" value="import_all"><button class="btn btn-outline-dark btn-sm" type="submit">Import all catalogue params</button></form>
+        {% endif %}
+        {% if template.status == 'PUBLISHED' %}
+          <form method="post">{% csrf_token %}<input type="hidden" name="action" value="retire"><button class="btn btn-outline-danger btn-sm" type="submit">Retire</button></form>
+        {% endif %}
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="clone"><button class="btn btn-outline-dark btn-sm" type="submit">Clone next draft version</button></form>
+      </div>
+      <p class="small muted mt-2 mb-0">Released reports freeze the published template version and matched reference-range versions at authentication. Do not hardcode clinical ranges in the frontend — configure them on the test catalogue.</p>
+    </div>
+    <div class="card p-4">
+      <h2 class="h6">Add parameter from catalogue</h2>
+      {% if template.status != 'DRAFT' %}
+        <p class="muted small mb-0">Clone a new draft version to change field membership.</p>
+      {% else %}
+        <form method="post" class="row g-2">
+          {% csrf_token %}<input type="hidden" name="action" value="add_field">
+          <input type="hidden" name="show_ref_submitted" value="1">
+          <input type="hidden" name="include_submitted" value="1">
+          <div class="col-12">
+            <select name="parameter" class="form-select" required>
+              {% for p in available_parameters %}
+                <option value="{{ p.pk }}">{{ p.code }} — {{ p.name }} ({{ p.get_result_type_display }})</option>
+              {% empty %}
+                <option value="">All parameters already on this template</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6"><input class="form-control" name="display_order" type="number" value="{{ next_order }}" placeholder="Order"></div>
+          <div class="col-6"><input class="form-control" name="section_label" placeholder="Section label"></div>
+          <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="show_reference_range" id="show-rr" checked><label class="form-check-label" for="show-rr">Show reference range</label></div></div>
+          <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="include_in_report" id="incl-rep" checked><label class="form-check-label" for="incl-rep">Include in clinical report</label></div></div>
+          <div class="col-12"><button class="btn btn-outline-dark btn-sm" type="submit" {% if not available_parameters %}disabled{% endif %}>Add to template</button></div>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="card p-4">
+      <h2 class="h5">Field layout · {{ template.test.code }}</h2>
+      <p class="muted small">CBC example: numeric HGB/WBC/PLT with units and age/sex ranges, TABLE differential rows, CALCULATED absolute counts, QUALITATIVE flags, TEXT interpretation, COMMENT / SECTION blocks.</p>
+      {% for field in fields %}
+        <div class="border-top py-3">
+          <div class="d-flex flex-wrap justify-content-between gap-2">
+            <div>
+              <div class="fw-semibold">{{ field.parameter.code }} — {{ field.parameter.name }}</div>
+              <div class="small muted">{{ field.parameter.get_result_type_display }}{% if field.parameter.unit %} · {{ field.parameter.unit }}{% endif %}{% if field.section_label %} · {{ field.section_label }}{% endif %} · order {{ field.display_order }}</div>
+              {% if field.parameter.choices %}<div class="small muted">Choices: {{ field.parameter.choices|join:", " }}</div>{% endif %}
+              {% if field.parameter.calculation %}<div class="small muted">Calc: {{ field.parameter.calculation }}</div>{% endif %}
+            </div>
+            {% if template.status == 'DRAFT' %}
+            <form method="post">{% csrf_token %}<input type="hidden" name="action" value="remove_field"><input type="hidden" name="field" value="{{ field.pk }}"><button class="btn btn-sm btn-outline-danger" type="submit">Remove</button></form>
+            {% endif %}
+          </div>
+          {% if template.status == 'DRAFT' %}
+          <form method="post" class="row g-2 mt-2">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="reorder_field">
+            <input type="hidden" name="field" value="{{ field.pk }}">
+            <input type="hidden" name="show_ref_submitted" value="1">
+            <input type="hidden" name="include_submitted" value="1">
+            <div class="col-md-2"><input class="form-control form-control-sm" name="display_order" value="{{ field.display_order }}"></div>
+            <div class="col-md-4"><input class="form-control form-control-sm" name="section_label" value="{{ field.section_label }}" placeholder="Section"></div>
+            <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" name="show_reference_range" {% if field.show_reference_range %}checked{% endif %} id="rr-{{ field.pk }}"><label class="form-check-label" for="rr-{{ field.pk }}">Show range</label></div></div>
+            <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" name="include_in_report" {% if field.include_in_report %}checked{% endif %} id="ir-{{ field.pk }}"><label class="form-check-label" for="ir-{{ field.pk }}">In report</label></div></div>
+            <div class="col-12"><button class="btn btn-sm btn-outline-dark" type="submit">Update field</button></div>
+          </form>
+          {% endif %}
+        </div>
+      {% empty %}
+        <p class="muted mb-0">No fields yet. Import catalogue parameters or add them one by one.</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

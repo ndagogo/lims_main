@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Inventory{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <h1 class="h4">Reagent inventory</h1>
+  <h2 class="h6 mt-3">Low stock</h2>
+  <ul>{% for s in low_stock %}<li>{{ s.sku_code }} — on hand {{ s.on_hand }} / reorder {{ s.reorder_level }}</li>{% empty %}<li>None</li>{% endfor %}</ul>
+  <h2 class="h6">Expiring soon</h2>
+  <ul>{% for row in expiring %}<li>{{ row.sku.sku_code }} lot {{ row.movement.lot_number }} — {{ row.movement.expires_on }}</li>{% empty %}<li>None</li>{% endfor %}</ul>
+  <h2 class="h6">Catalogue</h2>
+  <ul>{% for s in skus %}<li>{{ s.centre.code }} / {{ s.sku_code }} — {{ s.name }} ({{ s.on_hand }} {{ s.unit }})</li>{% empty %}<li>No SKUs yet</li>{% endfor %}</ul>
+</div>
+{% endblock %}

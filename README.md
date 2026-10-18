@@ -11,9 +11,13 @@ This repository consolidates the current Phase 1–7 development foundations int
 - Radiology worklist foundation: modality configuration, centre-scoped imaging orders, radiographer assignment and start/end acquisition, report drafting/finalisation, versioned controlled overrides, and a Bootstrap worklist screen.
 - Bootstrap-oriented Django screens, a separate dashboard shell, and a Flutter authentication/profile foundation.
 
+## Roadmap alignment
+
+See [`docs/ROADMAP_ALIGNMENT.md`](docs/ROADMAP_ALIGNMENT.md) for the module matrix against the Enterprise LIS+RIS architecture PDF. This build now includes password reset / optional admin MFA, bill amendments & refunds, versioned workflow templates, QC API, Orthanc PACS hooks, patient/physician/corporate portals, gateway queue + local config UI + ASTM skeleton, Celery/Redis wiring, inventory, and a management reporting dashboard.
+
 ## Important limitations
 
-This build now includes a basic RIS workflow foundation, but does not yet include DICOM/PACS transport or image viewing integration, analyzer protocol gateway, configurable workflow designer, referral-doctor commissions and settlements, patient/doctor/corporate portals, full notifications, complete reporting/exports, or full production deployment/security validation. Do not use real patient data until formal security, privacy, clinical workflow, and data-protection reviews are complete.
+Not yet production-certified: per-instrument ASTM/TCP vendor certification, drag-and-drop workflow builder, full DICOM viewer, NDPA/legal sign-off, and penetration testing. Do not use real patient data until formal security, privacy, clinical workflow, and data-protection reviews are complete.
 
 ## Local setup
 
@@ -26,12 +30,12 @@ From the project root:
 3. Copy `backend/.env.example` → `backend/.env` and set a unique local `DJANGO_SECRET_KEY`. **Never commit `.env`.**
 4. `cd backend`
 5. `python manage.py migrate`
-6. `python manage.py seed_roles` and `python manage.py seed_notification_templates`
+6. `python manage.py seed_roles` and `python manage.py seed_notification_templates` and `python manage.py seed_workflows`
 7. `python manage.py createsuperuser`
 8. `python manage.py test`
 9. `python manage.py runserver`
 
-Optional local Postgres: `docker compose -f docker-compose.dev.yml up -d db`, then set `DATABASE_URL` in `.env`.
+Optional local Postgres + Redis: `docker compose -f docker-compose.dev.yml up -d db redis`, then set `DATABASE_URL` and optionally `CELERY_BROKER_URL=redis://127.0.0.1:6379/0` in `.env`.
 
 Before opening a pull request, also run `python manage.py makemigrations --check --dry-run` and `python manage.py check`.
 
@@ -52,6 +56,11 @@ Before opening a pull request, also run `python manage.py makemigrations --check
 - Accounts workspace: `/accounts/`
 - Laboratory workspace: `/laboratory/`
 - Radiology workspace: `/radiology/`
+- Portals: `/portals/patient/`, `/portals/physician/`, `/portals/corporate/`
+- Management dashboard: `/reporting/management/`
+- Integration review: `/integrations/review/`
+- Inventory: `/inventory/`
+- Local gateway config UI: `python gateway/local_ui/app.py` (127.0.0.1 only)
 
 The Flutter app is under `mobile/`. Run `flutter pub get`, then run the app. The default API host (`10.0.2.2`) is for an Android emulator. For a physical device, pass `--dart-define=API_BASE_URL=http://YOUR-LAN-IP:8000/api`; use HTTPS for any non-local deployment.
 
@@ -64,8 +73,8 @@ The Flutter app is under `mobile/`. Run `flutter pub get`, then run the app. The
 - The visit and sample counters use database transactions, but concurrency behavior must be verified against the target PostgreSQL deployment.
 
 
-## Remaining phases (5–7)
-See `PHASES_5_TO_7.md` for the analyzer gateway foundation, referral ledger, notification outbox, operations summary endpoint, production security settings and exact validation commands. These are development foundations only; instrument transports, message providers and runtime tests remain outstanding.
+## Remaining hardening
+Historical notes remain in `PHASES_5_TO_7.md`. Current gap tracking lives in `docs/ROADMAP_ALIGNMENT.md`. Instrument vendor certification and full notification provider runtime tests remain outstanding.
 
 
 ## GitHub + Railway deployment

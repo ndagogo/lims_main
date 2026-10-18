@@ -1,11 +1,24 @@
 from rest_framework import serializers
-from .models import (ServiceGroup,Test,Tariff,TestPrice,LabOrder,Sample,SampleActivity,SampleBatch,BatchSample,SampleProcessing,TestParameter,ResultTemplate,LabResult,ResultValue,ResultReview)
+from .models import (
+    ServiceGroup, Test, Tariff, TestPrice, LabOrder, Sample, SampleActivity, SampleBatch,
+    BatchSample, SampleProcessing, TestParameter, ResultTemplate, LabResult, ResultValue,
+    ResultReview, QcMaterial, QcRun, TatEscalation, TatPauseReason, TatRule,
+)
 
 class ServiceGroupSerializer(serializers.ModelSerializer):
     class Meta: model=ServiceGroup; fields='__all__'
 class TestSerializer(serializers.ModelSerializer):
     service_group_name=serializers.CharField(source='service_group.name',read_only=True,default='')
     class Meta: model=Test; fields='__all__'
+    def validate_service_group(self, value):
+        if value is None:
+            raise serializers.ValidationError('Each test must be mapped to a service group.')
+        return value
+    def validate(self, attrs):
+        group = attrs.get('service_group', getattr(self.instance, 'service_group', None))
+        if group is None:
+            raise serializers.ValidationError({'service_group': 'Each test must be mapped to a service group.'})
+        return attrs
 class TariffSerializer(serializers.ModelSerializer):
     class Meta: model=Tariff; fields='__all__'
 class TestPriceSerializer(serializers.ModelSerializer):
@@ -23,7 +36,14 @@ class LabOrderSerializer(serializers.ModelSerializer):
         return attrs
 class SampleSerializer(serializers.ModelSerializer):
     patient_name=serializers.SerializerMethodField(); visit_id=serializers.CharField(source='order.visit.visit_id',read_only=True); test_name=serializers.CharField(source='order.test.name',read_only=True)
-    class Meta: model=Sample; fields='__all__'; read_only_fields=['id','sample_id','status','collected_by','collected_at','collector_ip','collector_browser','created_at','updated_at']
+    class Meta:
+        model=Sample
+        fields='__all__'
+        read_only_fields=[
+            'id','sample_id','status','collected_by','collected_at','collector_ip','collector_browser',
+            'specimen_type','disposition','rejection_reason','corrective_action','rejected_by','rejected_at',
+            'recollection_of','created_at','updated_at',
+        ]
     def get_patient_name(self,obj): return f'{obj.order.visit.patient.first_name} {obj.order.visit.patient.last_name}'
 class SampleActivitySerializer(serializers.ModelSerializer):
     class Meta: model=SampleActivity; fields='__all__'; read_only_fields=['id','performed_by','ip_address','browser','created_at','updated_at']
@@ -46,3 +66,55 @@ class LabResultSerializer(serializers.ModelSerializer):
     class Meta: model=LabResult; fields='__all__'; read_only_fields=['id','status','entered_by','reviewed_by','authenticated_by','released_by','entered_at','reviewed_at','authenticated_at','released_at','version','created_at','updated_at']
 class ResultReviewSerializer(serializers.ModelSerializer):
     class Meta: model=ResultReview; fields='__all__'; read_only_fields=['id','reviewer','created_at','updated_at']
+
+
+class QcMaterialSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = QcMaterial
+        fields = '__all__'
+
+
+class QcRunSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = QcRun
+        fields = '__all__'
+        read_only_fields = ['id', 'entered_by', 'created_at', 'updated_at']
+
+
+class TatRuleSerializer(serializers.ModelSerializer):
+    test_code = serializers.CharField(source='test.code', read_only=True, default='')
+    service_group_name = serializers.CharField(source='service_group.name', read_only=True, default='')
+
+    class Meta:
+        model = TatRule
+        fields = '__all__'
+
+    def validate(self, attrs):
+        test = attrs.get('test', getattr(self.instance, 'test', None))
+        group = attrs.get('service_group', getattr(self.instance, 'service_group', None))
+        if not test and not group:
+            raise serializers.ValidationError('Bind the rule to a test or a service group.')
+        expected = attrs.get('expected_minutes', getattr(self.instance, 'expected_minutes', None))
+        if expected is not None and expected < 1:
+            raise serializers.ValidationError({'expected_minutes': 'Expected TAT must be at least one minute.'})
+        return attrs
+
+
+class TatPauseReasonSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TatPauseReason
+        fields = '__all__'
+
+
+class TatEscalationSerializer(serializers.ModelSerializer):
+    sample_id = serializers.CharField(source='sample.sample_id', read_only=True)
+    centre = serializers.CharField(source='sample.centre.code', read_only=True)
+    test_name = serializers.CharField(source='sample.order.test.name', read_only=True)
+
+    class Meta:
+        model = TatEscalation
+        fields = '__all__'
+        read_only_fields = [
+            'id', 'fired_at', 'elapsed_minutes', 'expected_minutes',
+            'acknowledged_at', 'acknowledged_by', 'created_at', 'updated_at',
+        ]

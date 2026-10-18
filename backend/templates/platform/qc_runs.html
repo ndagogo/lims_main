@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}QC runs | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="QC" title="QC runs" subtitle="Record and review control runs." %}
+<div class="card p-4 mb-4">
+  <h2 class="h5">Record run</h2>
+  <form method="post" class="row g-2">
+    {% csrf_token %}<input type="hidden" name="action" value="create"><input type="hidden" name="acceptable_submitted" value="1">
+    <div class="col-md-4"><label class="form-label">Material</label><select name="material" class="form-select" required>{% for m in materials %}<option value="{{ m.pk }}">{{ m.centre.code }} · {{ m.name }} ({{ m.test.code }})</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Parameter</label><select name="parameter" class="form-select" required>{% for p in parameters %}<option value="{{ p.pk }}">{{ p.test.code }} / {{ p.code }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">Value</label><input name="value" class="form-control" required></div>
+    <div class="col-md-2 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="acceptable" id="qc-ok" checked><label class="form-check-label" for="qc-ok">Acceptable</label></div></div>
+    <div class="col-12"><button class="btn btn-primary" type="submit">Save run</button></div>
+  </form>
+</div>
+<div class="card p-3">
+  <table class="table align-middle"><thead><tr><th>When</th><th>Material</th><th>Parameter</th><th>Value</th><th>Result</th><th>By</th></tr></thead>
+    <tbody>
+      {% for row in directory %}
+      <tr>
+        <td class="small">{{ row.run_at }}</td>
+        <td>{{ row.material.name }}</td>
+        <td>{{ row.parameter.code }}</td>
+        <td>{{ row.value }}</td>
+        <td>{% if row.acceptable %}<span class="badge badge-soft">OK</span>{% else %}<span class="badge badge-danger-soft">Out</span>{% endif %}</td>
+        <td>{{ row.entered_by.username|default:"—" }}</td>
+      </tr>
+      {% empty %}<tr><td colspan="6" class="muted text-center py-3">No QC runs.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% include "includes/pagination.html" with page=directory %}
+</div>
+{% endblock %}

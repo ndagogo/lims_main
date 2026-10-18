@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Sample code config | Platform{% endblock %}
+{% block content %}
+{% include "platform/_header.html" with section_label="Instruments" title="Sample code config" subtitle="One digit per centre for laboratory sample IDs." %}
+{% if used_digits %}<p class="small muted">Digits in use: {{ used_digits|join:", " }}</p>{% endif %}
+<div class="row g-4">
+  <div class="col-xl-4">
+    <div class="card p-4">
+      <h2 class="h5">Assign digit</h2>
+      <form method="post" class="row g-2">
+        {% csrf_token %}<input type="hidden" name="action" value="create">
+        <div class="col-12"><label class="form-label">Centre</label><select name="centre" class="form-select" required>{% for c in centres %}<option value="{{ c.pk }}">{{ c.code }} — {{ c.name }}</option>{% empty %}<option value="">All centres already assigned</option>{% endfor %}</select></div>
+        <div class="col-12"><label class="form-label">Digit (0–9)</label><input name="numeric_code" class="form-control" maxlength="1" pattern="[0-9]" required></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit" {% if not centres %}disabled{% endif %}>Assign</button></div>
+      </form>
+    </div>
+  </div>
+  <div class="col-xl-8">
+    <div class="card p-3">
+      <table class="table align-middle"><thead><tr><th>Centre</th><th>Digit</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {% for row in directory %}
+          <tr>
+            <td class="fw-semibold">{{ row.centre.code }}</td>
+            <td>
+              <form method="post" class="d-flex gap-2 align-items-center">
+                {% csrf_token %}<input type="hidden" name="action" value="update"><input type="hidden" name="config" value="{{ row.pk }}">
+                <input name="numeric_code" class="form-control form-control-sm" style="width:4rem" maxlength="1" value="{{ row.numeric_code }}" required>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="sc-{{ row.pk }}" {% if row.is_active %}checked{% endif %}><label class="form-check-label" for="sc-{{ row.pk }}">Active</label></div>
+                <button class="btn btn-sm btn-outline-dark" type="submit">Save</button>
+              </form>
+            </td>
+            <td>{% if row.is_active %}Active{% else %}Inactive{% endif %}</td>
+            <td></td>
+          </tr>
+          {% empty %}<tr><td colspan="4" class="muted text-center py-3">No sample code configs.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+  </div>
+</div>
+{% endblock %}

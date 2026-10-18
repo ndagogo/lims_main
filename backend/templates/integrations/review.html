@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Integration review{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <h1 class="h4">Analyzer message review</h1>
+  <p class="text-muted">Quarantined / pending-review instrument messages.</p>
+  {% for m in messages_list %}
+  <div class="border rounded p-3 mb-2">
+    <div><strong>{{ m.analyzer.name }}</strong> · {{ m.received_at }} · {{ m.external_message_id }}</div>
+    <pre class="small mb-2" style="max-height:120px;overflow:auto">{{ m.raw_payload|truncatechars:800 }}</pre>
+    <form method="post" action="{% url 'integration-review-action' m.pk %}" class="d-inline">{% csrf_token %}
+      <input type="hidden" name="decision" value="ACCEPTED">
+      <button class="btn btn-sm btn-success">Accept</button>
+    </form>
+    <form method="post" action="{% url 'integration-review-action' m.pk %}" class="d-inline">{% csrf_token %}
+      <input type="hidden" name="decision" value="REJECTED">
+      <button class="btn btn-sm btn-outline-danger">Reject</button>
+    </form>
+  </div>
+  {% empty %}
+  <p>No messages pending review.</p>
+  {% endfor %}
+</div>
+{% endblock %}

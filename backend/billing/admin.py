@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Invoice, InvoiceItem, Payment, DiscountRequest
+from .models import Invoice, InvoiceItem, Payment, DiscountRequest, BillAmendment, Refund
 
 class InvoiceItemInline(admin.TabularInline):
     model = InvoiceItem
@@ -28,3 +28,17 @@ class DiscountRequestAdmin(admin.ModelAdmin):
     readonly_fields = ('requested_by','reviewed_by','applied_amount','created_at','updated_at')
 
 admin.site.register(InvoiceItem)
+
+
+@admin.register(BillAmendment)
+class BillAmendmentAdmin(admin.ModelAdmin):
+    list_display = ('invoice', 'action', 'amount_delta', 'authorised_by', 'created_at')
+    list_filter = ('action',)
+    search_fields = ('invoice__invoice_number', 'description', 'reason')
+
+
+@admin.register(Refund)
+class RefundAdmin(admin.ModelAdmin):
+    list_display = ('payment', 'amount', 'status', 'authorised_by', 'completed_at', 'created_at')
+    list_filter = ('status',)
+    search_fields = ('payment__receipt_number', 'reason')

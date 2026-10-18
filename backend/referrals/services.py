@@ -1,7 +1,43 @@
 """Commission accrual follows a fully paid invoice and reverses when that payment is undone."""
 from decimal import Decimal, ROUND_HALF_UP
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
+from django.db.models import Q
+
+
+def doctors_for_centre(centre, *, active_only=True, include_placeholders=False):
+    """Doctors whose home centre or extra assignments include this centre."""
+    from .models import ReferralDoctor
+
+    qs = ReferralDoctor.objects.filter(Q(centre=centre) | Q(centres=centre)).distinct()
+    if active_only:
+        qs = qs.filter(is_active=True)
+    if not include_placeholders:
+        qs = qs.filter(is_default_placeholder=False)
+    return qs
+
+
+def doctor_ids_serving(centre_ids):
+    from .models import ReferralDoctor
+    return ReferralDoctor.objects.filter(
+        Q(centre_id__in=centre_ids) | Q(centres__in=centre_ids),
+    ).values('pk').distinct()
+
+
+def report_referring_name(visit) -> str:
+    """Name printed on a laboratory or radiology report. Blank when the doctor opts out."""
+    try:
+        doctor = visit.referral_attribution.doctor
+    except ObjectDoesNotExist:
+        return ''
+    if doctor.is_default_placeholder or not doctor.appear_on_reports:
+        return ''
+    name = ' '.join(part for part in (doctor.title, doctor.first_name, doctor.last_name) if (part or '').strip())
+    facility = (doctor.facility_name or '').strip()
+    if facility:
+        return f'{name} · {facility}' if name else facility
+    return name
 
 
 def commission_amount(doctor, invoice_total):

@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}Bill edit | HFDN{% endblock %}
+{% block content %}
+<div class="mb-4 d-flex flex-wrap justify-content-between align-items-end gap-2">
+  <div>
+    <div class="muted small">ACCOUNTS</div>
+    <h1 class="h3">Bill edit</h1>
+    <p class="muted mb-0">Remove a test from an order or replace it with another. Totals are recalculated so the bill stays balanced. Requires <code>bill_edit</code> / <code>bill_modify</code>.</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'accounts-workspace' %}">Paypoint</a>
+    {% if can_refund_payment %}<a class="btn btn-outline-dark btn-sm" href="{% url 'accounts-refunds' %}">Cancel / refund</a>{% endif %}
+  </div>
+</div>
+
+<form method="get" class="card p-4 mb-4">
+  <h2 class="h5">Find visit</h2>
+  <div class="row g-2">
+    <div class="col-md-8"><input class="form-control" name="q" value="{{ query }}" placeholder="Visit ID, invoice, UHID, phone, or name"></div>
+    <div class="col-md-4"><button class="btn btn-outline-dark" type="submit">Search</button></div>
+  </div>
+</form>
+
+{% if query %}
+<div class="card p-4 mb-4">
+  <h2 class="h5">Matching visits</h2>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>Visit</th><th>Patient</th><th>Phone</th><th>Centre</th><th></th></tr></thead>
+      <tbody>
+        {% for visit in matches %}
+          <tr>
+            <td class="fw-semibold">{{ visit.visit_id }}</td>
+            <td>{{ visit.patient.uhid }} · {{ visit.patient.first_name }} {{ visit.patient.last_name }}</td>
+            <td>{{ visit.patient.phone_number }}</td>
+            <td>{{ visit.centre.code }}</td>
+            <td><a class="btn btn-sm btn-primary" href="?q={{ query|urlencode }}&visit={{ visit.pk }}">Open</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="muted py-3">No visits matched.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=matches %}
+</div>
+{% endif %}
+
+{% if selected_visit %}
+<div class="card p-4 mb-4">
+  <h2 class="h5">{{ selected_visit.patient.title }} {{ selected_visit.patient.first_name }} {{ selected_visit.patient.last_name }}</h2>
+  <p class="muted mb-3">
+    UHID {{ selected_visit.patient.uhid }} · Phone {{ selected_visit.patient.phone_number }}
+    · Visit {{ selected_visit.visit_id }} · {{ selected_visit.centre.code }}
+  </p>
+  {% for invoice in selected_visit.invoices.all %}
+    <div class="border rounded p-3 mb-3">
+      <div class="fw-semibold">{{ invoice.invoice_number }} · {{ invoice.get_status_display }}</div>
+      <div class="small muted mb-3">Total ₦{{ invoice.total|floatformat:2 }} · Net paid ₦{{ invoice.amount_paid|floatformat:2 }} · Balance ₦{{ invoice.balance|floatformat:2 }}</div>
+      {% for item in invoice.items.all %}
+        <div class="border-top pt-3 mt-3">
+          <div class="fw-semibold">{{ item.description }} — ₦{{ item.line_total|floatformat:2 }}</div>
+          <div class="row g-3 mt-1">
+            <div class="col-lg-4">
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="remove_item">
+                <input type="hidden" name="invoice_item" value="{{ item.pk }}">
+                <input type="hidden" name="visit" value="{{ selected_visit.pk }}">
+                <input type="hidden" name="q" value="{{ query }}">
+                <label class="form-label small">Remove from bill</label>
+                <input name="reason" class="form-control form-control-sm mb-2" required placeholder="Reason">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Remove test</button>
+              </form>
+            </div>
+            <div class="col-lg-8">
+              <form method="post" class="replace-form row g-2 align-items-end">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="replace_item">
+                <input type="hidden" name="invoice_item" value="{{ item.pk }}">
+                <input type="hidden" name="visit" value="{{ selected_visit.pk }}">
+                <input type="hidden" name="q" value="{{ query }}">
+                <div class="col-md-3">
+                  <label class="form-label small">Tariff</label>
+                  <select name="tariff" class="form-select form-select-sm tariff-select" required>
+                    <option value="">Choose</option>
+                    {% for tariff in tariffs %}<option value="{{ tariff.pk }}">{{ tariff.name }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label small">Kind</label>
+                  <select name="replacement_kind" class="form-select form-select-sm kind-select">
+                    <option value="laboratory">Lab</option>
+                    <option value="radiology">Radiology</option>
+                  </select>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label small">Replacement test</label>
+                  <select name="replacement_id" class="form-select form-select-sm replacement-select" required>
+                    <option value="">Choose tariff first</option>
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small">Reason</label>
+                  <input name="reason" class="form-control form-control-sm" required placeholder="Reason">
+                </div>
+                <div class="col-12"><button class="btn btn-sm btn-primary" type="submit">Replace test</button></div>
+              </form>
+            </div>
+          </div>
+        </div>
+      {% empty %}
+        <p class="muted small mb-0">No active tests on this invoice.</p>
+      {% endfor %}
+    </div>
+  {% empty %}
+    <p class="muted">No invoices on this visit.</p>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="card p-4">
+  <h2 class="h5">Bill modification history</h2>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>When</th><th>Invoice</th><th>Action</th><th>Change</th><th>Δ Amount</th><th>By</th><th>Reason</th></tr></thead>
+      <tbody>
+        {% for row in amendment_history %}
+          <tr>
+            <td class="small">{{ row.created_at }}</td>
+            <td>{{ row.invoice.invoice_number }}<div class="small muted">{{ row.invoice.visit.patient.uhid }}</div></td>
+            <td>{{ row.get_action_display }}</td>
+            <td class="small">
+              {% if row.removed_description %}− {{ row.removed_description }}{% endif %}
+              {% if row.added_description %}<br>+ {{ row.added_description }}{% endif %}
+              {% if not row.removed_description and not row.added_description %}{{ row.description }}{% endif %}
+            </td>
+            <td>₦{{ row.amount_delta|floatformat:2 }}</td>
+            <td>{{ row.authorised_by.username }}</td>
+            <td class="small">{{ row.reason }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="muted py-3 text-center">No bill modifications recorded yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=amendment_history %}
+</div>
+
+{{ test_catalog|json_script:"test-catalog" }}
+<script>
+const testCatalog = JSON.parse(document.getElementById('test-catalog').textContent);
+function formatNaira(value) {
+  return '₦' + Number(value).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function refreshReplacement(form) {
+  const tariff = form.querySelector('.tariff-select');
+  const kind = form.querySelector('.kind-select');
+  const select = form.querySelector('.replacement-select');
+  const current = select.value;
+  select.replaceChildren();
+  const blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = tariff.value ? 'Choose test' : 'Choose tariff first';
+  select.appendChild(blank);
+  if (!tariff.value) return;
+  testCatalog.filter((row) => row.tariff === tariff.value && row.kind === kind.value).forEach((row) => {
+    const option = document.createElement('option');
+    option.value = row.id;
+    option.textContent = row.code + ' — ' + row.name + ' — ' + formatNaira(row.price);
+    if (row.id === current) option.selected = true;
+    select.appendChild(option);
+  });
+}
+document.querySelectorAll('.replace-form').forEach((form) => {
+  form.querySelector('.tariff-select').addEventListener('change', () => refreshReplacement(form));
+  form.querySelector('.kind-select').addEventListener('change', () => refreshReplacement(form));
+  refreshReplacement(form);
+});
+</script>
+{% endblock %}

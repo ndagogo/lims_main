@@ -1,5 +1,8 @@
 from django.contrib import admin
-from .models import ImagingModality, ImagingOrder, RadiologyExam, RadiologyReport, RadiologyReportRevision
+from .models import (
+    ImagingModality, ImagingOrder, RadiologyExam, RadiologyExamActivity,
+    RadiologyReport, RadiologyReportRevision, RadiologyReportTemplate, PacsFailure,
+)
 
 @admin.register(ImagingModality)
 class ImagingModalityAdmin(admin.ModelAdmin):
@@ -15,8 +18,22 @@ class ImagingOrderAdmin(admin.ModelAdmin):
 
 @admin.register(RadiologyExam)
 class RadiologyExamAdmin(admin.ModelAdmin):
-    list_display = ('id', 'order', 'assigned_radiographer', 'status', 'started_at', 'ended_at')
+    list_display = ('id', 'order', 'assigned_radiographer', 'assigned_radiologist', 'status', 'started_at', 'ended_at')
     list_filter = ('status', 'order__modality__centre')
+
+
+@admin.register(RadiologyExamActivity)
+class RadiologyExamActivityAdmin(admin.ModelAdmin):
+    list_display = ('exam', 'action', 'from_status', 'to_status', 'performed_by', 'created_at')
+    list_filter = ('action',)
+    search_fields = ('exam__order__visit__visit_id', 'note')
+
+
+@admin.register(RadiologyReportTemplate)
+class RadiologyReportTemplateAdmin(admin.ModelAdmin):
+    list_display = ('name', 'modality_type', 'version', 'scope', 'status', 'owner', 'is_active')
+    list_filter = ('modality_type', 'scope', 'status', 'is_active')
+    search_fields = ('name',)
 
 @admin.register(RadiologyReport)
 class RadiologyReportAdmin(admin.ModelAdmin):
@@ -33,3 +50,10 @@ class RadiologyReportAdmin(admin.ModelAdmin):
 class RadiologyReportRevisionAdmin(admin.ModelAdmin):
     list_display = ('report', 'version', 'changed_by', 'created_at')
     readonly_fields = ('report', 'version', 'snapshot', 'changed_by', 'reason', 'created_at', 'updated_at')
+
+
+@admin.register(PacsFailure)
+class PacsFailureAdmin(admin.ModelAdmin):
+    list_display = ('exam', 'reason', 'resolved_at', 'created_at')
+    list_filter = ('resolved_at',)
+    search_fields = ('exam__order__visit__visit_id', 'reason')

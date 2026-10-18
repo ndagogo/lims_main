@@ -44,7 +44,8 @@ class SampleCentreIsolationTests(TestCase):
         patient=Patient.objects.create(first_name='A',last_name='Patient',phone_number='08000000001')
         visit_a=Visit.objects.create(patient=patient,centre=centre_a,registered_by=user)
         visit_b=Visit.objects.create(patient=patient,centre=centre_b,registered_by=user)
-        test=Test.objects.create(code='TEST1',name='Test 1')
+        group=ServiceGroup.objects.create(name='General',code='1')
+        test=Test.objects.create(code='TEST1',name='Test 1',service_group=group)
         tariff=Tariff.objects.create(name='T1')
         order_a=LabOrder.objects.create(visit=visit_a,test=test,tariff=tariff,price='10')
         order_b=LabOrder.objects.create(visit=visit_b,test=test,tariff=tariff,price='10')
@@ -67,7 +68,8 @@ class SampleBatchCreateTests(TestCase):
         SampleCodeConfig.objects.create(centre=centre, numeric_code='2')
         patient=Patient.objects.create(first_name='Batch', last_name='Patient', phone_number='08000000009')
         visit=Visit.objects.create(patient=patient, centre=centre, registered_by=user)
-        test=Test.objects.create(code='CBC', name='Complete Blood Count', department='HAEMATOLOGY', department_code='1', service_group_code='1')
+        group=ServiceGroup.objects.create(name='Haematology', code='1')
+        test=Test.objects.create(code='CBC', name='Complete Blood Count', department='HAEMATOLOGY', department_code='1', service_group=group)
         order=LabOrder.objects.create(visit=visit, test=test, price='5500')
         sample=Sample.objects.create(order=order, centre=centre, status='COLLECTED')
         client=APIClient(); client.force_authenticate(user)
@@ -96,7 +98,8 @@ class ResultControlTests(TestCase):
         patient=Patient.objects.create(first_name='Ada', last_name='Okafor', phone_number='08011112222')
         visit=Visit.objects.create(patient=patient, centre=self.centre, registered_by=self.scientist)
         PatientDocument.objects.create(visit=visit, document_type='REFERRAL', file=ContentFile(b'%PDF-1.4\n', name='referral.pdf'), uploaded_by=self.scientist)
-        test=Test.objects.create(code='CBC', name='Complete Blood Count', department='PATHOLOGY', department_code='1', service_group_code='1')
+        group=ServiceGroup.objects.create(name='Haematology', code='1')
+        test=Test.objects.create(code='CBC', name='Complete Blood Count', department='PATHOLOGY', department_code='1', service_group=group)
         order=LabOrder.objects.create(visit=visit, test=test, price='5500')
         self.sample=Sample.objects.create(order=order, centre=self.centre, status='AUTHENTICATED')
         self.result=LabResult.objects.create(sample=self.sample, status='AUTHENTICATED', entered_by=self.scientist, reviewed_by=self.scientist, authenticated_by=self.authenticator, narrative='Within range')
@@ -120,3 +123,49 @@ class ResultControlTests(TestCase):
         self.assertEqual(self.result.version, 2)
         self.assertEqual(self.sample.status, 'RELEASED')
         self.assertEqual(self.result.reviews.filter(action='AMENDED').count(), 1)
+
+
+class CollectionHistoryTests(TestCase):
+    def test_phlebotomy_history_includes_samples_that_left_the_bench(self):
+        from django.contrib.auth.models import Group
+        from django.test import Client
+        from django.utils import timezone
+        user = User.objects.create_user(username='phleb.hist', email='phleb.hist@example.test', password='A-long-unique-password-2026!')
+        user.groups.add(Group.objects.get_or_create(name='Phlebotomist')[0])
+        centre = Centre.objects.create(code='NWS', name='NOWAS')
+        other = Centre.objects.create(code='IND', name='Independence')
+        UserCentreAccess.objects.create(user=user, centre=centre, can_view=True, can_edit=True, is_default=True)
+        SampleCodeConfig.objects.create(centre=centre, numeric_code='2')
+        SampleCodeConfig.objects.create(centre=other, numeric_code='3')
+        group = ServiceGroup.objects.create(name='Haematology', code='1')
+        test = Test.objects.create(code='CBC', name='Complete Blood Count', department='PATHOLOGY', department_code='1', service_group=group)
+        patient = Patient.objects.create(first_name='Ifeoma', last_name='Dues', phone_number='08022223333')
+        visit = Visit.objects.create(patient=patient, centre=centre, registered_by=user)
+        waiting = Sample.objects.create(order=LabOrder.objects.create(visit=visit, test=test, price='1000'), centre=centre, status='PENDING_COLLECTION')
+        handed = Sample.objects.create(
+            order=LabOrder.objects.create(visit=visit, test=test, price='1000'), centre=centre,
+            status='RELEASED', collected_at=timezone.now(), collected_by=user,
+        )
+        still_here = Sample.objects.create(
+            order=LabOrder.objects.create(visit=visit, test=test, price='1000'), centre=centre,
+            status='COLLECTED', collected_at=timezone.now(), collected_by=user,
+        )
+        hidden_patient = Patient.objects.create(first_name='Hidden', last_name='Centre', phone_number='08033334444')
+        hidden_visit = Visit.objects.create(patient=hidden_patient, centre=other, registered_by=user)
+        hidden = Sample.objects.create(
+            order=LabOrder.objects.create(visit=hidden_visit, test=test, price='1000'), centre=other,
+            status='COLLECTED', collected_at=timezone.now(), collected_by=user,
+        )
+        screen = Client()
+        screen.force_login(user)
+        page = screen.get('/phlebotomy/')
+        self.assertContains(page, 'Collection history')
+        self.assertContains(page, handed.sample_id)
+        self.assertContains(page, still_here.sample_id)
+        self.assertContains(page, 'Released')
+        self.assertNotContains(page, waiting.sample_id)
+        self.assertNotContains(page, hidden.sample_id)
+        narrowed = screen.get('/phlebotomy/', {'hq': handed.sample_id})
+        self.assertContains(narrowed, handed.sample_id)
+        self.assertContains(narrowed, '1–1 of 1')
+        self.assertEqual(narrowed.content.count(still_here.sample_id.encode()), 1)

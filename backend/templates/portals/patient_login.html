@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Patient portal{% endblock %}
+{% block content %}
+<div class="container py-5" style="max-width:440px">
+  <h1 class="h4">Patient portal</h1>
+  <p class="muted">Sign in with the patient UHID and date of birth. A phone number does not open every result on that number. Patients under 18 also need the registered guardian phone.</p>
+  {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+  {% if messages %}{% for message in messages %}<div class="alert alert-warning">{{ message }}</div>{% endfor %}{% endif %}
+  <form method="post" class="vstack gap-2">{% csrf_token %}
+    <label class="form-label">UHID<input class="form-control" name="uhid" required autocomplete="off"></label>
+    <label class="form-label">Date of birth<input class="form-control" type="date" name="date_of_birth" required></label>
+    <label class="form-label">Guardian mobile <span class="muted">(under 18 only)</span><input class="form-control" name="guardian_phone" inputmode="numeric" maxlength="10"></label>
+    <button class="btn btn-primary">Continue</button>
+  </form>
+</div>
+{% endblock %}

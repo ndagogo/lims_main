@@ -1,6 +1,6 @@
-import os
 from datetime import timedelta
 
+from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
 from django.utils import timezone
 
@@ -8,11 +8,7 @@ from .models import User
 
 
 def _limit():
-    return int(os.getenv('LOGIN_FAILURE_LIMIT', '5'))
-
-
-def _lock_minutes():
-    return int(os.getenv('LOGIN_LOCK_MINUTES', '15'))
+    return int(getattr(settings, 'LOGIN_FAILURE_LIMIT', 3))
 
 
 class LockoutBackend(ModelBackend):
@@ -33,7 +29,8 @@ class LockoutBackend(ModelBackend):
             if row and row.is_active:
                 row.failed_login_count += 1
                 if row.failed_login_count >= _limit():
-                    row.locked_until = timezone.now() + timedelta(minutes=_lock_minutes())
+                    # Stays locked until an administrator unlocks the account.
+                    row.locked_until = timezone.now() + timedelta(days=3650)
                 row.save(update_fields=['failed_login_count', 'locked_until'])
             return None
         user.failed_login_count = 0

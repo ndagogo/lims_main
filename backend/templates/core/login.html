@@ -4,21 +4,33 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign in | HFDN</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,460&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f4f1ea; color: #1c1917; font-family: "Source Sans 3", sans-serif; min-height: 100vh; }
+    h1 { font-family: Newsreader, Georgia, serif; font-weight: 460; }
+    .card { border: 1px solid #e7e2d9; border-radius: 18px; box-shadow: none; }
+    .form-control { border-radius: 12px; border-color: #e4dfd6; min-height: 2.6rem; }
+    .btn-primary { background: #171717; border-color: #171717; border-radius: 999px; font-weight: 600; }
+    .btn-primary:hover { background: #2a2a2a; border-color: #2a2a2a; }
+    .eyebrow { letter-spacing: .14em; font-size: .72rem; color: #78716c; }
+  </style>
 </head>
-<body class="bg-light">
-<main class="container py-5" style="max-width: 28rem">
-  <h1 class="h3 mb-3">HFDN Health</h1>
-  <p class="text-secondary">Sign in with your staff account. Access stays limited to the centres you are granted.</p>
-  {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
-  <form method="post" class="card p-4 border-0 shadow-sm">
+<body>
+<main class="container py-5" style="max-width: 26rem">
+  <div class="eyebrow mb-2">HFDN · LIS · RIS</div>
+  <h1 class="h2 mb-2">Sign in</h1>
+  <p class="text-secondary">Staff access stays limited to the centres you are granted.</p>
+  {% if error %}<div class="alert alert-danger border-0">{{ error }}</div>{% endif %}
+  <form method="post" class="card p-4">
     {% csrf_token %}
     <input type="hidden" name="next" value="{{ next }}">
-    <label class="form-label" for="username">Username</label>
+    <label class="form-label small text-uppercase text-secondary" for="username">Username</label>
     <input class="form-control mb-3" id="username" name="username" autocomplete="username" required>
-    <label class="form-label" for="password">Password</label>
+    <label class="form-label small text-uppercase text-secondary" for="password">Password</label>
     <input class="form-control mb-3" id="password" name="password" type="password" autocomplete="current-password" required>
-    <button class="btn btn-primary" type="submit">Sign in</button>
+    <button class="btn btn-primary w-100" type="submit">Sign in</button>
   </form>
 </main>
 </body>

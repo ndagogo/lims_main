@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Doctor portal{% endblock %}
+{% block content %}
+<div class="eyebrow">{{ doctor.doctor_code }}</div>
+<h1>Earnings and referrals</h1>
+<div class="row g-3 mt-1 mb-3">
+  <div class="col-md-4">
+    <div class="balance-card">
+      <div class="kpi-label">Ledger balance</div>
+      <div class="kpi-value">₦{{ balance }}</div>
+    </div>
+  </div>
+  <div class="col-md-8">
+    <div class="card p-3 h-100">
+      <div class="kpi-label">Physician</div>
+      <div class="section-title mb-0">{{ doctor.title }} {{ doctor.first_name }} {{ doctor.last_name }}</div>
+      <div class="muted small mt-1">{{ doctor.centre.name }}</div>
+    </div>
+  </div>
+</div>
+<div class="card p-3 p-md-4">
+  <h2 class="section-title">Recent ledger</h2>
+  <table class="table mb-0">
+    <thead><tr><th>Date</th><th>Type</th><th class="text-end">Amount</th></tr></thead>
+    <tbody>
+      {% for e in ledger %}
+      <tr>
+        <td>{{ e.created_at|date:"d M Y" }}</td>
+        <td>{{ e.entry_type }}</td>
+        <td class="text-end">₦{{ e.amount }}</td>
+      </tr>
+      {% empty %}<tr><td colspan="3" class="muted">No entries</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Report catalogue | HFDN{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <div class="muted small">ENTERPRISE REPORTING</div>
+    <h1 class="h3 mb-1">Report catalogue</h1>
+    <p class="muted mb-0">Dimensional revenue and operational reports from the same transactional records as the management dashboard. Exports are audited.</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'management-dashboard' %}">Management dashboard</a>
+</div>
+
+<form method="get" class="card p-4 mb-4">
+  <div class="row g-3 align-items-end">
+    <div class="col-md-4">
+      <label class="form-label">Report</label>
+      <select class="form-select" name="report">
+        {% for value, label in catalogue_reports %}
+          <option value="{{ value }}" {% if report_key == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Period</label>
+      <select class="form-select" name="period">
+        {% for value, label in period_choices %}
+          <option value="{{ value }}" {% if period == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">From</label>
+      <input class="form-control" type="date" name="start" value="{{ start_date }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">To</label>
+      <input class="form-control" type="date" name="end" value="{{ end_date }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Centre</label>
+      <select class="form-select" name="centre">
+        <option value="">All my centres</option>
+        {% for centre in centres %}
+          <option value="{{ centre.pk }}" {% if centre_id == centre.pk|stringformat:"s" %}selected{% endif %}>{{ centre.code }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12"><button class="btn btn-primary" type="submit">Run report</button></div>
+  </div>
+</form>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <h2 class="h5 mb-0">{{ report_title }}</h2>
+    <div class="muted small">{{ period_label }} · {{ start_date }} → {{ end_date }} · {{ rows|length }} row{{ rows|length|pluralize }}</div>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-dark btn-sm" href="{% url 'report-export' %}?kind=catalogue&amp;report={{ report_key }}&amp;format=csv&amp;period={{ period }}&amp;centre={{ centre_id }}&amp;start={{ start_date }}&amp;end={{ end_date }}">CSV</a>
+    <a class="btn btn-outline-dark btn-sm" href="{% url 'report-export' %}?kind=catalogue&amp;report={{ report_key }}&amp;format=xlsx&amp;period={{ period }}&amp;centre={{ centre_id }}&amp;start={{ start_date }}&amp;end={{ end_date }}">Excel</a>
+    <a class="btn btn-outline-dark btn-sm" href="{% url 'report-export' %}?kind=catalogue&amp;report={{ report_key }}&amp;format=pdf&amp;period={{ period }}&amp;centre={{ centre_id }}&amp;start={{ start_date }}&amp;end={{ end_date }}">PDF</a>
+  </div>
+</div>
+
+{% if meta.hmo_credit_collections is not None %}
+<p class="small">HMO/CREDIT method collections in period: <strong>₦{{ meta.hmo_credit_collections|floatformat:2 }}</strong></p>
+{% endif %}
+{% if meta.usage is not None %}
+<p class="small">Issue (usage): {{ meta.usage }} · Expire (wastage): {{ meta.wastage_expire }}</p>
+{% endif %}
+
+<div class="card p-0 overflow-auto">
+  <table class="table table-sm mb-0">
+    <thead><tr>{% for h in headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>{% for cell in row %}<td>{% if cell|stringformat:"s" != cell %}{{ cell }}{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>
+      {% empty %}
+      <tr><td colspan="{{ headers|length }}" class="muted p-3">No rows for this period and centre filter.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

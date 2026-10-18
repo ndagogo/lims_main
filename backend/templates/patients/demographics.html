@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Modify patient demographics | HFDN{% endblock %}
+{% block content %}
+<div class="mb-4 d-flex flex-wrap justify-content-between align-items-end gap-2">
+  <div>
+    <div class="muted small">PATIENT MANAGEMENT</div>
+    <h1 class="h3">Modify patient demographics</h1>
+    <p class="muted mb-0">Search by bill / visit ID, invoice number, UHID, or phone. Changes require <code>can_modify_patient_data</code> and create an audit entry.</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'patient-registration' %}">Back to registration</a>
+</div>
+
+<form method="get" class="card p-4 mb-4">
+  <h2 class="h5">Find patient</h2>
+  <div class="row g-2">
+    <div class="col-md-8"><input class="form-control" name="q" value="{{ query }}" placeholder="Bill/visit ID, invoice, UHID, or phone" required></div>
+    <div class="col-md-4"><button class="btn btn-outline-dark" type="submit">Search</button></div>
+  </div>
+</form>
+
+{% if query %}
+<div class="card p-4 mb-4">
+  <h2 class="h5">Matches</h2>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>UHID</th><th>Patient</th><th>Phone</th><th>DOB</th><th></th></tr></thead>
+      <tbody>
+        {% for patient in matches %}
+          <tr>
+            <td class="fw-semibold">{{ patient.uhid }}</td>
+            <td>{{ patient.title }} {{ patient.first_name }} {{ patient.last_name }}</td>
+            <td>{{ patient.phone_country_code }} {{ patient.phone_number }}</td>
+            <td>{% if patient.date_of_birth %}{{ patient.date_of_birth }}{% else %}—{% endif %}</td>
+            <td><a class="btn btn-sm btn-primary" href="?q={{ query|urlencode }}&patient={{ patient.pk }}">Edit</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="muted py-3">No patient matched that search in your centres.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=matches %}
+</div>
+{% endif %}
+
+{% if selected_patient %}
+<div class="card p-4 mb-4">
+  <h2 class="h5">Edit {{ selected_patient.uhid }}</h2>
+  <p class="muted">UHID cannot be changed. Every save is audited.</p>
+  <form method="post" class="row g-3">
+    {% csrf_token %}
+    <input type="hidden" name="patient" value="{{ selected_patient.pk }}">
+    <div class="col-md-3"><label class="form-label">UHID</label><input class="form-control" value="{{ selected_patient.uhid }}" readonly tabindex="-1"></div>
+    <div class="col-md-2"><label class="form-label">Title</label><select name="title" class="form-select">{% for value, label in titles %}<option value="{{ value }}" {% if selected_patient.title == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label">First name</label><input name="first_name" class="form-control" required value="{{ selected_patient.first_name }}"></div>
+    <div class="col-md-4"><label class="form-label">Last name</label><input name="last_name" class="form-control" required value="{{ selected_patient.last_name }}"></div>
+    <div class="col-md-4"><label class="form-label">Other names</label><input name="other_names" class="form-control" value="{{ selected_patient.other_names }}"></div>
+    <div class="col-md-4"><label class="form-label">Gender</label><select name="sex" class="form-select">{% for value, label in sexes %}<option value="{{ value }}" {% if selected_patient.sex == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Date of birth</label><input name="date_of_birth" type="date" class="form-control" value="{% if selected_patient.date_of_birth %}{{ selected_patient.date_of_birth|date:'Y-m-d' }}{% endif %}"></div>
+    <div class="col-md-4"><label class="form-label">Guardian name</label><input name="guardian_name" class="form-control" value="{{ selected_patient.guardian_name }}" placeholder="Required if under 18"></div>
+    <div class="col-md-4"><label class="form-label">Guardian relationship</label><select name="guardian_relationship" class="form-select"><option value="">—</option><option {% if selected_patient.guardian_relationship == "Parent" %}selected{% endif %}>Parent</option><option {% if selected_patient.guardian_relationship == "Mother" %}selected{% endif %}>Mother</option><option {% if selected_patient.guardian_relationship == "Father" %}selected{% endif %}>Father</option><option {% if selected_patient.guardian_relationship == "Guardian" %}selected{% endif %}>Guardian</option><option {% if selected_patient.guardian_relationship == "Other" %}selected{% endif %}>Other</option></select></div>
+    <div class="col-md-4"><label class="form-label">Guardian mobile</label><input name="guardian_phone" class="form-control" maxlength="10" value="{{ selected_patient.guardian_phone }}"></div>
+    <div class="col-md-2"><label class="form-label">Code</label><select name="phone_country_code" class="form-select">{% for code in phone_codes %}<option {% if selected_patient.phone_country_code == code %}selected{% endif %}>{{ code }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Mobile</label><input name="phone_number" class="form-control" required maxlength="10" pattern="[0-9]{10}" value="{{ selected_patient.phone_number }}"></div>
+    <div class="col-md-3"><label class="form-label">Alternate mobile</label><input name="alt_phone" class="form-control" maxlength="10" pattern="[0-9]{10}" value="{{ selected_patient.alt_phone }}"></div>
+    <div class="col-md-3"><label class="form-label">Email</label><input name="email" type="email" class="form-control" value="{{ selected_patient.email }}"></div>
+    <div class="col-md-6"><label class="form-label">Address</label><input name="address" class="form-control" value="{{ selected_patient.address }}"></div>
+    <div class="col-md-3"><label class="form-label">City</label><input name="city" class="form-control" value="{{ selected_patient.city }}"></div>
+    <div class="col-md-3"><label class="form-label">State</label><select name="state" class="form-select">{% for value, label in states %}<option value="{{ value }}" {% if selected_patient.state == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Race</label><select name="race" class="form-select">{% for value, label in races %}<option value="{{ value }}" {% if selected_patient.race == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Health card number</label><input name="health_card_number" class="form-control" value="{{ selected_patient.health_card_number }}"></div>
+    <div class="col-md-4"><label class="form-label">Passport number</label><input name="passport_number" class="form-control" value="{{ selected_patient.passport_number }}"></div>
+    <div class="col-12"><button class="btn btn-primary" type="submit">Save demographics</button></div>
+  </form>
+</div>
+{% endif %}
+{% endblock %}
