@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block title %}Modified approvals | HFDN{% endblock %}
+{% block content %}
+<div class="modify-desk">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+    <div>
+      <div class="eyebrow">Results</div>
+      <h1>Modified approvals</h1>
+      <p class="muted mb-0">Return a reported or dispatched result so it can be reported again. Every return is kept in history.</p>
+    </div>
+    <a class="btn btn-outline-dark btn-sm" href="{% url 'result-dispatch' %}">Result dispatch</a>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-xl-3"><div class="kpi"><div class="kpi-label">Returned today</div><div class="kpi-value">{{ kpis.today }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="kpi"><div class="kpi-label">This week</div><div class="kpi-value">{{ kpis.week }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="kpi"><div class="kpi-label">Radiology returns</div><div class="kpi-value">{{ kpis.radiology }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="kpi"><div class="kpi-label">Laboratory returns</div><div class="kpi-value">{{ kpis.laboratory }}</div></div></div>
+  </div>
+
+  <div class="row g-3 mb-4 align-items-start">
+    <div class="col-xl-4">
+      <section class="card modify-panel mb-0">
+        <div class="modify-panel-head"><h2 class="h5 mb-0">Find a visit</h2></div>
+        <div class="modify-panel-body">
+          <form method="get" class="row g-2 align-items-end">
+            {% if history_q %}<input type="hidden" name="history_q" value="{{ history_q }}">{% endif %}
+            {% if history_service %}<input type="hidden" name="history_service" value="{{ history_service }}">{% endif %}
+            {% if history_from %}<input type="hidden" name="history_from" value="{{ history_from }}">{% endif %}
+            {% if history_to %}<input type="hidden" name="history_to" value="{{ history_to }}">{% endif %}
+            <div class="col-12">
+              <label class="form-label" for="visit-id">Visit ID</label>
+              <input class="form-control" id="visit-id" name="visit_id" value="{{ visit_id }}" placeholder="e.g. NWS0000123" required>
+            </div>
+            <div class="col-12 d-flex gap-2">
+              <button class="btn btn-primary" type="submit">Search visit</button>
+              {% if visit_id %}<a class="btn btn-outline-dark" href="{% url 'result-modify' %}">Clear</a>{% endif %}
+            </div>
+          </form>
+          {% if missing %}
+          <div class="alert alert-warning mt-3 mb-0 py-2 small">No visit matches that visit ID.</div>
+          {% elif not visit_id %}
+          <p class="small muted mt-3 mb-0">Enter a visit ID to list radiology and laboratory results that can be returned for modification.</p>
+          {% endif %}
+        </div>
+      </section>
+    </div>
+
+    <div class="col-xl-8">
+      {% if visit %}
+      <section class="card modify-panel mb-0">
+        <div class="modify-panel-head">
+          <h2 class="h5 mb-0">{{ visit.visit_id }}</h2>
+          <div class="small muted">{{ visit.patient.first_name }} {{ visit.patient.last_name }} · {{ visit.centre.code }}</div>
+        </div>
+        <div class="modify-panel-body">
+          {% if can_modify_radiology %}
+          <h3 class="h6">Radiology</h3>
+          {% for report in reports %}
+          <form method="post" class="modify-action-card mb-2">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="modify_radiology">
+            <input type="hidden" name="visit_id" value="{{ visit.visit_id }}">
+            <input type="hidden" name="report" value="{{ report.pk }}">
+            <div class="d-flex flex-wrap justify-content-between gap-2">
+              <strong>{{ report.exam.order.modality.get_modality_type_display }}{% if report.exam.order.procedure %} · {{ report.exam.order.procedure.name }}{% endif %}</strong>
+              <span class="modify-badge">{{ report.get_status_display }}</span>
+            </div>
+            <label class="form-label mt-2" for="reason-rad-{{ report.pk }}">{{ reason_label }}</label>
+            <textarea class="form-control form-control-sm" id="reason-rad-{{ report.pk }}" name="reason" rows="2" required placeholder="Why is this result being returned?"></textarea>
+            <button class="btn btn-primary btn-sm mt-2" type="submit">Return for modification</button>
+          </form>
+          {% empty %}
+          <p class="muted small">No reported radiology result on this visit.</p>
+          {% endfor %}
+          {% endif %}
+
+          {% if can_modify_laboratory %}
+          <h3 class="h6 {% if can_modify_radiology %}mt-3{% endif %}">Laboratory</h3>
+          {% for result in results %}
+          <form method="post" class="modify-action-card mb-2">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="modify_laboratory">
+            <input type="hidden" name="visit_id" value="{{ visit.visit_id }}">
+            <input type="hidden" name="result" value="{{ result.pk }}">
+            <div class="d-flex flex-wrap justify-content-between gap-2">
+              <strong>{{ result.sample.order.test.name }}</strong>
+              <span class="modify-badge">{{ result.get_status_display }}</span>
+            </div>
+            <label class="form-label mt-2" for="reason-lab-{{ result.pk }}">{{ reason_label }}</label>
+            <textarea class="form-control form-control-sm" id="reason-lab-{{ result.pk }}" name="reason" rows="2" required placeholder="Why is this result being returned?"></textarea>
+            <button class="btn btn-primary btn-sm mt-2" type="submit">Return for modification</button>
+          </form>
+          {% empty %}
+          <p class="muted small mb-0">No laboratory result on this visit is ready to return.</p>
+          {% endfor %}
+          {% endif %}
+        </div>
+      </section>
+      {% else %}
+      <section class="card modify-panel mb-0">
+        <div class="modify-panel-body">
+          <h2 class="h5">Return a result</h2>
+          <p class="muted mb-0">Search a visit on the left. Eligible radiology and laboratory results will appear here with a required reason for modification.</p>
+        </div>
+      </section>
+      {% endif %}
+    </div>
+  </div>
+
+  <section class="card modify-panel mb-0" id="modify-history">
+    <div class="modify-panel-head d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div>
+        <h2 class="h5 mb-0">Modification history</h2>
+        <div class="small muted">{{ history_count }} record{{ history_count|pluralize }}</div>
+      </div>
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <form method="get" class="d-flex gap-2 align-items-center m-0">
+          {% if visit_id %}<input type="hidden" name="visit_id" value="{{ visit_id }}">{% endif %}
+          {% if history_q %}<input type="hidden" name="history_q" value="{{ history_q }}">{% endif %}
+          {% if history_service %}<input type="hidden" name="history_service" value="{{ history_service }}">{% endif %}
+          {% if history_from %}<input type="hidden" name="history_from" value="{{ history_from }}">{% endif %}
+          {% if history_to %}<input type="hidden" name="history_to" value="{{ history_to }}">{% endif %}
+          <label class="small muted mb-0" for="modify-per">Rows</label>
+          <select class="form-select form-select-sm" id="modify-per" name="per" onchange="this.form.submit()" aria-label="Rows per page">
+            {% for size in page_sizes %}<option value="{{ size }}" {% if size == history.paginator.per_page %}selected{% endif %}>{{ size }}/page</option>{% endfor %}
+          </select>
+        </form>
+        <a class="btn btn-outline-dark btn-sm" href="{% url 'modify-history-export' %}?fmt=csv&{{ history_query }}">Download CSV</a>
+        <a class="btn btn-outline-dark btn-sm" href="{% url 'modify-history-export' %}?fmt=pdf&{{ history_query }}">Download PDF</a>
+        <a class="btn btn-outline-dark btn-sm" href="{% url 'modify-history-export' %}?fmt=xlsx&{{ history_query }}">Download Excel</a>
+      </div>
+    </div>
+    <div class="modify-panel-body border-bottom">
+      <form method="get" class="row g-2 align-items-end">
+        {% if visit_id %}<input type="hidden" name="visit_id" value="{{ visit_id }}">{% endif %}
+        <input type="hidden" name="per" value="{{ history.paginator.per_page }}">
+        <div class="col-md-3">
+          <label class="form-label" for="history-q">Search</label>
+          <input class="form-control form-control-sm" id="history-q" name="history_q" value="{{ history_q }}" placeholder="Visit, patient, actor, reason">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="history-service">Service</label>
+          <select class="form-select form-select-sm" id="history-service" name="history_service">
+            <option value="">All</option>
+            <option value="RADIOLOGY" {% if history_service == 'RADIOLOGY' %}selected{% endif %}>Radiology</option>
+            <option value="LABORATORY" {% if history_service == 'LABORATORY' %}selected{% endif %}>Laboratory</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="history-from">From</label>
+          <input class="form-control form-control-sm" id="history-from" type="date" name="history_from" value="{{ history_from }}">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="history-to">To</label>
+          <input class="form-control form-control-sm" id="history-to" type="date" name="history_to" value="{{ history_to }}">
+        </div>
+        <div class="col-md-3 d-flex gap-2">
+          <button class="btn btn-sm btn-primary" type="submit">Filter</button>
+          <a class="btn btn-sm btn-outline-dark" href="{% url 'result-modify' %}{% if visit_id %}?visit_id={{ visit_id }}{% endif %}#modify-history">Clear</a>
+        </div>
+      </form>
+    </div>
+    <div class="modify-table-wrap">
+      <table class="table table-sm mb-0">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Who</th>
+            <th>Visit ID</th>
+            <th>Patient</th>
+            <th>Service</th>
+            <th>Summary</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in history %}
+          <tr>
+            <td class="text-nowrap">{{ row.created_at|date:"d M Y H:i" }}</td>
+            <td>{{ row.actor.get_full_name|default:row.actor.username }}</td>
+            <td><a href="?visit_id={{ row.visit.visit_id }}">{{ row.visit.visit_id }}</a></td>
+            <td>{{ row.visit.patient.first_name }} {{ row.visit.patient.last_name }}</td>
+            <td>{{ row.get_service_display }}</td>
+            <td class="small">{{ row.summary }}</td>
+            <td class="small">{{ row.reason|default:"—" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="muted p-3">No modification has been recorded for these filters.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="modify-panel-foot">{% include "includes/pagination.html" with page=history %}</div>
+  </section>
+</div>
+
+<style>
+  .modify-panel { overflow: hidden; }
+  .modify-panel-head {
+    padding: .85rem 1rem;
+    border-bottom: 1px solid var(--line);
+    background: #faf8f4;
+  }
+  .modify-panel-body { padding: 1rem; }
+  .modify-panel-foot {
+    padding: .55rem 1rem .75rem;
+    border-top: 1px solid var(--line);
+    background: #faf8f4;
+  }
+  .modify-action-card {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: .85rem 1rem;
+    background: #fff;
+  }
+  .modify-badge {
+    display: inline-block; font-size: .72rem; font-weight: 600;
+    border-radius: 999px; padding: .18rem .55rem;
+    border: 1px solid var(--line); background: #f7f5f0; color: var(--muted);
+  }
+  .modify-table-wrap { overflow: auto; max-height: 28rem; }
+  .modify-table-wrap thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: #fff; box-shadow: inset 0 -1px 0 var(--line);
+    font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+  }
+</style>
+{% endblock %}

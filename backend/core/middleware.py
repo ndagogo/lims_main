@@ -12,6 +12,17 @@ class AuditContextMiddleware(MiddlewareMixin):
         # Only trust proxy headers when deployment explicitly enables it and the app is behind a trusted proxy.
         request.audit_ip = (forwarded.split(',')[0].strip() if settings.AUDIT_TRUST_X_FORWARDED_FOR and forwarded else request.META.get('REMOTE_ADDR'))
         request.audit_browser = request.META.get('HTTP_USER_AGENT', '')[:255]
+        # Coarse network location only (country/region headers). Precise GPS is not collected.
+        location = ''
+        for header in (
+            'HTTP_CF_IPCOUNTRY', 'HTTP_X_GEO_COUNTRY', 'HTTP_X_APPENGINE_COUNTRY',
+            'HTTP_CLOUDFRONT_VIEWER_COUNTRY', 'HTTP_X_COUNTRY_CODE',
+        ):
+            value = (request.META.get(header) or '').strip().upper()
+            if value and value not in ('XX', 'T1', 'ZZ'):
+                location = value[:120]
+                break
+        request.audit_location = location
         return None
     def process_response(self, request, response):
         if request.method not in self.SAFE_METHODS and getattr(request, 'user', None) is not None and request.user.is_authenticated:
@@ -25,6 +36,7 @@ class AuditContextMiddleware(MiddlewareMixin):
                     method=request.method,
                     ip_address=request.audit_ip,
                     browser=request.audit_browser,
+                    location_hint=getattr(request, 'audit_location', '') or '',
                     department=(getattr(request.user, 'department', '') or '')[:120],
                     detail={'status_code': response.status_code},
                 )

@@ -138,19 +138,26 @@ def cancel_or_refund_item(*, user, invoice_item_id, mode, reason):
             snapshot={**snapshot, 'refund_id': str(refund.pk), 'mode': mode},
         )
         invoice.recalculate()
-        AuditEvent.objects.create(
+        from core.audit import record_audit
+        visit = invoice.visit
+        record_audit(
             actor=user,
             action='TEST_CANCEL_REFUND' if mode == 'CANCEL_AND_REFUND' else 'TEST_CANCELLED',
             object_type='Refund',
             object_id=str(refund.pk),
-            centre=invoice.visit.centre,
+            centre=visit.centre,
+            patient_ref=getattr(visit.patient, 'uhid', '') or '',
+            visit_ref=visit.visit_id,
+            reason=reason,
             detail={
                 'invoice': invoice.invoice_number,
                 'item': description,
                 'mode': mode,
                 'amount': str(refund_amount),
                 'reason': reason,
+                'visit_id': visit.visit_id,
             },
+            category='BILLING',
         )
         try:
             from referrals.services import sync_commission
@@ -203,8 +210,10 @@ def replace_invoice_item(*, user, invoice_item_id, replacement_kind, replacement
             ).first()
             if price is None:
                 raise ValidationError('No price is configured for that laboratory test and tariff.')
+            from laboratory.stat_catalog import default_stat
             order = LabOrder.objects.create(
                 visit=visit, test=price.test, tariff=price.tariff, price=price.price, status='ORDERED',
+                stat=default_stat(),
             )
             try:
                 from workflows.services import bind_workflow
@@ -232,9 +241,11 @@ def replace_invoice_item(*, user, invoice_item_id, replacement_kind, replacement
                 raise ValidationError(
                     f'{procedure.name} needs an active {procedure.get_modality_type_display()} room at this centre.'
                 )
+            from laboratory.stat_catalog import default_stat
             order = ImagingOrder.objects.create(
                 visit=visit, modality=modality, procedure=procedure,
                 clinical_history=visit.clinical_history, requested_by=user, status='ORDERED',
+                stat=default_stat(),
             )
             RadiologyExam.objects.create(order=order)
             new_item = InvoiceItem.objects.create(
@@ -286,12 +297,18 @@ def replace_invoice_item(*, user, invoice_item_id, replacement_kind, replacement
                 'invoice_total': str(invoice.total),
             },
         )
-        AuditEvent.objects.create(
+        from core.audit import record_audit
+        record_audit(
             actor=user,
             action='BILL_EDIT_REPLACE',
             object_type='BillAmendment',
             object_id=str(amendment.pk),
             centre=visit.centre,
+            patient_ref=getattr(visit.patient, 'uhid', '') or '',
+            visit_ref=visit.visit_id,
+            reason=reason,
+            previous_values={'item': removed_description},
+            new_values={'item': added_description, 'delta': str(delta)},
             detail={
                 'invoice': invoice.invoice_number,
                 'removed': removed_description,
@@ -299,7 +316,9 @@ def replace_invoice_item(*, user, invoice_item_id, replacement_kind, replacement
                 'delta': str(delta),
                 'balance_after': str(balance),
                 'reason': reason,
+                'visit_id': visit.visit_id,
             },
+            category='BILLING',
         )
         try:
             from referrals.services import sync_commission

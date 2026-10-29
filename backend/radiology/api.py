@@ -42,6 +42,25 @@ def require_centre(user, centre, capability='can_view'):
 
 def log_event(request, action, obj, centre, detail=None, **kwargs):
     from core.audit import record_audit
+    visit = kwargs.get('visit')
+    patient_ref = kwargs.get('patient_ref', '')
+    visit_ref = kwargs.get('visit_ref', '')
+    order_ref = kwargs.get('order_ref', '')
+    if visit is None:
+        if hasattr(obj, 'visit') and getattr(obj, 'visit', None) is not None:
+            visit = obj.visit
+        else:
+            order = getattr(obj, 'order', None) or getattr(getattr(obj, 'exam', None), 'order', None)
+            if order is not None and hasattr(order, 'visit'):
+                visit = order.visit
+    if visit is not None:
+        visit_ref = visit_ref or visit.visit_id
+        patient_ref = patient_ref or getattr(visit.patient, 'uhid', '') or ''
+        order_pk = getattr(obj, 'pk', '') if obj.__class__.__name__ == 'ImagingOrder' else (
+            getattr(getattr(obj, 'order', None), 'pk', '')
+            or getattr(getattr(getattr(obj, 'exam', None), 'order', None), 'pk', '')
+        )
+        order_ref = order_ref or str(order_pk or '')
     record_audit(
         request=request,
         actor=request.user,
@@ -50,9 +69,9 @@ def log_event(request, action, obj, centre, detail=None, **kwargs):
         object_id=str(obj.pk),
         centre=centre,
         detail=detail or {},
-        patient_ref=kwargs.get('patient_ref', ''),
-        visit_ref=kwargs.get('visit_ref', ''),
-        order_ref=kwargs.get('order_ref', ''),
+        patient_ref=patient_ref,
+        visit_ref=visit_ref,
+        order_ref=order_ref,
         result_ref=kwargs.get('result_ref', ''),
         previous_values=kwargs.get('previous_values'),
         new_values=kwargs.get('new_values'),
@@ -197,12 +216,22 @@ class ImagingOrderViewSet(viewsets.ModelViewSet):
         exam = order.exam
         if exam.accepted_at:
             raise ValidationError('This study has already been accepted.')
-        from radiology.desk import can_reassign_radiologist
-        if exam.assigned_radiologist_id and exam.assigned_radiologist_id != staff.pk and not can_reassign_radiologist(exam):
+        from radiology.desk import can_reassign_radiologist, record_missed_acceptance, release_expired_assignments, user_may_reassign
+        release_expired_assignments()
+        exam.refresh_from_db()
+        changing = exam.assigned_radiologist_id and exam.assigned_radiologist_id != staff.pk
+        returned = bool(exam.returned_at and not exam.assigned_radiologist_id and not exam.accepted_at)
+        if changing and not can_reassign_radiologist(exam):
             raise ValidationError('This study is waiting for the assigned radiologist. Reassignment opens when that time elapses.')
+        if changing or returned:
+            if not user_may_reassign(request.user, exam):
+                raise ValidationError('Only the radiographer who performed this exam can assign another radiologist.')
+            if changing:
+                record_missed_acceptance(exam)
         exam.assigned_radiologist = staff
         exam.accepted_at = None
-        fields = ['assigned_radiologist', 'accepted_at', 'updated_at']
+        exam.returned_at = None
+        fields = ['assigned_radiologist', 'accepted_at', 'returned_at', 'updated_at']
         if exam.pacs_uploaded_at:
             exam.radiologist_assigned_at = timezone.now()
             fields.append('radiologist_assigned_at')
@@ -438,7 +467,10 @@ class RadiologyExamViewSet(viewsets.ReadOnlyModelViewSet):
             exam.assigned_radiologist = request.user
             exam.radiologist_assigned_at = now
         exam.accepted_at = now
-        exam.save(update_fields=['assigned_radiologist', 'radiologist_assigned_at', 'accepted_at', 'updated_at'])
+        exam.returned_at = None
+        exam.save(update_fields=['assigned_radiologist', 'radiologist_assigned_at', 'accepted_at', 'returned_at', 'updated_at'])
+        from radiology.desk import record_accepted_study
+        record_accepted_study(exam, request.user)
         record_exam_activity(
             exam, action='ACCEPT_STUDY', user=request.user,
             from_status=exam.status, to_status=exam.status, request=request,
@@ -575,7 +607,8 @@ class RadiologyReportViewSet(viewsets.ModelViewSet):
             raise ValidationError('Cannot sign a report until the examination is ACQUIRED.')
         if report.status != 'DRAFT':
             raise ValidationError('Only draft reports can be signed.')
-        if not report.findings.strip() or not report.impression.strip():
+        from radiology.reports import report_can_be_signed
+        if not report_can_be_signed(report):
             raise ValidationError('Findings and impression are required before signing.')
         freeze_report_configuration(report, signer=request.user)
         report.status = 'FINAL'
@@ -597,27 +630,35 @@ class RadiologyReportViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(report).data)
 
     @action(detail=True, methods=['post'])
-    def release(self, request, pk=None):
-        """Controlled result release — eligibility checked server-side."""
-        require_workspace(request.user, 'radiology')
+    def approve(self, request, pk=None):
+        """Head of department (approve_result or authenticate_result) clears a reported result for dispatch."""
+        from core.result_control import approve_radiology_report
+        from django.core.exceptions import PermissionDenied as DjangoDenied
+        from django.core.exceptions import ValidationError as DjangoValidation
         report = self.get_object()
-        require_centre(request.user, report.centre, 'can_edit')
-        require_any_role(request.user, RADIOLOGIST_ROLES, perm='radiology.release_report')
-        if report.status != 'FINAL':
-            raise ValidationError('Only signed reports can be released.')
-        from billing.eligibility import assert_radiology_report_releasable
-        assert_radiology_report_releasable(report)
-        report.status = 'RELEASED'
-        report.released_at = timezone.now()
-        report.released_by = request.user
-        report.save(update_fields=['status', 'released_at', 'released_by', 'updated_at'])
-        order = report.exam.order
-        order.status = 'COMPLETED'
-        order.save(update_fields=['status', 'updated_at'])
-        record_exam_activity(
-            report.exam, action='REPORT_RELEASED', user=request.user,
-            from_status=report.exam.status, to_status=report.exam.status, request=request,
-        )
+        try:
+            approve_radiology_report(request.user, report, request=request)
+        except DjangoDenied as exc:
+            raise PermissionDenied(str(exc))
+        except DjangoValidation as exc:
+            raise ValidationError(exc.messages[0] if getattr(exc, 'messages', None) else str(exc))
+        report.refresh_from_db()
+        return Response(self.get_serializer(report).data)
+
+    @action(detail=True, methods=['post'])
+    def release(self, request, pk=None):
+        """Dispatch an approved result. Every click is kept, including a later dispatch of the same result."""
+        from core.result_control import dispatch_radiology_report
+        from django.core.exceptions import PermissionDenied as DjangoDenied
+        from django.core.exceptions import ValidationError as DjangoValidation
+        report = self.get_object()
+        try:
+            dispatch_radiology_report(request.user, report, request=request)
+        except DjangoDenied as exc:
+            raise PermissionDenied(str(exc))
+        except DjangoValidation as exc:
+            raise ValidationError(exc.messages[0] if getattr(exc, 'messages', None) else str(exc))
+        report.refresh_from_db()
         visit = report.exam.order.visit
         log_event(
             request, 'RADIOLOGY_REPORT_RELEASED', report, report.centre,
@@ -630,17 +671,22 @@ class RadiologyReportViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def pdf(self, request, pk=None):
-        """Printable PDF using frozen centre format and authenticator signature."""
+        """Finished report PDF. FINAL=UNVERIFIED, APPROVED=APPROVED; dispatched copies are clean."""
         require_workspace(request.user, 'radiology')
         report = self.get_object()
         require_centre(request.user, report.centre)
-        if report.status not in ('FINAL', 'RELEASED', 'AMENDED'):
-            raise ValidationError('Only signed reports can be printed.')
+        if report.status not in ('FINAL', 'APPROVED', 'RELEASED', 'AMENDED'):
+            raise ValidationError('Sign the report before opening the finished PDF.')
         from radiology.reports import build_radiology_report_pdf
         payload = build_radiology_report_pdf(report)
         visit_id = report.exam.order.visit.visit_id
+        label = {
+            'FINAL': 'unverified',
+            'APPROVED': 'approved',
+        }.get(report.status, 'result')
         response = HttpResponse(payload, content_type='application/pdf')
-        response['Content-Disposition'] = f'inline; filename="radiology-{visit_id}-v{report.version}.pdf"'
+        response['Content-Disposition'] = f'inline; filename="radiology-{label}-{visit_id}-v{report.version}.pdf"'
+        response['Cache-Control'] = 'no-store'
         return response
 
     @action(detail=True, methods=['post'])
@@ -653,7 +699,7 @@ class RadiologyReportViewSet(viewsets.ModelViewSet):
         reason = (request.data.get('reason') or '').strip()
         if not reason:
             raise ValidationError({'reason': 'A reason is required for a formal amendment.'})
-        if report.status not in ('FINAL', 'RELEASED', 'AMENDED'):
+        if report.status not in ('FINAL', 'APPROVED', 'RELEASED', 'AMENDED'):
             raise ValidationError('Formal amendment is only available for signed or released reports.')
         fields = ('indication', 'technique', 'findings', 'impression', 'recommendations')
         changes = {field: request.data[field] for field in fields if field in request.data}
@@ -715,7 +761,7 @@ class RadiologyReportViewSet(viewsets.ModelViewSet):
             raise ValidationError({'reason': 'A reason is required for a formal addendum.'})
         if not text:
             raise ValidationError({'addendum_text': 'Addendum text is required.'})
-        if report.status not in ('FINAL', 'RELEASED', 'AMENDED'):
+        if report.status not in ('FINAL', 'APPROVED', 'RELEASED', 'AMENDED'):
             raise ValidationError('Addenda are only available for signed or released reports.')
         with transaction.atomic():
             old_version = report.version

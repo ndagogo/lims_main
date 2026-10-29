@@ -25,6 +25,7 @@ class Invoice(TimeStampedModel):
         permissions = [
             ('cancel_invoice', 'Can cancel an invoice'),
             ('approve_discount', 'Can approve invoice discounts'),
+            ('reprint_invoice', 'Can reprint an invoice'),
         ]
     def save(self, *args, **kwargs):
         if not self.invoice_number:

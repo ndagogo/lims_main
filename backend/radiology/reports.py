@@ -9,7 +9,13 @@ from django.conf import settings
 from django.utils import timezone
 
 
-def build_radiology_report_pdf(report):
+def build_radiology_report_pdf(report, *, watermark_text=None):
+    """Finished radiology result PDF (centre letterhead + frozen body + signature).
+
+    watermark_text:
+      - explicit string: use as-is (including '' to clear)
+      - None: FINAL → UNVERIFIED, APPROVED → APPROVED, RELEASED/AMENDED → clean
+    """
     from reportlab.lib.colors import HexColor, white
     from reportlab.lib.enums import TA_CENTER
     from reportlab.lib.pagesizes import A4
@@ -20,8 +26,16 @@ def build_radiology_report_pdf(report):
     )
     import io
 
-    snap = report.configuration_snapshot or {}
-    fmt = snap.get('format') or {}
+    from core.report_format import format_snapshot, status_watermark_text
+
+    snap = dict(report.configuration_snapshot or {})
+    if not snap.get('format'):
+        snap['format'] = format_snapshot(report.centre)
+    fmt = dict(snap.get('format') or {})
+    if watermark_text is not None:
+        fmt['watermark_text'] = watermark_text
+    else:
+        fmt['watermark_text'] = status_watermark_text(report.status, report.centre)
     auth = snap.get('authenticator') or {}
     patient = report.exam.order.visit.patient
     visit = report.exam.order.visit
@@ -224,6 +238,15 @@ def _report_sections(report, snap):
     return [(heading, body) for heading, body in sections if (body or '').strip() and (not heading or _substantive(body))]
 
 
+def report_can_be_signed(report):
+    """A rich template stores the impression inside the report body, not a separate field."""
+    findings = (report.findings or '').strip()
+    impression = (report.impression or '').strip()
+    if findings and impression:
+        return True
+    return bool(findings) and _html_is_full_report(findings)
+
+
 def _html_is_full_report(findings):
     if not _looks_like_html(findings):
         return False
@@ -323,11 +346,11 @@ def _paint_page(pdf, doc, ctx):
     pdf.saveState()
     watermark = (fmt.get('watermark_text') or '').strip()
     if watermark:
-        pdf.setFont(font, 42)
-        pdf.setFillGray(0.92)
+        pdf.setFont(font, 48)
+        pdf.setFillGray(0.88)
         pdf.translate(width / 2, height / 2)
         pdf.rotate(32)
-        pdf.drawCentredString(0, 0, watermark[:40])
+        pdf.drawCentredString(0, 0, watermark[:80])
         pdf.restoreState()
         pdf.saveState()
 

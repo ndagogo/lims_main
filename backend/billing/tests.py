@@ -180,3 +180,23 @@ class PhaseTwoAccountsTests(TestCase):
         pdf_resp=screen.get('/accounts/export/',{'period':'monthly','format':'pdf','dataset':'summary'})
         self.assertEqual(pdf_resp.status_code,200)
         self.assertEqual(pdf_resp['Content-Type'],'application/pdf')
+
+    def test_accounts_can_reprint_invoice_and_others_cannot(self):
+        from core.models import AuditEvent
+        InvoiceItem.objects.create(invoice=self.invoice, test=self.test, unit_price=Decimal('5500.00'))
+        screen = Client()
+        screen.force_login(self.user)
+        page = screen.get('/accounts/')
+        self.assertContains(page, 'Reprint Invoice')
+        self.assertContains(page, f'/accounts/invoices/{self.invoice.pk}/reprint/')
+        printed = screen.get(f'/accounts/invoices/{self.invoice.pk}/reprint/')
+        self.assertEqual(printed.status_code, 200)
+        self.assertContains(printed, self.invoice.invoice_number)
+        self.assertContains(printed, 'Print invoice')
+        self.assertTrue(AuditEvent.objects.filter(action='INVOICE_REPRINTED', visit_ref=self.visit.visit_id).exists())
+        outsider = User.objects.create_user(username='lab.only', email='lab.only@example.test', password='A-long-unique-password-2026!')
+        UserCentreAccess.objects.create(user=outsider, centre=self.centre, can_view=True, can_edit=True)
+        outsider.groups.add(Group.objects.get_or_create(name='Laboratory Scientist')[0])
+        screen.force_login(outsider)
+        denied = screen.get(f'/accounts/invoices/{self.invoice.pk}/reprint/')
+        self.assertIn(denied.status_code, (302, 403))

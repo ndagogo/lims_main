@@ -9,6 +9,19 @@
   </div>
   <a class="btn btn-outline-secondary btn-sm" href="{% url 'patient-registration' %}?q={{ patient.uhid }}">Back to registration</a>
 </div>
+
+{% if visits %}
+<div class="card p-3 mb-4">
+  <h2 class="h6 mb-2">Visit audit trails</h2>
+  <p class="muted small mb-2">Open a visit for the full registration audit (actor, IP, browser, location, before/after values).</p>
+  <div class="d-flex flex-wrap gap-2">
+    {% for visit in visits %}
+      <a class="btn btn-sm btn-outline-dark" href="{% url 'visit-audit' visit.visit_id %}">{{ visit.visit_id }}</a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <div class="card p-4">
   <h2 class="h5 mb-3">Activity timeline</h2>
   <p class="muted small">Visits, billing, documents, discounts, and audit events for this patient in centres you can see.</p>

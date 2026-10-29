@@ -1,6 +1,7 @@
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
+watchPatterns = ["backend/**", "Dockerfile", "railway.toml"]
 
 [deploy]
 preDeployCommand = ["python manage.py migrate --noinput"]

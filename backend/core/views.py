@@ -52,7 +52,7 @@ from referrals.remap import (
     real_doctors_for_centre, remap_history, remap_referring_doctor,
     search_patients_for_remap, visit_has_request_form,
 )
-from laboratory.models import Tariff, TestPrice
+from laboratory.models import StatType, Tariff, TestPrice
 from communications.messaging import EVENT_REGISTRATION_SUCCESS, notify_patient, notify_referral_received
 from patients.registration import (
     PHONE_CODES, apply_guardian, apply_notification_prefs, apply_visit_details, normalize_phone_digits,
@@ -463,7 +463,16 @@ def patient_registration(request):
             except ValidationError as exc:
                 messages.error(request, ' '.join(exc.messages))
                 return redirect('patient-registration')
-            AuditEvent.objects.create(actor=request.user, action='VISIT_OPENED', object_type='Visit', object_id=str(visit.pk), path=request.path, method='POST', centre=centre, detail={'uhid': patient.uhid, 'visit_id': visit.visit_id, 'invoice': invoice.invoice_number, 'status': visit.status})
+            from patients.visit_audit import record_visit_audit
+            record_visit_audit(
+                request, visit, action='VISIT_OPENED',
+                detail={
+                    'uhid': patient.uhid, 'visit_id': visit.visit_id,
+                    'invoice': invoice.invoice_number, 'status': visit.status,
+                    'total': str(invoice.total),
+                },
+                new_values={'status': visit.status, 'invoice': invoice.invoice_number},
+            )
             notify_patient(
                 event_key=EVENT_REGISTRATION_SUCCESS,
                 visit=visit,
@@ -509,7 +518,16 @@ def patient_registration(request):
                 apply_visit_details(visit, request.POST)
                 invoice = process_registration(visit, request.user, request.POST)
                 _store_document(request, visit)
-                AuditEvent.objects.create(actor=request.user, action='PATIENT_REGISTERED', object_type='Visit', object_id=str(visit.pk), path=request.path, method='POST', centre=centre, detail={'uhid': patient.uhid, 'visit_id': visit.visit_id, 'invoice': invoice.invoice_number, 'status': visit.status})
+                from patients.visit_audit import record_visit_audit
+                record_visit_audit(
+                    request, visit, action='PATIENT_REGISTERED',
+                    detail={
+                        'uhid': patient.uhid, 'visit_id': visit.visit_id,
+                        'invoice': invoice.invoice_number, 'status': visit.status,
+                        'total': str(invoice.total),
+                    },
+                    new_values={'uhid': patient.uhid, 'visit_id': visit.visit_id, 'status': visit.status},
+                )
             notify_patient(
                 event_key=EVENT_REGISTRATION_SUCCESS,
                 visit=visit,
@@ -595,6 +613,13 @@ def patient_registration(request):
         'phone_codes': PHONE_CODES,
         'tariffs': Tariff.objects.filter(is_active=True).order_by('name'),
         'test_catalog': _test_catalog(),
+        'stat_types': [
+            {
+                'id': row.pk, 'name': row.name, 'color': row.color,
+                'text_color': row.text_color, 'is_default': row.is_default,
+            }
+            for row in StatType.objects.filter(is_active=True).order_by('sort_order', 'name')
+        ],
     })
 
 
@@ -604,9 +629,37 @@ def patient_timeline(request, pk):
     patient = get_object_or_404(Patient, pk=pk)
     if not request.user.is_superuser and not _visible_patients(request.user).filter(pk=patient.pk).exists():
         raise Http404()
+    from patients.models import Visit
+    visits = Visit.objects.filter(patient=patient).order_by('-created_at')
+    if not request.user.is_superuser:
+        visits = visits.filter(
+            centre__user_access__user=request.user,
+            centre__user_access__can_view=True,
+            centre__is_active=True,
+        ).distinct()
     return render(request, 'patients/timeline.html', {
         'patient': patient,
         'timeline': build_patient_timeline(request.user, patient),
+        'visits': visits[:50],
+    })
+
+
+@login_required
+def visit_audit_trail(request, visit_id):
+    """Enterprise per-registration audit trail with actor, IP, browser, and network location."""
+    require_workspace(request.user, 'registration', 'accounts', 'laboratory', 'radiology', 'phlebotomy', 'audit')
+    from patients.models import Visit
+    from patients.visit_audit import build_visit_audit_trail, user_may_view_visit
+    visit = get_object_or_404(
+        Visit.objects.select_related('patient', 'centre', 'registered_by'),
+        visit_id=visit_id,
+    )
+    if not user_may_view_visit(request.user, visit):
+        raise Http404()
+    return render(request, 'patients/visit_audit.html', {
+        'visit': visit,
+        'patient': visit.patient,
+        'events': build_visit_audit_trail(request.user, visit),
     })
 
 
@@ -665,7 +718,7 @@ def patient_demographics(request):
             messages.error(request, 'Select a patient that belongs to your centres.')
             return redirect('patient-demographics')
         try:
-            patient, changed = apply_demographic_updates(request.user, patient, request.POST)
+            patient, changed = apply_demographic_updates(request.user, patient, request.POST, request=request)
             messages.success(request, f'Demographics updated for {patient.uhid} ({len(changed)} field(s)).')
             return redirect(f"{request.path}?q={patient.uhid}&patient={patient.pk}")
         except ValidationError as exc:
@@ -796,7 +849,12 @@ def _attach_document(request):
     except ValidationError as exc:
         messages.error(request, ' '.join(exc.messages))
         return redirect('patient-registration')
-    AuditEvent.objects.create(actor=request.user, action='DOCUMENT_FILED', object_type='Visit', object_id=str(visit.pk), path=request.path, method='POST', centre=visit.centre, detail={'visit_id': visit.visit_id, 'document_type': request.POST.get('document_type', 'REGISTRATION')})
+    from patients.visit_audit import record_visit_audit
+    record_visit_audit(
+        request, visit, action='DOCUMENT_FILED',
+        detail={'visit_id': visit.visit_id, 'document_type': request.POST.get('document_type', 'REGISTRATION')},
+        new_values={'document_type': request.POST.get('document_type', 'REGISTRATION')},
+    )
     messages.success(request, f'Document filed on {visit.visit_id}.')
     return redirect('patient-registration')
 
@@ -816,7 +874,8 @@ def download_patient_document(request, pk):
     if not allowed:
         raise Http404()
     name = document.file.name.rsplit('/', 1)[-1]
-    return FileResponse(document.file.open('rb'), as_attachment=True, filename=name)
+    inline = request.GET.get('inline') == '1'
+    return FileResponse(document.file.open('rb'), as_attachment=not inline, filename=name)
 
 
 @login_required
@@ -914,6 +973,34 @@ def payment_receipt(request, pk):
     require_workspace(request.user, 'accounts')
     payment = receipt_payment(request.user, pk)
     return render(request, 'billing/receipt.html', {'payment': payment, 'invoice': payment.invoice})
+
+
+@login_required
+def invoice_reprint(request, pk):
+    """Printable invoice sheet for users with reprint_invoice privilege."""
+    require_workspace(request.user, 'accounts')
+    from billing.workspace import invoice_for_reprint
+    from core.audit import record_audit
+    invoice = invoice_for_reprint(request.user, pk)
+    visit = invoice.visit
+    record_audit(
+        request=request,
+        actor=request.user,
+        action='INVOICE_REPRINTED',
+        object_type='Invoice',
+        object_id=str(invoice.pk),
+        centre=visit.centre,
+        patient_ref=getattr(visit.patient, 'uhid', '') or '',
+        visit_ref=visit.visit_id,
+        detail={
+            'invoice': invoice.invoice_number,
+            'visit_id': visit.visit_id,
+            'status': invoice.status,
+            'total': str(invoice.total),
+        },
+        category='BILLING',
+    )
+    return render(request, 'billing/invoice_print.html', {'invoice': invoice})
 
 
 def _lab_flash(request, handler, redirect_name, *, stage_param='stage'):
@@ -1015,7 +1102,7 @@ def radiology_workspace(request):
             study = RadiologyExam.objects.filter(pk=exam_id).values_list('order_id', flat=True).first()
         if study:
             params['study'] = study
-        for key in ('modality', 'when', 'desk'):
+        for key in ('modality', 'when', 'desk', 'date_from', 'date_to', 'visit', 'status', 'patient_bill_id'):
             if request.GET.get(key):
                 params[key] = request.GET.get(key)
         target = reverse('radiology-workspace')
@@ -1023,6 +1110,54 @@ def radiology_workspace(request):
             target = f'{target}?{urlencode(params)}'
         return redirect(target)
     return render(request, 'radiology/workspace.html', build_radiology_context(request))
+
+
+@login_required
+def radiology_performance(request):
+    from core.paging import paginate
+    from core.platform_admin import require_platform_controls
+    from radiology.desk import performance_export_rows, radiologist_performance
+    from reporting.exports import tables_export
+    from urllib.parse import urlencode
+
+    require_platform_controls(request)
+    payload = radiologist_performance(request.GET)
+    export_fmt = (request.GET.get('export') or '').lower()
+    if export_fmt in ('csv', 'pdf', 'xlsx', 'excel'):
+        if export_fmt == 'excel':
+            export_fmt = 'xlsx'
+        summary_rows = [
+            [row['display_name'], row['accepted'], row['missed'], row['total']]
+            for row in payload['summary']
+        ]
+        return tables_export(
+            'Radiologist performance',
+            [
+                {
+                    'title': 'Summary',
+                    'headers': ['Radiologist', 'Accepted', 'Not accepted in time', 'Assignments'],
+                    'rows': summary_rows,
+                },
+                {
+                    'title': 'Activity',
+                    'headers': ['When', 'Radiologist', 'Visit', 'Study', 'Outcome', 'Window (min)'],
+                    'rows': performance_export_rows(payload['activity']),
+                },
+            ],
+            fmt=export_fmt,
+            basename='radiologist-performance',
+        )
+    activity_page = paginate(request, payload['activity'], 'page')
+    filters = {key: value for key, value in payload['filters'].items() if not key.startswith('_')}
+    list_query = urlencode({key: value for key, value in filters.items() if value})
+    return render(request, 'radiology/performance.html', {
+        'summary': payload['summary'],
+        'activity': activity_page,
+        'filters': filters,
+        'radiologist_choices': payload['radiologist_choices'],
+        'totals': payload['totals'],
+        'list_query': list_query,
+    })
 
 
 @login_required

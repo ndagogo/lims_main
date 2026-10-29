@@ -516,6 +516,20 @@ class LabResultViewSet(viewsets.ReadOnlyModelViewSet):
         result.reviewed_by=request.user; result.reviewed_at=timezone.now(); result.status='REVIEWED' if approve else 'DRAFT'; result.save(update_fields=['reviewed_by','reviewed_at','status','updated_at'])
         ResultReview.objects.create(result=result,action='APPROVED' if approve else 'REJECTED',reviewer=request.user,note=note)
         set_status(result.sample,request,'UNDER_REVIEW' if approve else 'RESULT_ENTERED','RESULT_REVIEWED' if approve else 'RESULT_REJECTED',note)
+        from core.audit import record_audit
+        visit = result.sample.order.visit
+        record_audit(
+            request=request, actor=request.user,
+            action='LAB_RESULT_APPROVED' if approve else 'LAB_RESULT_REJECTED',
+            object_type='LabResult', object_id=str(result.pk), centre=result.sample.centre,
+            patient_ref=getattr(visit.patient, 'uhid', '') or '', visit_ref=visit.visit_id,
+            order_ref=str(result.sample.order_id), result_ref=str(result.pk),
+            reason=note,
+            previous_values={'status': 'SUBMITTED'},
+            new_values={'status': result.status, 'decision': 'APPROVE' if approve else 'REJECT'},
+            detail={'visit_id': visit.visit_id, 'note': note, 'sample_id': result.sample.sample_id},
+            category='CLINICAL',
+        )
         return Response(LabResultSerializer(result).data)
     @action(detail=True,methods=['post'])
     def authenticate(self,request,pk=None):
@@ -548,6 +562,12 @@ class LabResultViewSet(viewsets.ReadOnlyModelViewSet):
         set_status(result.sample,request,'RELEASED','RESULT_RELEASED')
         result.sample.order.status='COMPLETED'; result.sample.order.save(update_fields=['status','updated_at'])
         _queue_result_ready(result, request.user)
+        from core.result_control import record_dispatch
+        visit = result.sample.order.visit
+        record_dispatch(
+            user=request.user, service='LABORATORY', visit=visit, object_type='LabResult',
+            object_id=result.pk, summary=f'{visit.visit_id} laboratory result', request=request,
+        )
         return Response(LabResultSerializer(result).data)
     @action(detail=True, methods=['post'])
     def amend(self, request, pk=None):

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Laboratory tests | Catalog | HFDN{% endblock %}
 {% block content %}
-{% include "catalog/_page_header.html" with eyebrow="LABORATORY" title="Laboratory tests" subtitle="Catalogue configuration: specimen, workflow, TAT, outsourcing, parameters, reference ranges, and result templates." %}
+{% include "catalog/_page_header.html" with eyebrow="LABORATORY" title="Laboratory tests" subtitle="Catalogue configuration: specimen and container types, workflow, TAT, outsourcing, parameters, reference ranges, and result templates." %}
 <div class="row g-4">
   <div class="col-xl-5">
     <div class="card p-4 mb-4 catalog-enter">
@@ -46,9 +46,21 @@
             {% for group in service_groups %}<option value="{{ group.pk }}">{{ group.name }} ({{ group.code }})</option>{% endfor %}
           </select>
         </div>
-        <div class="col-md-6"><label class="form-label">Specimen type</label><input class="form-control" name="specimen" placeholder="EDTA whole blood"></div>
+        <div class="col-md-6">
+          <label class="form-label">Specimen type</label>
+          <select class="form-select" name="specimen_type">
+            <option value="">— Not set —</option>
+            {% for row in specimen_choices %}<option value="{{ row.pk }}">{{ row.name }}</option>{% endfor %}
+          </select>
+        </div>
         <div class="col-md-3"><label class="form-label">Volume</label><input class="form-control" name="sample_volume" placeholder="3 mL"></div>
-        <div class="col-md-3"><label class="form-label">Container</label><input class="form-control" name="container" placeholder="Lavender EDTA"></div>
+        <div class="col-md-6">
+          <label class="form-label">Container types</label>
+          <select class="form-select" name="container_types" multiple size="4">
+            {% for row in container_choices %}<option value="{{ row.pk }}">{{ row.name }}</option>{% endfor %}
+          </select>
+          <div class="form-text">Hold Ctrl to choose more than one container.</div>
+        </div>
         <div class="col-12"><label class="form-label">Collection requirements</label><textarea class="form-control" name="collection_requirements" rows="2"></textarea></div>
         <div class="col-12"><label class="form-label">Handling instructions</label><textarea class="form-control" name="handling_instructions" rows="2"></textarea></div>
         <div class="col-md-4"><label class="form-label">Workflow</label>
@@ -90,9 +102,21 @@
               {% for group in service_groups %}<option value="{{ group.pk }}" {% if selected.service_group_id == group.pk %}selected{% endif %}>{{ group.name }} ({{ group.code }})</option>{% endfor %}
             </select>
           </div>
-          <div class="col-md-6"><label class="form-label">Specimen</label><input class="form-control" name="specimen" value="{{ selected.specimen }}"></div>
+          <div class="col-md-6">
+            <label class="form-label">Specimen type</label>
+            <select class="form-select" name="specimen_type">
+              <option value="">— Not set —</option>
+              {% for row in specimen_choices %}<option value="{{ row.pk }}" {% if selected.specimen_type_id == row.pk %}selected{% endif %}>{{ row.name }}</option>{% endfor %}
+            </select>
+          </div>
           <div class="col-md-3"><label class="form-label">Volume</label><input class="form-control" name="sample_volume" value="{{ selected.sample_volume }}"></div>
-          <div class="col-md-3"><label class="form-label">Container</label><input class="form-control" name="container" value="{{ selected.container }}"></div>
+          <div class="col-md-6">
+            <label class="form-label">Container types</label>
+            <select class="form-select" name="container_types" multiple size="4">
+              {% for row in container_choices %}<option value="{{ row.pk }}" {% if row.pk in selected_container_ids %}selected{% endif %}>{{ row.name }}</option>{% endfor %}
+            </select>
+            <div class="form-text">Hold Ctrl to choose more than one container.</div>
+          </div>
           <div class="col-12"><label class="form-label">Collection requirements</label><textarea class="form-control" name="collection_requirements" rows="2">{{ selected.collection_requirements }}</textarea></div>
           <div class="col-12"><label class="form-label">Handling instructions</label><textarea class="form-control" name="handling_instructions" rows="2">{{ selected.handling_instructions }}</textarea></div>
           <div class="col-md-4"><label class="form-label">Workflow</label>
@@ -194,6 +218,171 @@
         <p class="muted mb-0">Open a test to configure specimen handling, workflow/TAT, parameters, age/sex reference intervals, and link published result templates. Instrument analyser codes are managed under Platform → Analyzer mappings.</p>
       </div>
     {% endif %}
+  </div>
+</div>
+
+<div class="row g-4 mt-1">
+  <div class="col-xl-6">
+    <div class="card p-4 catalog-enter" id="specimen-types">
+      <h2 class="h5">Specimen types</h2>
+      <p class="muted small">Platform administrators create, rename, and delete the specimen list used on every test.</p>
+      <div class="table-responsive mb-3">
+        <table class="table align-middle mb-0">
+          <thead><tr><th>Name</th><th>Tests</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for row in specimen_types %}
+              <tr class="{% if editing_specimen and editing_specimen.pk == row.pk %}table-active{% endif %}">
+                <td><a class="fw-semibold text-decoration-none" href="?specimen={{ row.pk }}#specimen-types">{{ row.name }}</a></td>
+                <td>{{ row.test_count }}</td>
+                <td>{% include "catalog/_active_badge.html" with is_active=row.is_active %}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="3" class="text-center muted py-3">No specimen types yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if editing_specimen %}
+        <form method="post" class="mb-3" onsubmit="return confirm('Delete {{ editing_specimen.name }}? Only unused types can be removed.');">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete_specimen">
+          <input type="hidden" name="specimen" value="{{ editing_specimen.pk }}">
+          <button class="btn btn-outline-danger btn-sm" type="submit">Delete specimen type</button>
+        </form>
+        <form method="post" class="row g-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update_specimen">
+          <input type="hidden" name="specimen" value="{{ editing_specimen.pk }}">
+          <input type="hidden" name="is_active_submitted" value="1">
+          <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ editing_specimen.name }}" maxlength="80" required></div>
+          <div class="col-md-4 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="edit-specimen-active" {% if editing_specimen.is_active %}checked{% endif %}><label class="form-check-label" for="edit-specimen-active">Active</label></div></div>
+          <div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Save specimen type</button></div>
+        </form>
+      {% endif %}
+      <form method="post" class="row g-2 {% if editing_specimen %}mt-3{% endif %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_specimen">
+        <input type="hidden" name="is_active_submitted" value="1">
+        <div class="col-md-8"><label class="form-label">New specimen type</label><input class="form-control" name="name" maxlength="80" required placeholder="e.g. Serum"></div>
+        <div class="col-md-4 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="new-specimen-active" checked><label class="form-check-label" for="new-specimen-active">Active</label></div></div>
+        <div class="col-12"><button class="btn btn-outline-primary btn-sm" type="submit">Create specimen type</button></div>
+      </form>
+    </div>
+  </div>
+  <div class="col-xl-6">
+    <div class="card p-4 catalog-enter" id="container-types">
+      <h2 class="h5">Container types</h2>
+      <p class="muted small">A test can be assigned more than one container from this list.</p>
+      <div class="table-responsive mb-3">
+        <table class="table align-middle mb-0">
+          <thead><tr><th>Name</th><th>Tests</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for row in container_types %}
+              <tr class="{% if editing_container and editing_container.pk == row.pk %}table-active{% endif %}">
+                <td><a class="fw-semibold text-decoration-none" href="?container={{ row.pk }}#container-types">{{ row.name }}</a></td>
+                <td>{{ row.test_count }}</td>
+                <td>{% include "catalog/_active_badge.html" with is_active=row.is_active %}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="3" class="text-center muted py-3">No container types yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if editing_container %}
+        <form method="post" class="mb-3" onsubmit="return confirm('Delete {{ editing_container.name }}? Only unused types can be removed.');">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete_container">
+          <input type="hidden" name="container" value="{{ editing_container.pk }}">
+          <button class="btn btn-outline-danger btn-sm" type="submit">Delete container type</button>
+        </form>
+        <form method="post" class="row g-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update_container">
+          <input type="hidden" name="container" value="{{ editing_container.pk }}">
+          <input type="hidden" name="is_active_submitted" value="1">
+          <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ editing_container.name }}" maxlength="80" required></div>
+          <div class="col-md-4 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="edit-container-active" {% if editing_container.is_active %}checked{% endif %}><label class="form-check-label" for="edit-container-active">Active</label></div></div>
+          <div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Save container type</button></div>
+        </form>
+      {% endif %}
+      <form method="post" class="row g-2 {% if editing_container %}mt-3{% endif %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_container">
+        <input type="hidden" name="is_active_submitted" value="1">
+        <div class="col-md-8"><label class="form-label">New container type</label><input class="form-control" name="name" maxlength="80" required placeholder="e.g. EDTA (lavender)"></div>
+        <div class="col-md-4 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="new-container-active" checked><label class="form-check-label" for="new-container-active">Active</label></div></div>
+        <div class="col-12"><button class="btn btn-outline-primary btn-sm" type="submit">Create container type</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4 mt-1">
+  <div class="col-12">
+    <div class="card p-4 catalog-enter" id="stat-types">
+      <h2 class="h5">Stat types</h2>
+      <p class="muted small">Front desk chooses one of these for each test at registration. Urgent is black, Critical is red, and Normal is green. Phlebotomy, the laboratory, and radiology show the same stat.</p>
+      <div class="table-responsive mb-3">
+        <table class="table align-middle mb-0">
+          <thead><tr><th>Stat</th><th>Orders</th><th>Default</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for row in stat_types %}
+              <tr class="{% if editing_stat and editing_stat.pk == row.pk %}table-active{% endif %}">
+                <td><a class="text-decoration-none" href="?stat_type={{ row.pk }}#stat-types">{% include "includes/stat_badge.html" with stat=row %}</a></td>
+                <td>{{ row.lab_count|add:row.imaging_count }}</td>
+                <td>{% if row.is_default %}Yes{% else %}—{% endif %}</td>
+                <td>{% include "catalog/_active_badge.html" with is_active=row.is_active %}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="4" class="text-center muted py-3">No stat types yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if editing_stat %}
+        <form method="post" class="mb-3" onsubmit="return confirm('Delete {{ editing_stat.name }}? Only unused stats can be removed.');">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete_stat">
+          <input type="hidden" name="stat_type" value="{{ editing_stat.pk }}">
+          <button class="btn btn-outline-danger btn-sm" type="submit">Delete stat type</button>
+        </form>
+        <form method="post" class="row g-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update_stat">
+          <input type="hidden" name="stat_type" value="{{ editing_stat.pk }}">
+          <input type="hidden" name="is_active_submitted" value="1">
+          <div class="col-md-4"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ editing_stat.name }}" maxlength="40" required></div>
+          <div class="col-md-2"><label class="form-label">Colour</label><input class="form-control form-control-color" type="color" name="color" value="{{ editing_stat.color }}"></div>
+          <div class="col-md-2"><label class="form-label">Text</label>
+            <select class="form-select" name="text_color">
+              <option value="#ffffff" {% if editing_stat.text_color == '#ffffff' %}selected{% endif %}>White</option>
+              <option value="#111111" {% if editing_stat.text_color == '#111111' %}selected{% endif %}>Black</option>
+            </select>
+          </div>
+          <div class="col-md-2"><label class="form-label">Order</label><input class="form-control" name="sort_order" type="number" min="0" value="{{ editing_stat.sort_order }}"></div>
+          <div class="col-md-2 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_default" id="edit-stat-default" {% if editing_stat.is_default %}checked{% endif %}><label class="form-check-label" for="edit-stat-default">Default</label></div></div>
+          <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="edit-stat-active" {% if editing_stat.is_active %}checked{% endif %}><label class="form-check-label" for="edit-stat-active">Active</label></div></div>
+          <div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Save stat type</button></div>
+        </form>
+      {% endif %}
+      <form method="post" class="row g-2 {% if editing_stat %}mt-3{% endif %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_stat">
+        <input type="hidden" name="is_active_submitted" value="1">
+        <div class="col-md-4"><label class="form-label">New stat type</label><input class="form-control" name="name" maxlength="40" required placeholder="e.g. ASAP"></div>
+        <div class="col-md-2"><label class="form-label">Colour</label><input class="form-control form-control-color" type="color" name="color" value="#111111"></div>
+        <div class="col-md-2"><label class="form-label">Text</label>
+          <select class="form-select" name="text_color">
+            <option value="#ffffff" selected>White</option>
+            <option value="#111111">Black</option>
+          </select>
+        </div>
+        <div class="col-md-2"><label class="form-label">Order</label><input class="form-control" name="sort_order" type="number" min="0" value="40"></div>
+        <div class="col-md-2 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="new-stat-active" checked><label class="form-check-label" for="new-stat-active">Active</label></div></div>
+        <div class="col-12"><button class="btn btn-outline-primary btn-sm" type="submit">Create stat type</button></div>
+      </form>
+    </div>
   </div>
 </div>
 {% endblock %}

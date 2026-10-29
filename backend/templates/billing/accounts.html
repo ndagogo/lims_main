@@ -179,12 +179,12 @@
 </div>
 {% endif %}
 
-{% if is_accountant and invoices %}
+{% if invoices and is_accountant or invoices and can_reprint_invoice %}
 <div class="card p-4 mb-4">
   <h2 class="h5">Invoices</h2>
   <div class="table-responsive">
     <table class="table align-middle">
-      <thead><tr><th>Invoice</th><th>Visit</th><th>Patient</th><th>Total</th><th>Status</th><th>Cancel</th></tr></thead>
+      <thead><tr><th>Invoice</th><th>Visit</th><th>Patient</th><th>Total</th><th>Status</th><th>Cancel</th><th>Reprint Invoice</th></tr></thead>
       <tbody>
         {% for invoice in invoices %}
           <tr>
@@ -204,8 +204,13 @@
                 </form>
               {% endif %}
             </td>
+            <td>
+              {% if can_reprint_invoice %}
+                <a class="btn btn-sm btn-outline-dark" href="{% url 'invoice-reprint' invoice.pk %}" target="_blank">Reprint Invoice</a>
+              {% endif %}
+            </td>
           </tr>
-        {% empty %}<tr><td colspan="6" class="muted text-center py-4">No invoices for your centres.</td></tr>{% endfor %}
+        {% empty %}<tr><td colspan="7" class="muted text-center py-4">No invoices for your centres.</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>

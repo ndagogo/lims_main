@@ -79,16 +79,18 @@ Historical notes remain in `PHASES_5_TO_7.md`. Current gap tracking lives in `do
 
 ## GitHub + Railway deployment
 
+Canonical remote: https://github.com/ndagogo/lims_main.git
+
 Safe workflow (local secrets stay local; production secrets stay in Railway):
 
 1. Keep working with `backend/.env` (gitignored).
-2. Commit and push code to a private GitHub repo.
-3. Connect Railway to that GitHub repo (`main`).
+2. Commit and push code to `lims_main` (`main`).
+3. Connect Railway to `ndagogo/lims_main` (`main` only).
 4. Set production variables from `railway.variables.example` in the Railway dashboard.
-5. Attach Postgres, mount `/app/media` (or configure S3), deploy.
+5. Attach Postgres, mount `/app/media` with `SERVE_MEDIA=True` (or configure S3), deploy.
 
 Details: [`RAILWAY_DEPLOYMENT.md`](RAILWAY_DEPLOYMENT.md) · checklist: [`RAILWAY_CHECKLIST.md`](RAILWAY_CHECKLIST.md)
 
-Runtime on Railway: Docker build runs `collectstatic` → pre-deploy runs `migrate` → gunicorn serves on `$PORT` → health check `/healthz`.
+Runtime on Railway: Docker build runs `collectstatic` → pre-deploy runs `migrate` → entrypoint + gunicorn on `$PORT` → health check `/healthz`.
 
 **Do not use real patient data until migrations and automated tests have been run successfully against PostgreSQL and security, clinical workflow, upload-storage, and backup/restore reviews are complete.**

@@ -9,7 +9,7 @@ from django.shortcuts import get_object_or_404
 from billing.api import DiscountRequestViewSet, InvoiceViewSet, PaymentViewSet
 from billing.models import DiscountRequest, Invoice, Payment
 from billing.reports import build_accountant_report, export_report
-from core.access import can_approve_discount, is_accountant
+from core.access import can_approve_discount, can_reprint_invoice, is_accountant
 from core.models import UserCentreAccess
 from core.paging import paginate
 from core.staff_api import call_action, call_create, describe
@@ -169,8 +169,9 @@ def build_accounts_context(request):
             'gpage',
         )
         _decorate_discounts(pending_page.object_list)
+    reprint = can_reprint_invoice(user)
     return {
-        'invoices': paginate(request, invoices, 'ipage') if accountant else None,
+        'invoices': paginate(request, invoices, 'ipage') if (accountant or reprint) else None,
         'payments': paginate(request, payments, 'rpage'),
         'discounts': pending_page,
         'my_discount_requests': my_requests,
@@ -184,8 +185,29 @@ def build_accounts_context(request):
         'can_approve_discount': approve_discount,
         'can_cancel_invoice': accountant,
         'can_reverse_payment': accountant,
+        'can_reprint_invoice': reprint,
         'is_accountant': accountant,
     }
+
+
+def invoice_for_reprint(user, pk):
+    """Return a centre-visible invoice for reprint, or raise Http404."""
+    if not can_reprint_invoice(user):
+        raise PermissionDenied('reprint_invoice privilege is required.')
+    invoice = get_object_or_404(
+        Invoice.objects.select_related(
+            'visit__patient', 'visit__centre', 'visit__client', 'created_by', 'cancelled_by',
+        ).prefetch_related('items__test', 'items__imaging_order__procedure', 'payments'),
+        pk=pk,
+    )
+    if not user.is_superuser:
+        allowed = UserCentreAccess.objects.filter(
+            user=user, centre=invoice.visit.centre, centre__is_active=True, can_view=True,
+        ).exists()
+        if not allowed:
+            raise Http404()
+    _decorate([invoice])
+    return invoice
 
 
 def _decorate_discounts(rows):

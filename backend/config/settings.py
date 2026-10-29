@@ -25,6 +25,8 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,healthcheck.railway.app")
 railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
+railway_environment = os.getenv("RAILWAY_ENVIRONMENT", "").strip()
+on_railway = bool(railway_domain or railway_environment or os.getenv("RAILWAY_PROJECT_ID", "").strip())
 if railway_domain:
     ALLOWED_HOSTS.append(railway_domain)
 # Preserve order while removing duplicates.
@@ -118,6 +120,9 @@ if os.getenv("AWS_STORAGE_BUCKET_NAME", "").strip():
     }
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", str(BASE_DIR / "media"))).resolve()
+# When using a Railway volume (not S3), set SERVE_MEDIA=True so authenticated
+# Django views can still resolve /media/ URLs. Prefer private S3 for multi-replica.
+SERVE_MEDIA = env_bool("SERVE_MEDIA", DEBUG) and not bool(os.getenv("AWS_STORAGE_BUCKET_NAME", "").strip())
 FILE_UPLOAD_PERMISSIONS = 0o640
 FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o750
 DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv("DATA_UPLOAD_MAX_MEMORY_SIZE", str(10 * 1024 * 1024)))
@@ -147,7 +152,9 @@ if railway_domain:
     csrf_origins.append(f"https://{railway_domain}")
 CSRF_TRUSTED_ORIGINS = list(dict.fromkeys(csrf_origins))
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
-AUDIT_TRUST_X_FORWARDED_FOR = env_bool("AUDIT_TRUST_X_FORWARDED_FOR", False)
+# Railway terminates TLS at the edge and forwards client IP; trust XFF only
+# when we know we are behind that controlled proxy (or an explicit override).
+AUDIT_TRUST_X_FORWARDED_FOR = env_bool("AUDIT_TRUST_X_FORWARDED_FOR", on_railway)
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -193,7 +200,8 @@ WHATSAPP_PROVIDER_TOKEN = os.getenv("WHATSAPP_PROVIDER_TOKEN", "").strip()
 NOTIFICATION_LOG_PROVIDER = env_bool("NOTIFICATION_LOG_PROVIDER", DEBUG)
 CRITICAL_ALERT_EMAIL = os.getenv("CRITICAL_ALERT_EMAIL", "").strip()
 PATIENT_PORTAL_URL = os.getenv("PATIENT_PORTAL_URL", "https://www.example.com/patients").strip()
-PUBLIC_APP_URL = os.getenv("PUBLIC_APP_URL", "http://127.0.0.1:8000").strip()
+_default_public_url = f"https://{railway_domain}" if railway_domain else "http://127.0.0.1:8000"
+PUBLIC_APP_URL = os.getenv("PUBLIC_APP_URL", _default_public_url).strip()
 ORTHANC_URL = os.getenv("ORTHANC_URL", "").strip()
 ORTHANC_USERNAME = os.getenv("ORTHANC_USERNAME", "").strip()
 ORTHANC_PASSWORD = os.getenv("ORTHANC_PASSWORD", "").strip()

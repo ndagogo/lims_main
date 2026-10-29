@@ -9,6 +9,26 @@ def get_report_format(centre) -> CentreReportFormat:
     return fmt
 
 
+def unverified_watermark_text(centre) -> str:
+    """Watermark on signed (FINAL) copies awaiting approval."""
+    text = (get_report_format(centre).watermark_text or '').strip()
+    return text or 'UNVERIFIED'
+
+
+def approved_watermark_text(centre=None) -> str:
+    """Watermark on approved copies ready for (or used during) dispatch."""
+    return 'APPROVED'
+
+
+def status_watermark_text(status, centre) -> str:
+    """Status watermark for finished PDFs. Released copies have no status mark."""
+    if status == 'FINAL':
+        return unverified_watermark_text(centre)
+    if status == 'APPROVED':
+        return approved_watermark_text(centre)
+    return ''
+
+
 def format_snapshot(centre) -> dict:
     fmt = get_report_format(centre)
     logo_path = ''

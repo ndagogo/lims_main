@@ -4,19 +4,31 @@ from django.db import transaction
 
 from billing.models import Invoice, InvoiceItem
 from laboratory.models import LabOrder, TestPrice
+from laboratory.stat_catalog import stat_for_choice
 from radiology.models import ImagingModality, ImagingOrder, ImagingPrice, RadiologyExam
+
+
+def _order_choices(post, field):
+    choices = []
+    seen = set()
+    for value in post.getlist(field):
+        raw = (value or '').strip()
+        if not raw:
+            continue
+        item_id, _sep, stat_id = raw.partition('|')
+        if not item_id or item_id in seen:
+            continue
+        seen.add(item_id)
+        choices.append((item_id, stat_id))
+    return choices
 
 
 def process_registration(visit, user, post):
     """Create laboratory and imaging orders plus the outstanding invoice for this visit."""
-    lab_ids = []
-    for value in post.getlist('lab_tests'):
-        if value and value not in lab_ids:
-            lab_ids.append(value)
-    imaging_ids = []
-    for value in post.getlist('imaging_tests'):
-        if value and value not in imaging_ids:
-            imaging_ids.append(value)
+    lab_choices = _order_choices(post, 'lab_tests')
+    imaging_choices = _order_choices(post, 'imaging_tests')
+    lab_ids = [item_id for item_id, _stat_id in lab_choices]
+    imaging_ids = [item_id for item_id, _stat_id in imaging_choices]
     if not lab_ids and not imaging_ids:
         raise ValidationError('Add at least one laboratory or radiology test, then save.')
     tariff_id = (post.get('tariff') or '').strip()
@@ -45,9 +57,12 @@ def process_registration(visit, user, post):
             created_by=user,
             status='UNPAID',
         )
-        for test_id in lab_ids:
+        for test_id, stat_id in lab_choices:
             price = lab_prices[test_id]
-            order = LabOrder.objects.create(visit=visit, test=price.test, tariff=price.tariff, price=price.price, status='ORDERED')
+            order = LabOrder.objects.create(
+                visit=visit, test=price.test, tariff=price.tariff, price=price.price,
+                status='ORDERED', stat=stat_for_choice(stat_id),
+            )
             try:
                 from workflows.services import bind_workflow
                 bind_workflow(order)
@@ -57,7 +72,7 @@ def process_registration(visit, user, post):
                 invoice=invoice, test=price.test, tariff=price.tariff, lab_order=order,
                 unit_price=price.price, outsource_price=price.outsource_price, quantity=1,
             )
-        for procedure_id in imaging_ids:
+        for procedure_id, stat_id in imaging_choices:
             price = imaging_prices[procedure_id]
             procedure = price.procedure
             modality = ImagingModality.objects.filter(
@@ -68,6 +83,7 @@ def process_registration(visit, user, post):
             order = ImagingOrder.objects.create(
                 visit=visit, modality=modality, procedure=procedure,
                 clinical_history=visit.clinical_history, requested_by=user, status='ORDERED',
+                stat=stat_for_choice(stat_id),
             )
             RadiologyExam.objects.create(order=order)
             InvoiceItem.objects.create(

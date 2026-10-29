@@ -19,6 +19,16 @@ def ensure_cbc_catalogue(*, publish=True):
     test.tat_target_minutes = test.tat_target_minutes or 120
     test.comments_required = True
     test.save()
+    from laboratory.models import ContainerType, SpecimenType
+    if not test.specimen_type_id and test.specimen:
+        match = SpecimenType.objects.filter(name__iexact=test.specimen).first()
+        if match:
+            test.specimen_type = match
+            test.save(update_fields=['specimen_type', 'updated_at'])
+    if test.container and not test.container_types.exists():
+        match = ContainerType.objects.filter(name__iexact=test.container).first()
+        if match:
+            test.container_types.add(match)
 
     specs = [
         ('SECTION_CBC', 'Complete blood count', 'SECTION', '', 0, '', '', True),

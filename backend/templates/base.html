@@ -212,12 +212,7 @@
     {% if can_edit_bill %}<a href="{% url 'accounts-bill-edit' %}">Bill edit</a>{% endif %}
     {% if can_modify_patient_data %}<a href="{% url 'patient-demographics' %}">Demographics</a>{% endif %}
     {% if can_change_referring_doctor %}<a href="{% url 'referring-doctor-remap' %}">Remap doctor</a>{% endif %}
-    {% if can_access_platform_controls %}<a href="{% url 'platform-hub' %}">Settings</a>{% endif %}
-    {% if is_platform_admin %}
-      <a href="{% url 'catalog-hub' %}">Catalog</a>
-      <a href="{% url 'management-dashboard' %}">Reports</a>
-      <a href="{% url 'integration-review' %}">Instruments</a>
-    {% endif %}
+    {% if can_access_platform_controls %}<a href="{% url 'platform-hub' %}">Platform controls</a>{% endif %}
   </div>
 </nav>
 <div class="shell">
@@ -252,22 +247,11 @@
           <a class="{% if request.path|slice:':10' == '/platform/' %}active{% endif %}" href="{% url 'platform-hub' %}">Platform controls</a>
         {% endif %}
         {% if is_platform_admin %}
-          <a class="{% if request.path|slice:':9' == '/catalog/' %}active{% endif %}" href="{% url 'catalog-hub' %}">Tariffs & catalog</a>
-          <a class="{% if request.path|slice:':11' == '/reporting/' %}active{% endif %}" href="{% url 'management-dashboard' %}">Management</a>
           <a class="{% if request.path == '/reporting/catalogue/' %}active{% endif %}" href="{% url 'report-catalogue' %}">Report catalogue</a>
-          <a class="{% if request.path == '/integrations/review/' %}active{% endif %}" href="{% url 'integration-review' %}">Instruments</a>
-          <a class="{% if request.path == '/inventory/' %}active{% endif %}" href="{% url 'inventory-workspace' %}">Inventory</a>
-        {% endif %}
-        {% if request.user.is_superuser or is_platform_admin %}
-          <a class="{% if request.path == '/users/' %}active{% endif %}" href="{% url 'user-management' %}">Users</a>
-          <a class="{% if request.path == '/roles/' %}active{% endif %}" href="{% url 'role-management' %}">Roles</a>
         {% endif %}
       {% endif %}
       <div class="nav-label">Account</div>
       <a class="{% if request.path == '/account/profile/' or request.path == '/account/signature/' %}active{% endif %}" href="{% url 'account-profile' %}">{{ request.user.display_name|default:request.user.username }}</a>
-      {% if is_platform_admin %}
-        <a class="{% if request.path == '/account/mfa/' %}active{% endif %}" href="{% url 'mfa-setup' %}">MFA</a>
-      {% endif %}
       <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="linkish" type="submit">Sign out</button></form>
     </nav>
     {% if active_centre %}

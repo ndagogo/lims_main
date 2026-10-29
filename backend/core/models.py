@@ -97,6 +97,7 @@ class Centre(TimeStampedModel):
         permissions = [
             ('manage_centre_users', 'Can manage centre user access'),
             ('access_platform_controls', 'Can access sensitive platform configuration controls'),
+            ('set_result_water_mark', 'Can set the result watermark text'),
         ]
     def __str__(self): return f'{self.code} — {self.name}'
 
@@ -133,7 +134,12 @@ class CentreReportFormat(TimeStampedModel):
     margin_mm = models.PositiveSmallIntegerField(default=18)
     show_authenticator_signature = models.BooleanField(default=True)
     signature_label = models.CharField(max_length=80, default='Authenticated by')
-    watermark_text = models.CharField(max_length=80, blank=True)
+    watermark_text = models.CharField(
+        max_length=80,
+        blank=True,
+        default='UNVERIFIED',
+        help_text='Drawn on signed (FINAL) results until approval. Approved copies use APPROVED. Requires set_result_water_mark to change.',
+    )
 
     def __str__(self):
         return f'Report format · {self.centre.code}'
@@ -184,6 +190,10 @@ class AuditEvent(TimeStampedModel):
     method = models.CharField(max_length=10, blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     browser = models.CharField(max_length=255, blank=True)
+    location_hint = models.CharField(
+        max_length=120, blank=True,
+        help_text='Coarse network location from trusted proxy headers (country/region). Not GPS.',
+    )
     centre = models.ForeignKey(Centre, null=True, blank=True, on_delete=models.SET_NULL)
     department = models.CharField(max_length=120, blank=True, db_index=True)
     patient_ref = models.CharField(max_length=80, blank=True, db_index=True, help_text='UHID or patient identifier')
@@ -210,3 +220,34 @@ class AuditEvent(TimeStampedModel):
             models.Index(fields=['centre', '-created_at'], name='core_audite_centre__9a1c4e_idx'),
         ]
     def __str__(self): return f'{self.created_at} {self.action} {self.object_type} {self.object_id}'
+
+
+class ResultLedger(TimeStampedModel):
+    """One row per result action. Repeat dispatches each get their own row."""
+
+    SERVICES = [('RADIOLOGY', 'Radiology'), ('LABORATORY', 'Laboratory')]
+    KINDS = [
+        ('DISPATCH', 'Dispatch'),
+        ('MODIFY', 'Return for modification'),
+        ('APPROVE', 'Approve'),
+    ]
+    service = models.CharField(max_length=20, choices=SERVICES, db_index=True)
+    kind = models.CharField(max_length=20, choices=KINDS, db_index=True)
+    visit = models.ForeignKey('patients.Visit', on_delete=models.PROTECT, related_name='result_ledger')
+    object_type = models.CharField(max_length=40)
+    object_id = models.CharField(max_length=64, db_index=True)
+    summary = models.CharField(max_length=200, blank=True)
+    reason = models.TextField(blank=True)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='result_ledger_entries',
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['service', 'kind', '-created_at'], name='core_result_svc_kind_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.kind} {self.service} {self.object_id}'

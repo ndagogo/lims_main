@@ -7,7 +7,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from core.access import ACCOUNTS_ROLES, require_any_role, require_workspace
-from core.models import UserCentreAccess, AuditEvent
+from core.audit import record_audit
+from core.models import UserCentreAccess
 from core.permissions import HasCentreAccess
 from communications.messaging import notify_discount_approvers, notify_discount_decision
 from .eligibility import release_eligibility_payload
@@ -68,7 +69,15 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         invoice.cancelled_by=request.user
         invoice.cancelled_at=timezone.now()
         invoice.save(update_fields=['status', 'cancel_reason', 'cancelled_by', 'cancelled_at', 'updated_at'])
-        AuditEvent.objects.create(actor=request.user, action='INVOICE_CANCELLED', object_type='Invoice', object_id=str(invoice.pk), centre=invoice.visit.centre, detail={'invoice': invoice.invoice_number, 'reason': reason})
+        visit = invoice.visit
+        record_audit(
+            request=request, actor=request.user, action='INVOICE_CANCELLED',
+            object_type='Invoice', object_id=str(invoice.pk), centre=visit.centre,
+            patient_ref=getattr(visit.patient, 'uhid', '') or '', visit_ref=visit.visit_id,
+            reason=reason, previous_values={'status': 'OPEN'}, new_values={'status': 'CANCELLED'},
+            detail={'invoice': invoice.invoice_number, 'reason': reason, 'visit_id': visit.visit_id},
+            category='BILLING',
+        )
         return Response(self.get_serializer(invoice).data)
 
 class InvoiceItemViewSet(viewsets.ModelViewSet):
@@ -98,6 +107,18 @@ class PaymentViewSet(viewsets.ModelViewSet):
         invoice=serializer.validated_data['invoice']; centre=invoice.visit.centre
         if not self.request.user.is_superuser and not UserCentreAccess.objects.filter(user=self.request.user,centre=centre,can_edit=True).exists(): raise PermissionDenied('Billing permission required.')
         payment = serializer.save(received_by=self.request.user)
+        visit = invoice.visit
+        record_audit(
+            request=self.request, actor=self.request.user, action='PAYMENT_RECORDED',
+            object_type='Payment', object_id=str(payment.pk), centre=centre,
+            patient_ref=getattr(visit.patient, 'uhid', '') or '', visit_ref=visit.visit_id,
+            new_values={'amount': str(payment.amount), 'method': payment.method, 'status': payment.status},
+            detail={
+                'invoice': invoice.invoice_number, 'receipt': payment.receipt_number,
+                'amount': str(payment.amount), 'method': payment.method, 'visit_id': visit.visit_id,
+            },
+            category='BILLING',
+        )
         from communications.messaging import notify_payment_receipt
         notify_payment_receipt(payment, user=self.request.user)
     @action(detail=True, methods=['post'])
@@ -117,7 +138,15 @@ class PaymentViewSet(viewsets.ModelViewSet):
         payment.reversed_by=request.user
         payment.reversed_at=timezone.now()
         payment.save()
-        AuditEvent.objects.create(actor=request.user, action='PAYMENT_REVERSED', object_type='Payment', object_id=str(payment.pk), centre=centre, detail={'receipt': payment.receipt_number, 'amount': str(payment.amount), 'reason': reason})
+        visit = payment.invoice.visit
+        record_audit(
+            request=request, actor=request.user, action='PAYMENT_REVERSED',
+            object_type='Payment', object_id=str(payment.pk), centre=centre,
+            patient_ref=getattr(visit.patient, 'uhid', '') or '', visit_ref=visit.visit_id,
+            reason=reason, previous_values={'status': 'CONFIRMED'}, new_values={'status': 'REVERSED'},
+            detail={'receipt': payment.receipt_number, 'amount': str(payment.amount), 'reason': reason, 'visit_id': visit.visit_id},
+            category='BILLING',
+        )
         return Response(self.get_serializer(payment).data)
 
 class DiscountRequestViewSet(viewsets.ModelViewSet):
@@ -129,10 +158,15 @@ class DiscountRequestViewSet(viewsets.ModelViewSet):
         if not self.request.user.is_superuser and not UserCentreAccess.objects.filter(user=self.request.user,centre=invoice.visit.centre,can_register=True).exists(): raise PermissionDenied('Cannot request a discount at this centre.')
         discount = serializer.save(requested_by=self.request.user)
         notify_discount_approvers(discount, user=self.request.user)
-        AuditEvent.objects.create(
-            actor=self.request.user, action='DISCOUNT_REQUESTED', object_type='DiscountRequest',
-            object_id=str(discount.pk), centre=invoice.visit.centre,
-            detail={'invoice': invoice.invoice_number},
+        visit = invoice.visit
+        record_audit(
+            request=self.request, actor=self.request.user, action='DISCOUNT_REQUESTED',
+            object_type='DiscountRequest', object_id=str(discount.pk), centre=visit.centre,
+            patient_ref=getattr(visit.patient, 'uhid', '') or '', visit_ref=visit.visit_id,
+            reason=discount.reason or '',
+            new_values={'discount_type': discount.discount_type, 'requested_value': str(discount.requested_value)},
+            detail={'invoice': invoice.invoice_number, 'visit_id': visit.visit_id, 'reason': discount.reason},
+            category='BILLING',
         )
     @action(detail=True, methods=['post'])
     def review(self, request, pk=None):
@@ -151,7 +185,16 @@ class DiscountRequestViewSet(viewsets.ModelViewSet):
                 discount.applied_amount=amount
             discount.status=decision; discount.reviewed_by=request.user; discount.review_note=request.data.get('note','')
             discount.save(update_fields=['status','reviewed_by','review_note','applied_amount','updated_at'])
-            AuditEvent.objects.create(actor=request.user,action=f'DISCOUNT_{decision}',object_type='DiscountRequest',object_id=str(discount.pk),centre=invoice.visit.centre,detail={'invoice':invoice.invoice_number,'amount':str(discount.applied_amount)})
+            visit = invoice.visit
+            record_audit(
+                request=request, actor=request.user, action=f'DISCOUNT_{decision}',
+                object_type='DiscountRequest', object_id=str(discount.pk), centre=visit.centre,
+                patient_ref=getattr(visit.patient, 'uhid', '') or '', visit_ref=visit.visit_id,
+                reason=discount.review_note or discount.reason or '',
+                previous_values={'status': 'PENDING'}, new_values={'status': decision, 'applied_amount': str(discount.applied_amount)},
+                detail={'invoice': invoice.invoice_number, 'amount': str(discount.applied_amount), 'visit_id': visit.visit_id},
+                category='BILLING',
+            )
         notify_discount_decision(discount, user=request.user)
         return Response(self.get_serializer(discount).data)
 
@@ -170,10 +213,15 @@ class BillAmendmentViewSet(viewsets.ModelViewSet):
         if invoice.status == 'CANCELLED':
             raise ValidationError('Cannot amend a cancelled invoice.')
         amendment = serializer.save(authorised_by=self.request.user)
-        AuditEvent.objects.create(
-            actor=self.request.user, action='BILL_AMENDMENT', object_type='BillAmendment',
-            object_id=str(amendment.pk), centre=invoice.visit.centre,
-            detail={'action': amendment.action, 'delta': str(amendment.amount_delta)},
+        visit = invoice.visit
+        record_audit(
+            request=self.request, actor=self.request.user, action='BILL_AMENDMENT',
+            object_type='BillAmendment', object_id=str(amendment.pk), centre=visit.centre,
+            patient_ref=getattr(visit.patient, 'uhid', '') or '', visit_ref=visit.visit_id,
+            reason=getattr(amendment, 'reason', '') or '',
+            new_values={'action': amendment.action, 'delta': str(amendment.amount_delta)},
+            detail={'action': amendment.action, 'delta': str(amendment.amount_delta), 'visit_id': visit.visit_id},
+            category='BILLING',
         )
 
 
@@ -210,10 +258,17 @@ class RefundViewSet(viewsets.ModelViewSet):
         refund = serializer.save(authorised_by=self.request.user, status='COMPLETED', completed_at=timezone.now())
         from referrals.services import sync_commission
         sync_commission(payment.invoice if payment else invoice)
-        AuditEvent.objects.create(
-            actor=self.request.user, action='REFUND_ISSUED', object_type='Refund',
-            object_id=str(refund.pk), centre=centre,
-            detail={'amount': str(refund.amount), 'receipt': getattr(payment, 'receipt_number', '')},
+        visit = (payment.invoice.visit if payment else invoice.visit)
+        record_audit(
+            request=self.request, actor=self.request.user, action='REFUND_ISSUED',
+            object_type='Refund', object_id=str(refund.pk), centre=centre,
+            patient_ref=getattr(visit.patient, 'uhid', '') or '', visit_ref=visit.visit_id,
+            new_values={'amount': str(refund.amount)},
+            detail={
+                'amount': str(refund.amount), 'receipt': getattr(payment, 'receipt_number', ''),
+                'visit_id': visit.visit_id,
+            },
+            category='BILLING',
         )
 
 

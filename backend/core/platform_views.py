@@ -85,7 +85,7 @@ def platform_radiology_accept(request):
         else:
             row.accept_minutes = minutes
             row.save(update_fields=['accept_minutes', 'updated_at'])
-            messages.success(request, f'Unaccepted studies can be reassigned after {minutes} minutes.')
+            messages.success(request, f'Unaccepted studies return to the performing radiographer after {minutes} minutes.')
         return redirect('platform-radiology-accept')
     return render(request, 'platform/radiology_accept.html', {'setting': row})
 

@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Radiologist performance | HFDN{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+  <div>
+    <div class="muted small">RADIOLOGY</div>
+    <h1 class="h3 mb-1">Radiologist performance</h1>
+    <p class="muted mb-0">Studies the assigned radiologist accepted, and studies returned because they were not accepted in time.</p>
+  </div>
+  <a class="btn btn-outline-dark btn-sm" href="{% url 'radiology-workspace' %}">Back to worklist</a>
+</div>
+
+<form method="get" class="card p-3 mb-4">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label" for="perf-q">Search</label>
+      <input class="form-control form-control-sm" id="perf-q" name="q" value="{{ filters.q }}" placeholder="Visit, radiologist, study">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label" for="perf-outcome">Outcome</label>
+      <select class="form-select form-select-sm" id="perf-outcome" name="outcome">
+        <option value="">All</option>
+        <option value="ACCEPTED" {% if filters.outcome == 'ACCEPTED' %}selected{% endif %}>Accepted</option>
+        <option value="MISSED" {% if filters.outcome == 'MISSED' %}selected{% endif %}>Not accepted in time</option>
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label" for="perf-radiologist">Radiologist</label>
+      <select class="form-select form-select-sm" id="perf-radiologist" name="radiologist">
+        <option value="">All</option>
+        {% for person in radiologist_choices %}
+          <option value="{{ person.id }}" {% if filters.radiologist == person.id %}selected{% endif %}>{{ person.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label" for="perf-from">From</label>
+      <input class="form-control form-control-sm" id="perf-from" type="date" name="date_from" value="{{ filters.date_from }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label" for="perf-to">To</label>
+      <input class="form-control form-control-sm" id="perf-to" type="date" name="date_to" value="{{ filters.date_to }}">
+    </div>
+    <div class="col-md-1">
+      <button class="btn btn-sm btn-primary w-100" type="submit">Filter</button>
+    </div>
+  </div>
+</form>
+
+<div class="row g-2 mb-3">
+  <div class="col-4"><div class="card p-3"><div class="small muted">Accepted</div><div class="h4 mb-0">{{ totals.accepted }}</div></div></div>
+  <div class="col-4"><div class="card p-3"><div class="small muted">Not accepted in time</div><div class="h4 mb-0">{{ totals.missed }}</div></div></div>
+  <div class="col-4"><div class="card p-3"><div class="small muted">Assignments</div><div class="h4 mb-0">{{ totals.total }}</div></div></div>
+</div>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-outline-dark btn-sm" href="?export=csv&{{ list_query }}">Download CSV</a>
+  <a class="btn btn-outline-dark btn-sm" href="?export=pdf&{{ list_query }}">Download PDF</a>
+  <a class="btn btn-outline-dark btn-sm" href="?export=xlsx&{{ list_query }}">Download Excel</a>
+</div>
+
+<div class="card p-4 mb-4">
+  <h2 class="h5">Summary</h2>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>Radiologist</th><th>Accepted</th><th>Not accepted in time</th><th>Assignments</th></tr></thead>
+      <tbody>
+        {% for row in summary %}
+          <tr>
+            <td class="fw-semibold">{{ row.display_name }}</td>
+            <td>{{ row.accepted }}</td>
+            <td>{{ row.missed }}</td>
+            <td>{{ row.total }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="muted">No accept or return activity matches this filter.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card p-4">
+  <h2 class="h5">Activity</h2>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>When</th><th>Radiologist</th><th>Visit</th><th>Study</th><th>Outcome</th><th>Window</th></tr></thead>
+      <tbody>
+        {% for row in activity %}
+          <tr>
+            <td class="small text-nowrap">{{ row.closed_at|date:"Y-m-d H:i" }}</td>
+            <td>{{ row.radiologist.get_full_name|default:row.radiologist.username }}</td>
+            <td class="font-monospace">{{ row.exam.order.visit.visit_id }}</td>
+            <td>{{ row.exam.order.procedure.name|default:row.exam.order.modality.name }}</td>
+            <td>{% if row.outcome == 'MISSED' %}Not accepted in time{% else %}Accepted{% endif %}</td>
+            <td>{{ row.window_minutes }} min</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="muted">No activity matches this filter.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=activity %}
+</div>
+{% endblock %}

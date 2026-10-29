@@ -6,12 +6,16 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from core.api import CentreViewSet, UserCentreAccessViewSet, AuditEventViewSet, login_view, me_view
 from core.auth_views import password_reset_request, password_reset_confirm, mfa_setup
+from core.result_views import (
+    dispatch_history_export, modify_history_export, radiology_report_preview,
+    radiology_stats_export, result_dispatch, result_modify,
+)
 from core.views import (
-    dashboard, patient_registration, patient_timeline, patient_phone_lookup, patient_demographics,
+    dashboard, patient_registration, patient_timeline, visit_audit_trail, patient_phone_lookup, patient_demographics,
     referring_doctor_remap,
     accounts_workspace, accounts_reports, accounts_export, accounts_refunds, accounts_bill_edit,
-    payment_receipt, laboratory_workspace, laboratory_tat, sample_timeline,
-    phlebotomy_workspace, radiology_workspace, radiology_templates, radiology_template_builder, healthz,
+    payment_receipt, invoice_reprint, laboratory_workspace, laboratory_tat, sample_timeline,
+    phlebotomy_workspace, radiology_workspace, radiology_performance, radiology_templates, radiology_template_builder, healthz,
     login_page, logout_page, password_change, account_profile, account_signature, download_patient_document, download_settlement_proof,
     user_management, role_management, catalog_hub, catalog_tariffs, catalog_tariff_detail,
     catalog_tests, catalog_service_groups, catalog_doctors, catalog_imaging, catalog_centres,
@@ -114,6 +118,7 @@ urlpatterns=[
     path('patients/demographics/', patient_demographics, name='patient-demographics'),
     path('patients/referrals/remap/', referring_doctor_remap, name='referring-doctor-remap'),
     path('patients/<uuid:pk>/timeline/', patient_timeline, name='patient-timeline'),
+    path('visits/<str:visit_id>/audit/', visit_audit_trail, name='visit-audit'),
     path('patients/documents/<int:pk>/download/', download_patient_document, name='patient-document-download'),
     path('referrals/withdrawals/<uuid:pk>/proof/', download_settlement_proof, name='settlement-proof-download'),
     path('accounts/', accounts_workspace, name='accounts-workspace'),
@@ -122,6 +127,7 @@ urlpatterns=[
     path('accounts/refunds/', accounts_refunds, name='accounts-refunds'),
     path('accounts/bill-edit/', accounts_bill_edit, name='accounts-bill-edit'),
     path('accounts/receipts/<int:pk>/', payment_receipt, name='payment-receipt'),
+    path('accounts/invoices/<uuid:pk>/reprint/', invoice_reprint, name='invoice-reprint'),
     path('reporting/management/', management_dashboard, name='management-dashboard'),
     path('reporting/catalogue/', report_catalogue, name='report-catalogue'),
     path('reporting/export/', report_export, name='report-export'),
@@ -133,6 +139,13 @@ urlpatterns=[
     path('samples/<int:pk>/timeline/', sample_timeline, name='sample-timeline'),
     path('platform/tat-rules/', platform_tat_rules, name='platform-tat-rules'),
     path('radiology/', radiology_workspace, name='radiology-workspace'),
+    path('radiology/stats/export/', radiology_stats_export, name='radiology-stats-export'),
+    path('radiology/reports/<uuid:pk>/preview/', radiology_report_preview, name='radiology-report-preview'),
+    path('radiology/performance/', radiology_performance, name='radiology-performance'),
+    path('results/modify/', result_modify, name='result-modify'),
+    path('results/modify/history/export/', modify_history_export, name='modify-history-export'),  # CSV / PDF / Excel
+    path('results/dispatch/', result_dispatch, name='result-dispatch'),
+    path('results/dispatch/history/export/', dispatch_history_export, name='dispatch-history-export'),
     path('radiology/templates/', radiology_templates, name='radiology-templates'),
     path('radiology/templates/<int:pk>/', radiology_template_builder, name='radiology-template-builder'),
     path('inventory/', inventory_workspace, name='inventory-workspace'),
@@ -150,5 +163,6 @@ urlpatterns=[
     path('api/', include(router.urls)),
     path('api-auth/', include('rest_framework.urls')),
 ]
-if settings.DEBUG:
+# Local DEBUG or Railway volume deployments (SERVE_MEDIA=True). Prefer S3 in prod.
+if settings.DEBUG or getattr(settings, "SERVE_MEDIA", False):
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

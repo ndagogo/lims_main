@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Visit audit · {{ visit.visit_id }} | HFDN{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+  <div>
+    <div class="muted small">REGISTRATION AUDIT TRAIL</div>
+    <h1 class="h3 mb-1">{{ visit.visit_id }}</h1>
+    <p class="muted mb-0">
+      {{ patient.title }} {{ patient.first_name }} {{ patient.last_name }} · {{ patient.uhid }}
+      · {{ visit.centre.code }} · Registered {{ visit.created_at|date:"d M Y, H:i" }}
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'patient-timeline' patient.pk %}">Patient timeline</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'patient-registration' %}?q={{ visit.visit_id }}">Back to registration</a>
+  </div>
+</div>
+
+<div class="alert alert-light border small mb-4">
+  Every significant action on this registration is listed with who did it, when, IP address, browser, and network location when available.
+  Precise GPS location is not collected. Network location is the country/region reported by the connection path.
+</div>
+
+<div class="card p-0 overflow-hidden">
+  <div class="table-responsive">
+    <table class="table align-middle mb-0 visit-audit-table">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Action</th>
+          <th>Actor</th>
+          <th>Network</th>
+          <th>Change detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in events %}
+        <tr>
+          <td class="text-nowrap small">
+            {{ item.when|date:"d M Y" }}<br>{{ item.when|date:"H:i:s" }}
+          </td>
+          <td>
+            <div class="fw-semibold">{{ item.title }}</div>
+            <div class="small muted">{{ item.action }}{% if item.source %} · {{ item.source }}{% endif %}</div>
+            {% if item.summary %}<div class="small mt-1">{{ item.summary }}</div>{% endif %}
+            {% if item.reason %}<div class="small mt-1"><span class="muted">Reason:</span> {{ item.reason }}</div>{% endif %}
+          </td>
+          <td class="small">
+            <div>{{ item.actor|default:"System" }}</div>
+            {% if item.department %}<div class="muted">{{ item.department }}</div>{% endif %}
+            {% if item.path %}<div class="muted">{{ item.method }} {{ item.path }}</div>{% endif %}
+          </td>
+          <td class="small">
+            <div><span class="muted">IP</span> {{ item.ip_address|default:"—" }}</div>
+            <div class="text-break"><span class="muted">Browser</span> {{ item.browser|default:"—" }}</div>
+            <div><span class="muted">Location</span> {{ item.location_hint|default:"—" }}</div>
+          </td>
+          <td class="small">
+            {% if item.previous_lines %}
+              <div class="muted">Before</div>
+              <ul class="mb-2 ps-3">{% for line in item.previous_lines %}<li>{{ line }}</li>{% endfor %}</ul>
+            {% endif %}
+            {% if item.new_lines %}
+              <div class="muted">After</div>
+              <ul class="mb-2 ps-3">{% for line in item.new_lines %}<li>{{ line }}</li>{% endfor %}</ul>
+            {% endif %}
+            {% if item.detail_lines %}
+              <div class="muted">Detail</div>
+              <ul class="mb-0 ps-3">{% for line in item.detail_lines %}<li>{{ line }}</li>{% endfor %}</ul>
+            {% endif %}
+            {% if not item.previous_lines and not item.new_lines and not item.detail_lines %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="muted p-4 text-center">No audit events are recorded for this visit yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<style>
+  .visit-audit-table thead th {
+    font-size: .72rem; letter-spacing: .04em; text-transform: uppercase;
+    background: #faf8f5; color: #57534e; white-space: nowrap;
+  }
+  .visit-audit-table td { vertical-align: top; }
+</style>
+{% endblock %}

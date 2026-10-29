@@ -1,10 +1,31 @@
 from django.contrib import admin
 from .models import (
-    ServiceGroup, Test, Tariff, TestPrice, LabOrder, Sample, SampleCodeConfig, SampleActivity,
+    ServiceGroup, SpecimenType, ContainerType, StatType, Test, Tariff, TestPrice, LabOrder, Sample, SampleCodeConfig, SampleActivity,
     SampleBarcodePrint, SampleBatch, BatchSample, SampleProcessing, TestParameter, ResultTemplate,
     ResultTemplateField, LabResult, ResultValue, ResultReview, ReferenceRange,
     QcMaterial, QcRun, QcTarget, TatEscalation, TatPause, TatPauseReason, TatRule,
 )
+
+
+@admin.register(StatType)
+class StatTypeAdmin(admin.ModelAdmin):
+    list_display = ('name', 'color', 'is_default', 'is_active', 'sort_order')
+    search_fields = ('name',)
+    list_filter = ('is_active', 'is_default')
+
+
+@admin.register(SpecimenType)
+class SpecimenTypeAdmin(admin.ModelAdmin):
+    list_display = ('name', 'is_active')
+    search_fields = ('name',)
+    list_filter = ('is_active',)
+
+
+@admin.register(ContainerType)
+class ContainerTypeAdmin(admin.ModelAdmin):
+    list_display = ('name', 'is_active')
+    search_fields = ('name',)
+    list_filter = ('is_active',)
 
 
 @admin.register(Sample)

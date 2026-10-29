@@ -124,7 +124,11 @@
           </div>
           <div class="col-md-4"><label class="form-label">Body font size</label><input class="form-control" type="number" min="8" max="14" name="body_font_size" value="{{ report_format.body_font_size }}"></div>
           <div class="col-md-4"><label class="form-label">Margin (mm)</label><input class="form-control" type="number" min="10" max="30" name="margin_mm" value="{{ report_format.margin_mm }}"></div>
-          <div class="col-md-4"><label class="form-label">Watermark</label><input class="form-control" name="watermark_text" value="{{ report_format.watermark_text }}" placeholder="Optional e.g. CONFIDENTIAL"></div>
+          {% if can_set_result_watermark %}
+          <div class="col-md-4"><label class="form-label">Unverified watermark</label><input class="form-control" name="watermark_text" value="{{ report_format.watermark_text }}" placeholder="UNVERIFIED" maxlength="80"><div class="form-text">Shown on signed results until an approver marks them APPROVED for dispatch.</div></div>
+          {% else %}
+          <div class="col-md-4"><label class="form-label">Unverified watermark</label><input class="form-control" value="{{ report_format.watermark_text|default:'UNVERIFIED' }}" disabled><div class="form-text">Requires the set_result_water_mark privilege to change.</div></div>
+          {% endif %}
           <div class="col-md-6"><label class="form-label">Primary colour</label><input class="form-control" type="color" name="primary_color" value="{{ report_format.primary_color }}"></div>
           <div class="col-md-6"><label class="form-label">Accent colour</label><input class="form-control" type="color" name="accent_color" value="{{ report_format.accent_color }}"></div>
           <div class="col-md-6"><label class="form-label">Signature label</label><input class="form-control" name="signature_label" value="{{ report_format.signature_label }}"></div>

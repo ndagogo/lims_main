@@ -169,7 +169,10 @@
                 <a href="{% url 'patient-document-download' document.pk %}">{{ document.get_document_type_display }}</a>{% if not forloop.last %}, {% endif %}
               {% empty %}None{% endfor %}
             </td>
-            <td><a class="btn btn-sm btn-outline-dark" href="{% url 'patient-timeline' visit.patient_id %}">Timeline</a></td>
+            <td class="text-nowrap">
+              <a class="btn btn-sm btn-outline-dark" href="{% url 'visit-audit' visit.visit_id %}">Audit trail</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{% url 'patient-timeline' visit.patient_id %}">Timeline</a>
+            </td>
           </tr>
         {% empty %}
           <tr><td colspan="8" class="muted py-4 text-center">No visits match this filter.</td></tr>
@@ -181,6 +184,7 @@
 </div>
 {{ channel_catalog|json_script:"channel-catalog" }}
 {{ test_catalog|json_script:"test-catalog" }}
+{{ stat_types|json_script:"stat-types" }}
 <script>
 const channelCatalog = JSON.parse(document.getElementById('channel-catalog').textContent);
 const phoneLookupUrl = "{% url 'patient-phone-lookup' %}";
@@ -395,6 +399,16 @@ form.addEventListener('submit', (event) => {
 syncRegistration(form);
 
 const testCatalog = JSON.parse(document.getElementById('test-catalog').textContent);
+const statTypes = JSON.parse(document.getElementById('stat-types').textContent);
+
+function defaultStatId() {
+  const row = statTypes.find((stat) => stat.is_default) || statTypes[0];
+  return row ? String(row.id) : '';
+}
+
+function orderValue(testId, statId) {
+  return statId ? testId + '|' + statId : testId;
+}
 
 function formatNaira(value) {
   return '₦' + Number(value).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -414,7 +428,9 @@ function initTestPicker(picker) {
   }
 
   function takenKeys() {
-    return new Set([...added.querySelectorAll('input')].map((input) => input.name + ':' + input.value));
+    return new Set([...added.querySelectorAll('input[type="hidden"]')].map((input) => {
+      return input.name + ':' + input.value.split('|')[0];
+    }));
   }
 
   function refreshResults() {
@@ -461,11 +477,27 @@ function initTestPicker(picker) {
     const item = document.createElement('li');
     item.className = 'list-group-item d-flex justify-content-between align-items-center gap-2';
     const label = document.createElement('span');
+    label.className = 'test-label';
     label.textContent = option.dataset.code + ' — ' + option.dataset.name + ' — ' + (requestKind === 'laboratory' ? 'Laboratory' : 'Radiology') + ' — ' + formatNaira(option.dataset.price);
+    const statSelect = document.createElement('select');
+    statSelect.className = 'form-select form-select-sm test-stat';
+    statSelect.style.maxWidth = '10rem';
+    statSelect.setAttribute('aria-label', 'Stat');
+    statTypes.forEach((stat) => {
+      const choice = document.createElement('option');
+      choice.value = String(stat.id);
+      choice.textContent = stat.name;
+      statSelect.appendChild(choice);
+    });
+    const startingStat = defaultStatId();
+    if (startingStat) statSelect.value = startingStat;
     const hidden = document.createElement('input');
     hidden.type = 'hidden';
     hidden.name = fieldName(requestKind);
-    hidden.value = option.value;
+    hidden.value = orderValue(option.value, statSelect.value);
+    statSelect.addEventListener('change', () => {
+      hidden.value = orderValue(option.value, statSelect.value);
+    });
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'btn btn-sm btn-outline-danger';
@@ -475,7 +507,11 @@ function initTestPicker(picker) {
       showEmpty();
       refreshResults();
     });
-    item.append(label, hidden, remove);
+    const actions = document.createElement('div');
+    actions.className = 'd-flex align-items-center gap-2';
+    if (statTypes.length) actions.appendChild(statSelect);
+    actions.append(hidden, remove);
+    item.append(label, actions);
     added.appendChild(item);
     showEmpty();
     refreshResults();
@@ -484,15 +520,16 @@ function initTestPicker(picker) {
   function repriceAdded() {
     note.textContent = '';
     [...added.children].forEach((item) => {
-      const hidden = item.querySelector('input');
+      const hidden = item.querySelector('input[type="hidden"]');
+      const testId = hidden.value.split('|')[0];
       const requestKind = hidden.name === 'lab_tests' ? 'laboratory' : 'radiology';
-      const row = testCatalog.find((entry) => entry.tariff === tariff.value && entry.kind === requestKind && entry.id === hidden.value);
+      const row = testCatalog.find((entry) => entry.tariff === tariff.value && entry.kind === requestKind && entry.id === testId);
       if (!row) {
         item.remove();
         note.textContent = 'Tests that are not priced on this tariff were removed.';
         return;
       }
-      item.querySelector('span').textContent = row.code + ' — ' + row.name + ' — ' + (requestKind === 'laboratory' ? 'Laboratory' : 'Radiology') + ' — ' + formatNaira(row.price);
+      item.querySelector('.test-label').textContent = row.code + ' — ' + row.name + ' — ' + (requestKind === 'laboratory' ? 'Laboratory' : 'Radiology') + ' — ' + formatNaira(row.price);
     });
     showEmpty();
     refreshResults();

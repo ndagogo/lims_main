@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Preview result</title>
+  <style>
+    body { font-family: Georgia, serif; margin: 2rem auto; max-width: 46rem; color: #1c2430; }
+    .banner { font-family: sans-serif; font-size: .85rem; letter-spacing: .04em; text-transform: uppercase; color: #6b7280; }
+    h1 { font-size: 1.25rem; }
+    @media print { body { display: none !important; } }
+  </style>
+</head>
+<body oncontextmenu="return false">
+  <p class="banner">Preview only</p>
+  <h1>{{ report.exam.order.visit.visit_id }} · {{ report.exam.order.modality.get_modality_type_display }}</h1>
+  <p>{{ report.exam.order.visit.patient.first_name }} {{ report.exam.order.visit.patient.last_name }}</p>
+  {% if html_body %}
+    {{ html_body|safe }}
+  {% else %}
+    <p>{{ plain_findings|linebreaksbr }}</p>
+    {% if report.impression %}<h2>Impression</h2><p>{{ report.impression|linebreaksbr }}</p>{% endif %}
+  {% endif %}
+  <script>
+    document.addEventListener('keydown', function (event) {
+      var key = (event.key || '').toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && (key === 's' || key === 'p' || key === 'u')) {
+        event.preventDefault();
+      }
+    });
+    document.addEventListener('dragstart', function (event) { event.preventDefault(); });
+  </script>
+</body>
+</html>

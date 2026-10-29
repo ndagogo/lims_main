@@ -70,6 +70,7 @@ def record_audit(
     category=None,
     path='',
     method='',
+    location_hint='',
 ):
     """Write one significant audit event with enterprise metadata."""
     ip = browser = ''
@@ -78,10 +79,14 @@ def record_audit(
         method = method or getattr(request, 'method', '')[:10]
         ip = getattr(request, 'audit_ip', None) or ''
         browser = (getattr(request, 'audit_browser', '') or '')[:255]
+        location_hint = location_hint or getattr(request, 'audit_location', '') or ''
         if actor is None and getattr(request, 'user', None) is not None and request.user.is_authenticated:
             actor = request.user
     if not department and actor is not None:
         department = _department_for(actor)
+    payload = detail or {}
+    if location_hint and 'location_hint' not in payload:
+        payload = {**payload, 'location_hint': location_hint}
     return AuditEvent.objects.create(
         actor=actor if getattr(actor, 'is_authenticated', True) else None,
         action=(action or '')[:80],
@@ -92,6 +97,7 @@ def record_audit(
         method=(method or '')[:10],
         ip_address=ip or None,
         browser=browser,
+        location_hint=(location_hint or '')[:120],
         centre=centre,
         department=(department or '')[:120],
         patient_ref=(patient_ref or '')[:80],
@@ -105,7 +111,7 @@ def record_audit(
         approval_note=approval_note or '',
         evidence_ref=(evidence_ref or '')[:255],
         evidence_note=evidence_note or '',
-        detail=detail or {},
+        detail=payload,
     )
 
 

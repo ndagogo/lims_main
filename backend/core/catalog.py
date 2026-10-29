@@ -10,9 +10,12 @@ from django.shortcuts import get_object_or_404, redirect
 from core.access import is_platform_admin
 from core.models import AuditEvent, Centre
 from core.paging import PAGE_SIZES, paginate
+from laboratory.collection_catalog import refresh_tests_for_container, refresh_tests_for_specimen, sync_test_collection_labels
 from laboratory.models import (
-    ReferenceRange, ResultTemplate, SampleCodeConfig, ServiceGroup, Tariff, Test, TestParameter, TestPrice,
+    ContainerType, ReferenceRange, ResultTemplate, SampleCodeConfig, ServiceGroup, SpecimenType, StatType,
+    Tariff, Test, TestParameter, TestPrice,
 )
+from laboratory.stat_catalog import clean_stat_color
 from patients.models import OrganisationClient
 from radiology.models import ImagingModality, ImagingPrice, ImagingProcedure
 from referrals.models import ReferralDoctor, ReferralInstitution
@@ -52,6 +55,11 @@ def _checked(post, name):
 
 def _text(post, name, default=''):
     return (post.get(name) or default).strip()
+
+
+def _optional_pk(request, name):
+    raw = (request.GET.get(name) or '').strip()
+    return int(raw) if raw.isdigit() else None
 
 
 def _decimal(post, name, default='0'):
@@ -293,7 +301,7 @@ def _save_imaging_price(request, tariff):
 def build_tests_context(request):
     query = _text(request.GET, 'q')
     status = request.GET.get('status') or 'all'
-    rows = Test.objects.select_related('service_group').annotate(param_count=Count('parameters')).order_by('name')
+    rows = Test.objects.select_related('service_group', 'specimen_type').annotate(param_count=Count('parameters')).order_by('name')
     if query:
         rows = rows.filter(Q(code__icontains=query) | Q(name__icontains=query) | Q(department__icontains=query))
     rows = _active_filter(rows, status)
@@ -301,11 +309,21 @@ def build_tests_context(request):
     selected_id = request.GET.get('test')
     if selected_id:
         selected = (
-            Test.objects.select_related('service_group', 'default_template')
-            .prefetch_related('parameters__reference_ranges', 'result_templates')
+            Test.objects.select_related('service_group', 'default_template', 'specimen_type')
+            .prefetch_related('parameters__reference_ranges', 'result_templates', 'container_types')
             .filter(pk=selected_id)
             .first()
         )
+    selected_container_ids = set(selected.container_types.values_list('pk', flat=True)) if selected else set()
+    specimen_choices = SpecimenType.objects.filter(is_active=True)
+    container_choices = ContainerType.objects.filter(is_active=True)
+    if selected and selected.specimen_type_id and not selected.specimen_type.is_active:
+        specimen_choices = SpecimenType.objects.filter(Q(is_active=True) | Q(pk=selected.specimen_type_id))
+    if selected_container_ids:
+        container_choices = ContainerType.objects.filter(Q(is_active=True) | Q(pk__in=selected_container_ids))
+    editing_specimen = SpecimenType.objects.filter(pk=_optional_pk(request, 'specimen') or 0).first()
+    editing_container = ContainerType.objects.filter(pk=_optional_pk(request, 'container') or 0).first()
+    editing_stat = StatType.objects.filter(pk=_optional_pk(request, 'stat_type') or 0).first()
     return {
         'directory': paginate(request, rows, 'page'),
         'page_sizes': PAGE_SIZES,
@@ -313,6 +331,18 @@ def build_tests_context(request):
         'status': status,
         'selected': selected,
         'service_groups': ServiceGroup.objects.filter(is_active=True).order_by('name', 'code'),
+        'specimen_choices': specimen_choices.order_by('name'),
+        'container_choices': container_choices.order_by('name'),
+        'selected_container_ids': selected_container_ids,
+        'specimen_types': SpecimenType.objects.annotate(test_count=Count('tests')).order_by('name'),
+        'container_types': ContainerType.objects.annotate(test_count=Count('tests')).order_by('name'),
+        'editing_specimen': editing_specimen,
+        'editing_container': editing_container,
+        'stat_types': StatType.objects.annotate(
+            lab_count=Count('lab_orders', distinct=True),
+            imaging_count=Count('imaging_orders', distinct=True),
+        ).order_by('sort_order', 'name'),
+        'editing_stat': editing_stat,
         'result_types': TestParameter.RESULT_TYPES,
         'sex_choices': ReferenceRange.SEX,
         'templates': (
@@ -328,6 +358,10 @@ def handle_tests_post(request):
     try:
         if action == 'create':
             return _save_test(request, None)
+        if action in ('create_specimen', 'update_specimen', 'delete_specimen', 'create_container', 'update_container', 'delete_container'):
+            return _handle_collection_type(request, action)
+        if action in ('create_stat', 'update_stat', 'delete_stat'):
+            return _handle_stat_type(request, action)
         test = get_object_or_404(Test, pk=request.POST.get('test'))
         if action == 'update':
             return _save_test(request, test)
@@ -385,11 +419,14 @@ def _save_test(request, test):
     group = ServiceGroup.objects.filter(pk=group_id, is_active=True).first()
     if group is None:
         raise ValidationError('Choose an active service group for this test.')
-    specimen = _text(request.POST, 'specimen')
     collection_requirements = _text(request.POST, 'collection_requirements')
     sample_volume = _text(request.POST, 'sample_volume')
-    container = _text(request.POST, 'container')
     handling_instructions = _text(request.POST, 'handling_instructions')
+    previous_specimen_id = test.specimen_type_id if test else None
+    previous_container_ids = set(test.container_types.values_list('pk', flat=True)) if test else set()
+    specimen_type, containers = _posted_collection_types(
+        request, previous_specimen_id=previous_specimen_id, previous_container_ids=previous_container_ids,
+    )
     default_workflow_code = _text(request.POST, 'default_workflow_code').upper()
     tat_raw = _text(request.POST, 'tat_target_minutes')
     try:
@@ -411,12 +448,14 @@ def _save_test(request, test):
             raise ValidationError('A test with that code already exists.')
         test = Test(
             code=code, name=name, department=department, department_code=department_code,
-            service_group=group, specimen=specimen, collection_requirements=collection_requirements,
-            sample_volume=sample_volume, container=container, handling_instructions=handling_instructions,
+            service_group=group, specimen_type=specimen_type, collection_requirements=collection_requirements,
+            sample_volume=sample_volume, handling_instructions=handling_instructions,
             default_workflow_code=default_workflow_code, tat_target_minutes=tat_target_minutes,
             is_outsourceable=is_outsourceable, comments_required=comments_required, is_active=is_active,
         )
         test.save()
+        test.container_types.set(containers)
+        sync_test_collection_labels(test)
         _audit(request, 'TEST_CREATED', test, {'code': test.code, 'name': test.name})
         messages.success(request, f'Test {test.code} was created.')
     else:
@@ -427,10 +466,9 @@ def _save_test(request, test):
         test.department = department
         test.department_code = department_code
         test.service_group = group
-        test.specimen = specimen
+        test.specimen_type = specimen_type
         test.collection_requirements = collection_requirements
         test.sample_volume = sample_volume
-        test.container = container
         test.handling_instructions = handling_instructions
         test.default_workflow_code = default_workflow_code
         test.tat_target_minutes = tat_target_minutes
@@ -445,9 +483,149 @@ def _save_test(request, test):
             test.default_template = tpl
         test.is_active = _checked(request.POST, 'is_active')
         test.save()
+        test.container_types.set(containers)
+        sync_test_collection_labels(test)
         _audit(request, 'TEST_UPDATED', test, {'code': test.code, 'name': test.name, 'is_active': test.is_active})
         messages.success(request, f'Test {test.code} was saved.')
     return redirect(f'/catalog/tests/?test={test.pk}')
+
+
+def _posted_collection_types(request, *, previous_specimen_id=None, previous_container_ids=None):
+    raw_specimen = (request.POST.get('specimen_type') or '').strip()
+    specimen = None
+    if raw_specimen:
+        specimen = SpecimenType.objects.filter(pk=raw_specimen).first()
+        if specimen is None:
+            raise ValidationError('Choose a specimen type from the list.')
+        if not specimen.is_active and specimen.pk != previous_specimen_id:
+            raise ValidationError('Choose an active specimen type.')
+    raw_ids = [value for value in request.POST.getlist('container_types') if value]
+    containers = list(ContainerType.objects.filter(pk__in=raw_ids))
+    if len(containers) != len(set(raw_ids)):
+        raise ValidationError('Choose container types from the list.')
+    allowed_inactive = set(previous_container_ids or [])
+    for row in containers:
+        if not row.is_active and row.pk not in allowed_inactive:
+            raise ValidationError('Choose active container types.')
+    return specimen, containers
+
+
+def _handle_collection_type(request, action):
+    if action in ('create_specimen', 'update_specimen', 'delete_specimen'):
+        return _save_named_catalogue(
+            request, SpecimenType, 'specimen', action,
+            refresh=refresh_tests_for_specimen,
+        )
+    return _save_named_catalogue(
+        request, ContainerType, 'container', action,
+        refresh=refresh_tests_for_container,
+    )
+
+
+def _save_named_catalogue(request, model, kind, action, *, refresh):
+    label = 'Specimen type' if kind == 'specimen' else 'Container type'
+    query_key = 'specimen' if kind == 'specimen' else 'container'
+    if action == f'delete_{kind}':
+        row = get_object_or_404(model, pk=request.POST.get(query_key))
+        if row.tests.exists():
+            raise ValidationError(f'{row.name} is assigned to tests. Reassign those tests before deleting it.')
+        return _try_delete(request, row, 'catalog-tests', row.name)
+    row = None
+    if action == f'update_{kind}':
+        row = get_object_or_404(model, pk=request.POST.get(query_key))
+    name = _text(request.POST, 'name')
+    if not name:
+        raise ValidationError(f'{label} name is required.')
+    if len(name) > 80:
+        raise ValidationError(f'{label} name must be 80 characters or fewer.')
+    clash = model.objects.filter(name__iexact=name)
+    if row is not None:
+        clash = clash.exclude(pk=row.pk)
+    if clash.exists():
+        raise ValidationError(f'A {kind} type named "{name}" already exists.')
+    if row is None:
+        is_active = _checked(request.POST, 'is_active') if 'is_active_submitted' in request.POST else True
+        row = model.objects.create(name=name, is_active=is_active)
+        _audit(request, f'{kind.upper()}_TYPE_CREATED', row, {'name': row.name})
+        messages.success(request, f'{label} {row.name} was created.')
+    else:
+        row.name = name
+        if 'is_active_submitted' in request.POST:
+            row.is_active = _checked(request.POST, 'is_active')
+        row.save()
+        refresh(row)
+        _audit(request, f'{kind.upper()}_TYPE_UPDATED', row, {'name': row.name, 'is_active': row.is_active})
+        messages.success(request, f'{label} {row.name} was saved.')
+    return redirect(f'/catalog/tests/?{query_key}={row.pk}')
+
+
+def _handle_stat_type(request, action):
+    if action == 'delete_stat':
+        row = get_object_or_404(StatType, pk=request.POST.get('stat_type'))
+        if row.lab_orders.exists() or row.imaging_orders.exists():
+            raise ValidationError(f'{row.name} is assigned to tests. Reassign those tests before deleting it.')
+        was_default = row.is_default
+        name = row.name
+        _audit(request, 'STAT_TYPE_DELETED', row, {'name': name})
+        try:
+            row.delete()
+        except ProtectedError:
+            raise ValidationError(f'{name} is still in use and cannot be deleted.')
+        if was_default:
+            nxt = StatType.objects.filter(is_active=True).order_by('sort_order', 'name').first()
+            if nxt is not None:
+                nxt.is_default = True
+                nxt.save(update_fields=['is_default'])
+        messages.success(request, f'{name} was deleted.')
+        return redirect('catalog-tests')
+    row = None
+    if action == 'update_stat':
+        row = get_object_or_404(StatType, pk=request.POST.get('stat_type'))
+    name = _text(request.POST, 'name')
+    if not name:
+        raise ValidationError('Stat type name is required.')
+    if len(name) > 40:
+        raise ValidationError('Stat type name must be 40 characters or fewer.')
+    clash = StatType.objects.filter(name__iexact=name)
+    if row is not None:
+        clash = clash.exclude(pk=row.pk)
+    if clash.exists():
+        raise ValidationError(f'A stat type named "{name}" already exists.')
+    color = clean_stat_color(request.POST.get('color'), 'Stat colour')
+    text_color = clean_stat_color(request.POST.get('text_color') or '#ffffff', 'Text colour')
+    sort_raw = _text(request.POST, 'sort_order') or '0'
+    try:
+        sort_order = int(sort_raw)
+    except ValueError as exc:
+        raise ValidationError('Sort order must be a whole number.') from exc
+    if sort_order < 0:
+        raise ValidationError('Sort order must be a whole number.')
+    is_active = _checked(request.POST, 'is_active') if 'is_active_submitted' in request.POST else True
+    is_default = _checked(request.POST, 'is_default')
+    if row is None and not is_default and not StatType.objects.filter(is_default=True).exists():
+        is_default = True
+    if row is not None and row.is_default and not is_default and not StatType.objects.exclude(pk=row.pk).filter(is_default=True).exists():
+        raise ValidationError('Keep one default stat. Normal is the usual default.')
+    if row is None:
+        row = StatType.objects.create(
+            name=name, color=color, text_color=text_color, sort_order=sort_order,
+            is_active=is_active, is_default=is_default,
+        )
+        _audit(request, 'STAT_TYPE_CREATED', row, {'name': row.name, 'color': row.color})
+        messages.success(request, f'Stat type {row.name} was created.')
+    else:
+        row.name = name
+        row.color = color
+        row.text_color = text_color
+        row.sort_order = sort_order
+        row.is_active = is_active
+        row.is_default = is_default
+        row.save()
+        _audit(request, 'STAT_TYPE_UPDATED', row, {'name': row.name, 'color': row.color, 'is_default': row.is_default})
+        messages.success(request, f'Stat type {row.name} was saved.')
+    if row.is_default:
+        StatType.objects.filter(is_default=True).exclude(pk=row.pk).update(is_default=False)
+    return redirect(f'/catalog/tests/?stat_type={row.pk}#stat-types')
 
 
 def _parse_choices(raw):
@@ -999,6 +1177,7 @@ def build_centres_context(request):
         selected = Centre.objects.select_related('sample_code_config', 'report_format').filter(pk=selected_id).first()
         if selected:
             report_format = get_report_format(selected)
+    from core.access import can_set_result_watermark
     return {
         'directory': paginate(request, rows, 'page'),
         'page_sizes': PAGE_SIZES,
@@ -1008,6 +1187,7 @@ def build_centres_context(request):
         'report_format': report_format,
         'layout_choices': CentreReportFormat.LAYOUTS,
         'font_choices': CentreReportFormat.FONTS,
+        'can_set_result_watermark': can_set_result_watermark(request.user),
     }
 
 
@@ -1139,7 +1319,9 @@ def _save_report_format(request, centre):
     fmt.show_centre_contact = _checked(request.POST, 'show_centre_contact')
     fmt.show_authenticator_signature = _checked(request.POST, 'show_authenticator_signature')
     fmt.signature_label = _text(request.POST, 'signature_label') or 'Authenticated by'
-    fmt.watermark_text = _text(request.POST, 'watermark_text')
+    from core.access import can_set_result_watermark
+    if can_set_result_watermark(request.user):
+        fmt.watermark_text = _text(request.POST, 'watermark_text') or 'UNVERIFIED'
     fmt.layout_style = layout
     fmt.font_family = font
     fmt.body_font_size = body_font_size

@@ -5,6 +5,10 @@
   <div class="muted small mb-1">LABORATORY WORKFLOW · STEPS 4–10</div>
   <h1 class="h3 mb-1">Department laboratory</h1>
   <p class="muted mb-0">Batch → receive → process → enter → review → authenticate → controlled release. Collection and barcodes stay on Phlebotomy.</p>
+  <div class="d-flex gap-2 mt-3">
+    {% if can_modify_result %}<a class="btn btn-outline-dark btn-sm" href="{% url 'result-modify' %}">Modified approvals</a>{% endif %}
+    {% if can_dispatch %}<a class="btn btn-outline-dark btn-sm" href="{% url 'result-dispatch' %}">Result dispatch</a>{% endif %}
+  </div>
 </div>
 
 <style>
@@ -58,7 +62,7 @@
           <input class="form-check-input" type="checkbox" name="sample_ids" value="{{ sample.sample_id }}" id="batch-{{ sample.pk }}">
           <label class="form-check-label" for="batch-{{ sample.pk }}">
             <span class="font-monospace fw-semibold">{{ sample.sample_id }}</span>
-            — {{ sample.order.test.name }} — {{ sample.order.test.department }} — {{ sample.centre.code }}
+            — {{ sample.order.test.name }} {% include "includes/stat_badge.html" with stat=sample.order.stat %} — {{ sample.order.test.department }} — {{ sample.centre.code }}
             <a class="open-link ms-1" href="{% url 'sample-label' sample.pk %}" target="_blank">label</a>
           </label>
         </div>
@@ -126,7 +130,7 @@
   <p class="muted small">Start and complete processing. Each action is logged with user, time, and IP.</p>
   {% for sample in process_samples %}
     <div class="border-top py-3">
-      <div class="fw-semibold font-monospace">{{ sample.sample_id }} — {{ sample.order.test.name }}</div>
+      <div class="fw-semibold font-monospace">{{ sample.sample_id }} — {{ sample.order.test.name }} {% include "includes/stat_badge.html" with stat=sample.order.stat %}</div>
       <div class="small muted mb-2">{{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }} · {{ sample.get_status_display }} · {{ sample.centre.code }}
         · <a class="open-link" href="{% url 'sample-label' sample.pk %}">barcode</a>
       </div>
@@ -186,7 +190,7 @@
   <p class="muted small">Fields follow the published result template (units, choices, differentials, calculated values). Reference intervals are matched server-side by age/sex/population — not hardcoded here.</p>
   {% for sample in entry_samples %}
     <div class="border-top py-3">
-      <div class="fw-semibold font-monospace">{{ sample.sample_id }} — {{ sample.order.test.name }}</div>
+      <div class="fw-semibold font-monospace">{{ sample.sample_id }} — {{ sample.order.test.name }} {% include "includes/stat_badge.html" with stat=sample.order.stat %}</div>
       <div class="small muted mb-2">
         {{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }}
         · {{ sample.get_status_display }}
@@ -283,7 +287,7 @@
   <p class="muted small">Submit drafts for review, then approve or reject. The author cannot review their own result.</p>
   {% for result in review_results %}
     <div class="border-top py-3">
-      <div class="fw-semibold font-monospace">{{ result.sample.sample_id }} — {{ result.sample.order.test.name }}</div>
+      <div class="fw-semibold font-monospace">{{ result.sample.sample_id }} — {{ result.sample.order.test.name }} {% include "includes/stat_badge.html" with stat=result.sample.order.stat %}</div>
       <div class="small muted mb-2">{{ result.sample.order.visit.patient.first_name }} {{ result.sample.order.visit.patient.last_name }} · {{ result.get_status_display }} · entered by {{ result.entered_by.get_username|default:"—" }}</div>
       {% if result.narrative %}<div class="small mb-2">{{ result.narrative }}</div>{% endif %}
       {% if result.values.all %}
@@ -314,7 +318,7 @@
   {% for result in auth_results %}
     <div class="border-top py-3 d-flex flex-wrap gap-2 align-items-center">
       <div class="me-auto">
-        <div class="fw-semibold font-monospace">{{ result.sample.sample_id }} — {{ result.sample.order.test.name }}</div>
+        <div class="fw-semibold font-monospace">{{ result.sample.sample_id }} — {{ result.sample.order.test.name }} {% include "includes/stat_badge.html" with stat=result.sample.order.stat %}</div>
         <div class="small muted">Reviewed by {{ result.reviewed_by.get_username|default:"—" }} · entered by {{ result.entered_by.get_username|default:"—" }}</div>
       </div>
       <form method="post">{% csrf_token %}<input type="hidden" name="action" value="authenticate"><input type="hidden" name="stage" value="auth"><input type="hidden" name="result" value="{{ result.pk }}"><button class="btn btn-sm btn-primary" type="submit">Authenticate</button></form>
@@ -332,7 +336,7 @@
       {% for result in release_results %}
         <div class="border-top py-3 d-flex flex-wrap gap-2 align-items-center">
           <div class="me-auto">
-            <div class="fw-semibold font-monospace">{{ result.sample.sample_id }} — {{ result.sample.order.test.name }}</div>
+            <div class="fw-semibold font-monospace">{{ result.sample.sample_id }} — {{ result.sample.order.test.name }} {% include "includes/stat_badge.html" with stat=result.sample.order.stat %}</div>
             <div class="small muted">Authenticated by {{ result.authenticated_by.get_username|default:"—" }} · {{ result.authenticated_at|date:"Y-m-d H:i" }}</div>
           </div>
           <form method="post">{% csrf_token %}<input type="hidden" name="action" value="release"><input type="hidden" name="stage" value="release"><input type="hidden" name="result" value="{{ result.pk }}"><button class="btn btn-sm btn-success" type="submit">Release</button></form>

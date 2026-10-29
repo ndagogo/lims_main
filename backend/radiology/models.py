@@ -44,6 +44,9 @@ class ImagingOrder(TimeStampedModel):
     modality = models.ForeignKey(ImagingModality, on_delete=models.PROTECT, related_name='orders')
     procedure = models.ForeignKey('ImagingProcedure', null=True, blank=True, on_delete=models.PROTECT, related_name='orders')
     priority = models.CharField(max_length=10, choices=PRIORITIES, default='ROUTINE')
+    stat = models.ForeignKey(
+        'laboratory.StatType', null=True, blank=True, on_delete=models.PROTECT, related_name='imaging_orders',
+    )
     clinical_history = models.TextField(blank=True)
     requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='imaging_orders_requested')
     status = models.CharField(max_length=12, choices=STATUSES, default='ORDERED')
@@ -97,6 +100,10 @@ class RadiologyExam(TimeStampedModel):
     )
     radiologist_assigned_at = models.DateTimeField(null=True, blank=True)
     accepted_at = models.DateTimeField(null=True, blank=True)
+    returned_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='Set when the assigned radiologist did not accept before the window ended.',
+    )
 
     class Meta:
         permissions = [
@@ -117,6 +124,23 @@ class ExamSupplyUse(TimeStampedModel):
 
     class Meta:
         ordering = ['item_name']
+
+
+class RadiologistAcceptRecord(TimeStampedModel):
+    """Whether an assigned radiologist accepted a study inside the platform window."""
+    OUTCOMES = [('ACCEPTED', 'Accepted'), ('MISSED', 'Not accepted in time')]
+    exam = models.ForeignKey(RadiologyExam, on_delete=models.PROTECT, related_name='accept_records')
+    radiologist = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='radiology_accept_records',
+    )
+    assigned_at = models.DateTimeField()
+    closed_at = models.DateTimeField()
+    window_minutes = models.PositiveIntegerField()
+    outcome = models.CharField(max_length=12, choices=OUTCOMES)
+    note = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-closed_at']
 
 
 class RadiologyDeskSetting(TimeStampedModel):
@@ -223,9 +247,10 @@ class RadiologyReportTemplate(TimeStampedModel):
 class RadiologyReport(TimeStampedModel):
     STATUSES = [
         ('DRAFT', 'Draft'),
-        ('FINAL', 'Signed'),
-        ('RELEASED', 'Released'),
-        ('AMENDED', 'Amended'),
+        ('FINAL', 'Reported'),
+        ('APPROVED', 'Approved'),
+        ('RELEASED', 'Dispatched'),
+        ('AMENDED', 'Dispatched (amended)'),
     ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     exam = models.OneToOneField(RadiologyExam, on_delete=models.PROTECT, related_name='report')
@@ -255,6 +280,11 @@ class RadiologyReport(TimeStampedModel):
     )
     finalized_at = models.DateTimeField(null=True, blank=True)
     finalized_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='radiology_reports_finalized')
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='radiology_reports_approved',
+    )
     released_at = models.DateTimeField(null=True, blank=True)
     released_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
@@ -269,6 +299,10 @@ class RadiologyReport(TimeStampedModel):
         permissions = [
             ('finalize_report', 'Can finalise a radiology report'),
             ('release_report', 'Can release a signed radiology report'),
+            ('approve_result', 'Can approve a reported radiology result'),
+            ('authenticate_result', 'Can authenticate a reported radiology result'),
+            ('dispatch_result', 'Can dispatch an approved radiology result'),
+            ('modify_result', 'Can return a radiology result for modification'),
             ('override_report', 'Can amend a final radiology report'),
             ('add_report_addendum', 'Can add a formal addendum to a signed radiology report'),
         ]

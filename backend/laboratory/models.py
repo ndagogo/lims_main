@@ -31,6 +31,46 @@ class ServiceGroup(TimeStampedModel):
             raise ValidationError({'name': 'Hey, Service group already exists.'})
 
 
+class SpecimenType(TimeStampedModel):
+    """Managed specimen list. Each test picks one; the name is copied onto the test for collection."""
+    name = models.CharField(max_length=80, unique=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class ContainerType(TimeStampedModel):
+    """Managed container list. A test may use more than one."""
+    name = models.CharField(max_length=80, unique=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class StatType(TimeStampedModel):
+    """Priority chosen for each ordered test at registration."""
+    name = models.CharField(max_length=40, unique=True)
+    color = models.CharField(max_length=7, default='#198754')
+    text_color = models.CharField(max_length=7, default='#ffffff')
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    is_default = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+
+    def __str__(self):
+        return self.name
+
+
 class Test(TimeStampedModel):
     code = models.CharField(max_length=30, unique=True)
     name = models.CharField(max_length=160)
@@ -41,10 +81,14 @@ class Test(TimeStampedModel):
     )
     # Denormalized from service_group for sample ID generation and legacy filters.
     service_group_code = models.CharField(max_length=1, default='1')
-    specimen = models.CharField(max_length=80, blank=True, help_text='Specimen type, e.g. EDTA whole blood.')
+    specimen_type = models.ForeignKey(
+        SpecimenType, null=True, blank=True, on_delete=models.PROTECT, related_name='tests',
+    )
+    container_types = models.ManyToManyField(ContainerType, blank=True, related_name='tests')
+    specimen = models.CharField(max_length=80, blank=True, help_text='Copied from the selected specimen type.')
     collection_requirements = models.TextField(blank=True, help_text='Phlebotomy / collection requirements.')
     sample_volume = models.CharField(max_length=40, blank=True, help_text='Required sample volume, e.g. 3 mL.')
-    container = models.CharField(max_length=80, blank=True, help_text='Container / tube type.')
+    container = models.CharField(max_length=80, blank=True, help_text='Copied from the selected container types.')
     handling_instructions = models.TextField(blank=True, help_text='Transport and handling instructions.')
     default_workflow_code = models.CharField(
         max_length=40, blank=True, default='',
@@ -102,6 +146,7 @@ class LabOrder(TimeStampedModel):
     tariff=models.ForeignKey(Tariff,null=True,on_delete=models.PROTECT)
     price=models.DecimalField(max_digits=12,decimal_places=2,default=0)
     status=models.CharField(max_length=24,choices=STATUS_CHOICES,default='ORDERED')
+    stat=models.ForeignKey(StatType, null=True, blank=True, on_delete=models.PROTECT, related_name='lab_orders')
     def __str__(self): return f'{self.visit.visit_id} / {self.test.code}'
 
 class SampleCodeConfig(TimeStampedModel):
@@ -369,6 +414,8 @@ class LabResult(TimeStampedModel):
             ('authenticate_labresult', 'Can authenticate a laboratory result'),
             ('release_labresult', 'Can release a laboratory result'),
             ('amend_labresult', 'Can amend a released laboratory result'),
+            ('modify_lab_result', 'Can return a laboratory result for modification'),
+            ('dispatch_lab_result', 'Can dispatch a laboratory result'),
         ]
 
 class ResultValue(TimeStampedModel):

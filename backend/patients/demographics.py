@@ -4,7 +4,7 @@ from django.db.models import Q
 from django.utils.dateparse import parse_date
 
 from core.access import can_modify_patient_data
-from core.models import AuditEvent, UserCentreAccess
+from core.models import UserCentreAccess
 from patients.models import Patient, TITLE_CHOICES, SEX_CHOICES, RACE_CHOICES, STATE_CHOICES
 from patients.registration import apply_guardian, patient_values, validate_local_phone, validate_optional_email
 
@@ -44,7 +44,7 @@ def search_patients_for_demographics(user, query):
     ).distinct().order_by('last_name', 'first_name')
 
 
-def apply_demographic_updates(user, patient, post):
+def apply_demographic_updates(user, patient, post, request=None):
     if not can_modify_patient_data(user):
         raise PermissionDenied('can_modify_patient_data privilege is required.')
     if not user.is_superuser and not _visible_patients(user).filter(pk=patient.pk).exists():
@@ -90,13 +90,22 @@ def apply_demographic_updates(user, patient, post):
     if visit:
         centre = visit.centre
 
-    AuditEvent.objects.create(
+    from core.audit import record_audit
+    previous = {key: changed[key]['from'] for key in changed}
+    new_values = {key: changed[key]['to'] for key in changed}
+    record_audit(
+        request=request,
         actor=user,
         action='PATIENT_DEMOGRAPHICS_UPDATED',
         object_type='Patient',
         object_id=str(patient.pk),
         centre=centre,
-        detail={'uhid': patient.uhid, 'changes': changed},
+        patient_ref=patient.uhid,
+        visit_ref=visit.visit_id if visit else '',
+        previous_values=previous,
+        new_values=new_values,
+        detail={'uhid': patient.uhid, 'changes': changed, 'visit_id': visit.visit_id if visit else ''},
+        category='CLINICAL',
     )
     return patient, changed
 

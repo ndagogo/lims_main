@@ -1,12 +1,14 @@
 # Local → GitHub → Railway (secrets-safe)
 
+**Production GitHub remote:** https://github.com/ndagogo/lims_main.git
+
 This repo is set up so you can:
 
 1. develop on your machine with `backend/.env` (never committed),
-2. push source code to GitHub,
+2. push source code to GitHub (`lims_main`),
 3. deploy from GitHub to Railway with secrets stored only in Railway Variables.
 
-Railway builds from the **repository root** using `Dockerfile` + `railway.toml`. The Django app in `backend/` is copied into the image; runtime `WORKDIR` is `/app` (where `manage.py` lives).
+Railway builds from the **repository root** using `Dockerfile` + `railway.toml`. The Django app in `backend/` is copied into the image; runtime `WORKDIR` is `/app` (where `manage.py` lives). The image entrypoint ensures media directories exist; `preDeployCommand` runs migrations once before traffic shifts.
 
 ## Secrets rule (read this first)
 
@@ -100,9 +102,12 @@ git push -u origin HEAD
    - `DJANGO_ALLOWED_HOSTS` = `healthcheck.railway.app,${{RAILWAY_PUBLIC_DOMAIN}}` (or paste the public hostname)
    - `SECURE_SSL_REDIRECT=True`
    - `MEDIA_ROOT=/app/media`
-4. Generate a public domain (Networking). Railway injects `RAILWAY_PUBLIC_DOMAIN`; settings add it to allowed hosts / CSRF origins.
+   - `SERVE_MEDIA=True` (volume path) **or** configure `AWS_*` and leave `SERVE_MEDIA=False`
+   - `AUDIT_TRUST_X_FORWARDED_FOR=True` (default when Railway env is detected)
+4. Generate a public domain (Networking). Railway injects `RAILWAY_PUBLIC_DOMAIN`; settings add it to allowed hosts / CSRF origins / `PUBLIC_APP_URL`.
 5. Mount a **Volume** at `/app/media` **or** configure private S3 (`AWS_*` vars). Do not enable real patient uploads until storage is durable and backed up.
 6. Confirm `railway.toml` is used: build via root `Dockerfile`, `preDeployCommand` runs `migrate --noinput`, health check hits `/healthz`.
+7. Connect Railway to **ndagogo/lims_main** `main` branch only.
 
 Runtime chain:
 

@@ -1,0 +1,443 @@
+{% extends "base.html" %}
+{% block title %}Result dispatch | HFDN{% endblock %}
+{% block content %}
+<div class="dispatch-desk">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+    <div>
+      <div class="eyebrow">Results</div>
+      <h1>Result dispatch</h1>
+    </div>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <form method="get" class="dispatch-search d-flex gap-2 align-items-center">
+        <input type="hidden" name="tab" value="{{ tab }}">
+        {% if selected_key %}<input type="hidden" name="item" value="{{ selected_key }}">{% endif %}
+        {% if history_q %}<input type="hidden" name="history_q" value="{{ history_q }}">{% endif %}
+        {% if history_service %}<input type="hidden" name="history_service" value="{{ history_service }}">{% endif %}
+        {% if history_from %}<input type="hidden" name="history_from" value="{{ history_from }}">{% endif %}
+        {% if history_to %}<input type="hidden" name="history_to" value="{{ history_to }}">{% endif %}
+        <input class="form-control form-control-sm" type="search" name="q" value="{{ query }}" placeholder="Search patient, visit or sample ID" aria-label="Search dispatch queue">
+        <select class="form-select form-select-sm" name="per" aria-label="Rows per page" onchange="this.form.submit()">
+          {% for size in page_sizes %}<option value="{{ size }}" {% if size == queue.paginator.per_page %}selected{% endif %}>{{ size }}/page</option>{% endfor %}
+        </select>
+      </form>
+      <a class="btn btn-outline-dark btn-sm" href="{% url 'result-modify' %}">Modified approvals</a>
+      {% if selected and selected.ready %}
+      <button class="btn btn-primary btn-sm" type="submit" form="dispatch-compose">Dispatch selected</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-xl-3"><div class="kpi"><div class="kpi-label">Ready to dispatch</div><div class="kpi-value">{{ kpis.ready }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="kpi"><div class="kpi-label">Backlog</div><div class="kpi-value">{{ kpis.backlog }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="kpi"><div class="kpi-label">Dispatched today</div><div class="kpi-value">{{ kpis.dispatched_today }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="kpi"><div class="kpi-label">Failed deliveries</div><div class="kpi-value">{{ kpis.failed }}</div></div></div>
+  </div>
+
+  {# --- Work area: queue + compose --- #}
+  <div class="row g-3 mb-4 align-items-start">
+    <div class="col-xl-5">
+      <section class="card dispatch-panel mb-0">
+        <div class="dispatch-panel-head">
+          <h2 class="h5 mb-0">Dispatch queue</h2>
+        </div>
+        <div class="dispatch-tabs">
+          <a class="{% if tab == 'ready' %}is-on{% endif %}" href="?tab=ready{% if query %}&q={{ query|urlencode }}{% endif %}{% if selected_key %}&item={{ selected_key }}{% endif %}&per={{ queue.paginator.per_page }}">Ready ({{ tab_counts.ready }})</a>
+          <a class="{% if tab == 'failed' %}is-on{% endif %}" href="?tab=failed{% if query %}&q={{ query|urlencode }}{% endif %}&per={{ queue.paginator.per_page }}">Failed ({{ tab_counts.failed }})</a>
+          <a class="{% if tab == 'scheduled' %}is-on{% endif %}" href="?tab=scheduled{% if query %}&q={{ query|urlencode }}{% endif %}&per={{ queue.paginator.per_page }}">Scheduled ({{ tab_counts.scheduled }})</a>
+          <a class="{% if tab == 'sent' %}is-on{% endif %}" href="?tab=sent{% if query %}&q={{ query|urlencode }}{% endif %}&per={{ queue.paginator.per_page }}">Sent ({{ tab_counts.sent }})</a>
+        </div>
+        <div class="dispatch-table-wrap">
+          <table class="table table-sm mb-0 dispatch-queue">
+            <thead>
+              <tr>
+                <th scope="col" class="col-select"></th>
+                <th scope="col">Visit</th>
+                <th scope="col">Test / channel</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in queue %}
+              <tr class="{% if selected_key == row.key %}is-selected{% endif %}">
+                <td>
+                  {% if tab == 'ready' %}
+                  <a class="dispatch-select" href="?tab=ready&item={{ row.key }}&qpage={{ queue.number }}&per={{ queue.paginator.per_page }}{% if query %}&q={{ query|urlencode }}{% endif %}" aria-label="Select {{ row.visit_id }}">{% if selected_key == row.key %}●{% else %}○{% endif %}</a>
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="fw-semibold">{{ row.visit_id }}</div>
+                  <div class="small muted">{{ row.patient_name }}</div>
+                </td>
+                <td class="small">{{ row.test_label }}</td>
+                <td>
+                  {% if row.ready %}<span class="dispatch-badge is-ready">Ready</span>
+                  {% elif tab == 'failed' %}<span class="dispatch-badge is-failed">{{ row.status_label }}</span>
+                  {% else %}<span class="dispatch-badge is-wait">{{ row.status_label }}</span>{% endif %}
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="4" class="muted p-3">Nothing in this queue.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="dispatch-panel-foot">{% include "includes/pagination.html" with page=queue %}</div>
+      </section>
+    </div>
+
+    <div class="col-xl-7">
+      {% if selected and selected.service != 'DELIVERY' %}
+      <section class="card dispatch-panel mb-3">
+        <div class="dispatch-panel-head d-flex flex-wrap justify-content-between align-items-start gap-2">
+          <div>
+            <h2 class="h5 mb-1">Dispatch — {{ patient_panel.name }}</h2>
+            <div class="small muted">{{ selected.visit_id }}{% if patient_panel %} · {{ patient_panel.payer }} · {{ patient_panel.approved_label }}{% endif %}</div>
+          </div>
+          {% if preview_url %}<a class="btn btn-outline-dark btn-sm" target="_blank" href="{{ preview_url }}">Preview report</a>{% endif %}
+        </div>
+        <div class="dispatch-panel-body">
+          <form method="post" id="dispatch-compose">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="compose_dispatch">
+            <input type="hidden" name="item" value="{{ selected.key }}">
+
+            <div class="mb-3">
+              <label class="form-label" for="dispatch-comment">Comment</label>
+              <input class="form-control form-control-sm" id="dispatch-comment" name="comment" value="{{ patient_panel.comment }}" placeholder="Optional note for this dispatch">
+            </div>
+
+            <div class="mb-2"><span class="form-label d-block">Recipients</span></div>
+            <div class="dispatch-chips mb-3">
+              {% for code, label in recipient_chips %}
+              <label class="dispatch-chip">
+                <input type="checkbox" name="recipients" value="{{ code }}" {% if code in default_recipients %}checked{% endif %}>
+                <span>{{ label }}</span>
+              </label>
+              {% endfor %}
+            </div>
+
+            <div class="dispatch-channels mb-3">
+              <div class="dispatch-channel-block">
+                <div class="fw-semibold small mb-1">Patient — Self</div>
+                <div class="d-flex flex-wrap gap-3">
+                  {% for code, label in channel_options %}
+                  <label class="form-check form-check-inline m-0">
+                    <input class="form-check-input" type="checkbox" name="channels_self" value="{{ code }}" {% if code == 'SMS' or code == 'PORTAL' %}checked{% endif %}>
+                    <span class="form-check-label">{{ label }}</span>
+                  </label>
+                  {% endfor %}
+                </div>
+                {% if patient_panel.alt_phone %}<div class="small muted mt-1">Alternative phone: {{ patient_panel.alt_phone }}</div>{% endif %}
+              </div>
+
+              {% if patient_panel.physician %}
+              <div class="dispatch-channel-block mt-3">
+                <div class="fw-semibold small mb-1">Referring physician — {{ patient_panel.physician }}</div>
+                <div class="d-flex flex-wrap gap-3">
+                  {% for code, label in channel_options %}
+                    {% if code != 'PORTAL' %}
+                    <label class="form-check form-check-inline m-0">
+                      <input class="form-check-input" type="checkbox" name="channels_physician" value="{{ code }}" {% if code == 'EMAIL' and patient_panel.physician_email %}checked{% elif code == 'SMS' and patient_panel.physician_phone and not patient_panel.physician_email %}checked{% endif %}>
+                      <span class="form-check-label">{{ label }}</span>
+                    </label>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </div>
+              {% endif %}
+
+              <div class="dispatch-channel-block mt-3">
+                <div class="fw-semibold small mb-1">Family / Guardian{% if patient_panel.guardian_name %} — {{ patient_panel.guardian_name }}{% endif %}</div>
+                <div class="d-flex flex-wrap gap-3">
+                  {% for code, label in channel_options %}
+                    {% if code == 'SMS' or code == 'WHATSAPP' or code == 'HARDCOPY' %}
+                    <label class="form-check form-check-inline m-0">
+                      <input class="form-check-input" type="checkbox" name="channels_family" value="{{ code }}">
+                      <span class="form-check-label">{{ label }}</span>
+                    </label>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+                {% if patient_panel.guardian_phone %}<div class="small muted mt-1">{{ patient_panel.guardian_phone }}</div>{% endif %}
+              </div>
+
+              <div class="row g-2 mt-2">
+                <div class="col-md-4"><label class="form-label" for="third-name">Third party name</label><input class="form-control form-control-sm" id="third-name" name="third_party_name"></div>
+                <div class="col-md-4"><label class="form-label" for="third-phone">Third party phone</label><input class="form-control form-control-sm" id="third-phone" name="third_party_phone"></div>
+                <div class="col-md-4"><label class="form-label" for="third-email">Third party email</label><input class="form-control form-control-sm" id="third-email" name="third_party_email" type="email"></div>
+                <div class="col-12"><label class="form-label" for="third-auth">Third-party authorisation</label><input class="form-control form-control-sm" id="third-auth" name="third_party_auth" placeholder="Required when Third party is selected"></div>
+                <div class="col-12">
+                  <div class="fw-semibold small mb-1">Third party channels</div>
+                  {% for code, label in channel_options %}
+                    {% if code != 'PORTAL' %}
+                    <label class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="channels_third_party" value="{{ code }}"><span class="form-check-label">{{ label }}</span></label>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+
+            <div class="row g-2 mb-3">
+              <div class="col-md-4">
+                <label class="form-label" for="msg-template">Message template</label>
+                <select class="form-select form-select-sm" id="msg-template" name="template"><option value="result-ready" selected>Results ready</option></select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="report-format">Report format</label>
+                <select class="form-select form-select-sm" id="report-format" name="report_format"><option value="pdf-letterhead" selected>PDF with letterhead</option></select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="link-expiry">Link expiry</label>
+                <select class="form-select form-select-sm" id="link-expiry" name="link_expiry">
+                  {% for value, label in link_expiry_choices %}<option value="{{ value }}" {% if value == '7' %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <div class="row g-2 mb-3">
+              <div class="col-md-6">
+                <label class="form-check"><input class="form-check-input" type="checkbox" name="password_pdf" value="1" disabled><span class="form-check-label">Password protect PDF (Date of Birth)</span></label>
+                <div class="form-text">Portal access uses UHID + DOB instead of embedding a password.</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-check"><input class="form-check-input" type="checkbox" name="require_otp" value="1" disabled><span class="form-check-label">Require OTP to open link</span></label>
+                <div class="form-text">Short-lived portal tokens expire after the link window.</div>
+              </div>
+              <div class="col-md-6"><label class="form-check"><input class="form-check-input" type="checkbox" name="include_ranges" value="1" checked><span class="form-check-label">Include reference ranges</span></label></div>
+              <div class="col-md-6"><label class="form-check"><input class="form-check-input" type="checkbox" name="include_previous" value="1"><span class="form-check-label">Include previous results</span></label></div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label" for="msg-preview">Message preview</label>
+              <textarea class="form-control" id="msg-preview" rows="3" readonly>{{ message_preview }}</textarea>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 justify-content-end">
+              {% if preview_url %}<a class="btn btn-outline-dark" target="_blank" href="{{ preview_url }}">Preview report</a>{% endif %}
+              <button class="btn btn-primary" type="submit" {% if not selected.ready %}disabled{% endif %}>Dispatch to recipients</button>
+            </div>
+          </form>
+        </div>
+      </section>
+      {% else %}
+      <section class="card dispatch-panel mb-3">
+        <div class="dispatch-panel-body">
+          <h2 class="h5">Select a ready result</h2>
+          <p class="muted mb-0">Choose a visit from the Ready queue to compose recipients, channels, and dispatch the finished report.</p>
+        </div>
+      </section>
+      {% endif %}
+
+      <section class="card dispatch-panel mb-0">
+        <div class="dispatch-panel-head"><h2 class="h5 mb-0">Dispatch rules</h2></div>
+        <div class="dispatch-panel-body">
+          <ol class="small mb-0 ps-3">
+            {% for rule in rules %}<li class="mb-1">{{ rule }}</li>{% endfor %}
+          </ol>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  {# --- Selected visit detail: patient + delivery log --- #}
+  {% if patient_panel %}
+  <div class="row g-3 mb-4">
+    <div class="col-lg-5">
+      <section class="card dispatch-panel h-100 mb-0">
+        <div class="dispatch-panel-head d-flex justify-content-between align-items-center gap-2">
+          <h2 class="h5 mb-0">Patient and registration</h2>
+          {% if patient_panel.document_url %}<a class="btn btn-outline-dark btn-sm" target="_blank" href="{{ patient_panel.document_url }}?inline=1">View document</a>{% endif %}
+        </div>
+        <div class="dispatch-panel-body">
+          <dl class="dispatch-dl mb-0">
+            <div><dt>Name</dt><dd class="fw-semibold">{{ patient_panel.name }}</dd></div>
+            <div><dt>Age / Sex</dt><dd>{{ patient_panel.age_sex|default:"—" }}</dd></div>
+            <div><dt>Phone</dt><dd>{{ patient_panel.phone|default:"—" }}</dd></div>
+            <div><dt>Email</dt><dd>{{ patient_panel.email|default:"—" }}</dd></div>
+            <div class="span-2"><dt>Address</dt><dd>{{ patient_panel.address|default:"—" }}</dd></div>
+            <div><dt>Visit ID</dt><dd>{{ patient_panel.visit_id }}</dd></div>
+            <div><dt>Registered</dt><dd>{{ patient_panel.registered_at|date:"d M Y H:i" }}</dd></div>
+            <div><dt>Payer / Scheme</dt><dd>{{ patient_panel.payer }}</dd></div>
+            <div><dt>Requesting physician</dt><dd>{{ patient_panel.physician|default:"—" }}</dd></div>
+          </dl>
+          {% if patient_panel.blockers %}
+          <div class="alert alert-warning mt-3 mb-0 py-2 small">
+            {% for blocker in patient_panel.blockers %}{{ blocker.message }}{% if not forloop.last %}<br>{% endif %}{% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </section>
+    </div>
+    <div class="col-lg-7">
+      <section class="card dispatch-panel h-100 mb-0">
+        <div class="dispatch-panel-head"><h2 class="h5 mb-0">Delivery log</h2></div>
+        <div class="dispatch-table-wrap">
+          <table class="table table-sm mb-0">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Channel</th>
+                <th>Recipient</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in delivery_log %}
+              <tr>
+                <td>{{ row.created_at|date:"d M H:i" }}</td>
+                <td>{{ row.get_channel_display }}</td>
+                <td class="small">{{ row.recipient }}</td>
+                <td>
+                  {% if row.status == 'SENT' %}<span class="dispatch-badge is-ready">Delivered</span>
+                  {% elif row.status == 'FAILED' %}<span class="dispatch-badge is-failed">Failed{% if row.last_error %} — {{ row.last_error|truncatechars:28 }}{% endif %}</span>
+                  {% else %}<span class="dispatch-badge is-wait">{{ row.get_status_display }}</span>{% endif %}
+                </td>
+                <td>
+                  {% if row.status == 'FAILED' %}
+                  <form method="post" class="m-0">{% csrf_token %}<input type="hidden" name="action" value="retry_delivery"><input type="hidden" name="outbox" value="{{ row.pk }}"><input type="hidden" name="item" value="{{ selected_key }}"><button class="btn btn-outline-dark btn-sm" type="submit">Retry</button></form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="muted p-3">No delivery has been recorded for this visit.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="dispatch-panel-foot">{% include "includes/pagination.html" with page=delivery_log %}</div>
+      </section>
+    </div>
+  </div>
+  {% endif %}
+
+  {# --- History band --- #}
+  <section class="card dispatch-panel mb-0" id="dispatch-history">
+    <div class="dispatch-panel-head d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div>
+        <h2 class="h5 mb-0">Dispatch history</h2>
+        <div class="small muted">{{ history_count }} record{{ history_count|pluralize }}</div>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-dark btn-sm" href="{% url 'dispatch-history-export' %}?fmt=csv&{{ history_query }}">Download CSV</a>
+        <a class="btn btn-outline-dark btn-sm" href="{% url 'dispatch-history-export' %}?fmt=pdf&{{ history_query }}">Download PDF</a>
+        <a class="btn btn-outline-dark btn-sm" href="{% url 'dispatch-history-export' %}?fmt=xlsx&{{ history_query }}">Download Excel</a>
+      </div>
+    </div>
+    <div class="dispatch-panel-body border-bottom">
+      <form method="get" class="row g-2 align-items-end">
+        <input type="hidden" name="tab" value="{{ tab }}">
+        {% if selected_key %}<input type="hidden" name="item" value="{{ selected_key }}">{% endif %}
+        {% if query %}<input type="hidden" name="q" value="{{ query }}">{% endif %}
+        <input type="hidden" name="per" value="{{ queue.paginator.per_page }}">
+        <div class="col-md-3"><label class="form-label" for="history-q">Search</label><input class="form-control form-control-sm" id="history-q" name="history_q" value="{{ history_q }}" placeholder="Visit, patient, actor"></div>
+        <div class="col-md-2">
+          <label class="form-label" for="history-service">Service</label>
+          <select class="form-select form-select-sm" id="history-service" name="history_service">
+            <option value="">All</option>
+            <option value="RADIOLOGY" {% if history_service == 'RADIOLOGY' %}selected{% endif %}>Radiology</option>
+            <option value="LABORATORY" {% if history_service == 'LABORATORY' %}selected{% endif %}>Laboratory</option>
+          </select>
+        </div>
+        <div class="col-md-2"><label class="form-label" for="history-from">From</label><input class="form-control form-control-sm" id="history-from" type="date" name="history_from" value="{{ history_from }}"></div>
+        <div class="col-md-2"><label class="form-label" for="history-to">To</label><input class="form-control form-control-sm" id="history-to" type="date" name="history_to" value="{{ history_to }}"></div>
+        <div class="col-md-3 d-flex gap-2">
+          <button class="btn btn-sm btn-primary" type="submit">Filter</button>
+          <a class="btn btn-sm btn-outline-dark" href="{% url 'result-dispatch' %}{% if selected_key %}?item={{ selected_key }}{% endif %}#dispatch-history">Clear</a>
+        </div>
+      </form>
+    </div>
+    <div class="dispatch-table-wrap">
+      <table class="table table-sm mb-0">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Who</th>
+            <th>Visit ID</th>
+            <th>Patient</th>
+            <th>Service</th>
+            <th>Summary</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in history %}
+          <tr>
+            <td class="text-nowrap">{{ row.created_at|date:"d M Y H:i" }}</td>
+            <td>{{ row.actor.get_full_name|default:row.actor.username }}</td>
+            <td>{{ row.visit.visit_id }}</td>
+            <td>{{ row.visit.patient.first_name }} {{ row.visit.patient.last_name }}</td>
+            <td>{{ row.get_service_display }}</td>
+            <td class="small">{{ row.summary }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="muted p-3">No dispatch has been recorded for these filters.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="dispatch-panel-foot">{% include "includes/pagination.html" with page=history %}</div>
+  </section>
+</div>
+
+<style>
+  .dispatch-search { min-width: min(100%, 320px); }
+  .dispatch-panel { overflow: hidden; }
+  .dispatch-panel-head {
+    padding: .85rem 1rem;
+    border-bottom: 1px solid var(--line);
+    background: #faf8f4;
+  }
+  .dispatch-panel-body { padding: 1rem; }
+  .dispatch-panel-foot {
+    padding: .55rem 1rem .75rem;
+    border-top: 1px solid var(--line);
+    background: #faf8f4;
+  }
+  .dispatch-table-wrap { overflow: auto; max-height: 22rem; }
+  .dispatch-table-wrap thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: #fff; box-shadow: inset 0 -1px 0 var(--line);
+    font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+  }
+  .dispatch-queue .col-select { width: 2rem; }
+  .dispatch-tabs {
+    display: flex; flex-wrap: wrap; gap: .15rem;
+    border-bottom: 1px solid var(--line); padding: .45rem .65rem 0;
+    background: #f7f5f0;
+  }
+  .dispatch-tabs a {
+    text-decoration: none; color: var(--muted); font-size: .88rem; font-weight: 600;
+    padding: .4rem .7rem; border-radius: 10px 10px 0 0;
+  }
+  .dispatch-tabs a.is-on { color: var(--ink); background: #fff; border: 1px solid var(--line); border-bottom-color: #fff; }
+  .dispatch-queue tr.is-selected { background: var(--sage); }
+  .dispatch-select { text-decoration: none; color: var(--ink); font-size: 1rem; }
+  .dispatch-badge {
+    display: inline-block; font-size: .72rem; font-weight: 600; letter-spacing: .02em;
+    border-radius: 999px; padding: .18rem .55rem; border: 1px solid var(--line);
+  }
+  .dispatch-badge.is-ready { background: var(--sage); color: var(--sage-ink); border-color: #cfe3d7; }
+  .dispatch-badge.is-failed { background: #fdecec; color: var(--danger); border-color: #f3c7c4; }
+  .dispatch-badge.is-wait { background: #fff7ed; color: var(--warn); border-color: #f5d9b0; }
+  .dispatch-chips { display: flex; flex-wrap: wrap; gap: .45rem; }
+  .dispatch-chip {
+    display: inline-flex; align-items: center; gap: .35rem;
+    border: 1px solid var(--line); border-radius: 999px; padding: .28rem .75rem;
+    background: #fff; cursor: pointer; font-size: .88rem; font-weight: 600;
+  }
+  .dispatch-chip:has(input:checked) { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .dispatch-chip input { position: absolute; opacity: 0; pointer-events: none; }
+  .dispatch-channel-block { border-top: 1px solid var(--line); padding-top: .75rem; }
+  .dispatch-channels .dispatch-channel-block:first-child { border-top: 0; padding-top: 0; }
+  .dispatch-dl {
+    display: grid; grid-template-columns: 1fr 1fr; gap: .65rem 1rem; margin: 0;
+  }
+  .dispatch-dl .span-2 { grid-column: 1 / -1; }
+  .dispatch-dl dt { margin: 0; color: var(--muted); font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; font-weight: 600; }
+  .dispatch-dl dd { margin: .1rem 0 0; }
+  @media (max-width: 575.98px) {
+    .dispatch-dl { grid-template-columns: 1fr; }
+  }
+</style>
+{% endblock %}

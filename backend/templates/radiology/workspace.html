@@ -8,57 +8,186 @@
       <h1>Radiology worklist</h1>
     </div>
     <div class="d-flex gap-2">
-      <a class="btn btn-outline-dark btn-sm" href="?modality={{ modality_filter }}&when={% if when == 'today' %}all{% else %}today{% endif %}&desk={{ desk }}">{% if when == 'today' %}Today{% else %}All dates{% endif %}</a>
-      <a class="btn btn-primary btn-sm" href="?modality={{ modality_filter }}&when={{ when }}&desk={{ desk }}">Refresh worklist</a>
+      <a class="btn btn-outline-dark btn-sm" href="?{{ list_query }}">Refresh worklist</a>
+      {% if can_modify_result %}<a class="btn btn-outline-dark btn-sm" href="{% url 'result-modify' %}">Modified approvals</a>{% endif %}
+      {% if can_dispatch %}<a class="btn btn-outline-dark btn-sm" href="{% url 'result-dispatch' %}">Result dispatch</a>{% endif %}
+      {% if show_performance %}<a class="btn btn-outline-dark btn-sm" href="{% url 'radiology-performance' %}">Radiologist performance</a>{% endif %}
     </div>
   </div>
+  {% if can_approve_result %}
+  <section class="card p-3 mb-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+      <h2 class="h5 mb-0">Approve reported results</h2>
+      <a class="btn btn-outline-dark btn-sm" href="?desk=report&status=REPORTED&modality={{ modality_filter }}&when={{ when }}">Open reporting desk</a>
+    </div>
+    {% for report in awaiting_approval %}
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 border-top py-2">
+        <div>
+          <strong>{{ report.exam.order.visit.visit_id }}</strong>
+          <div class="small muted">{{ report.exam.order.modality.get_modality_type_display }}{% if report.exam.order.procedure %} · {{ report.exam.order.procedure.name }}{% endif %} · Reported</div>
+        </div>
+        <div class="d-flex gap-2">
+          <a class="btn btn-sm btn-outline-dark" target="_blank" href="{% url 'radiology-report-preview' report.pk %}">Preview finished report</a>
+          {% if report.author_id != request.user.pk or request.user.is_superuser %}
+          <form method="post" class="m-0">{% csrf_token %}<input type="hidden" name="action" value="approve"><input type="hidden" name="report" value="{{ report.pk }}"><button class="btn btn-sm btn-primary" type="submit">Approve Result</button></form>
+          {% endif %}
+        </div>
+      </div>
+    {% empty %}
+      <p class="muted mb-0">No reported radiology result is waiting for approval.</p>
+    {% endfor %}
+  </section>
+  {% endif %}
+  {% if show_radiographer_history %}
   <div class="rad-filters mb-3">
-    <a class="rad-pill {% if modality_filter == 'ALL' %}is-on{% endif %}" href="?modality=ALL&when={{ when }}&desk={{ desk }}">All · {{ modality_counts.ALL }}</a>
-    <a class="rad-pill {% if modality_filter == 'CT' %}is-on{% endif %}" href="?modality=CT&when={{ when }}&desk={{ desk }}">CT · {{ modality_counts.CT|default:0 }}</a>
-    <a class="rad-pill {% if modality_filter == 'XRAY' %}is-on{% endif %}" href="?modality=XRAY&when={{ when }}&desk={{ desk }}">X-Ray · {{ modality_counts.XRAY|default:0 }}</a>
-    <a class="rad-pill {% if modality_filter == 'MRI' %}is-on{% endif %}" href="?modality=MRI&when={{ when }}&desk={{ desk }}">MRI · {{ modality_counts.MRI|default:0 }}</a>
-    <a class="rad-pill {% if modality_filter == 'US' %}is-on{% endif %}" href="?modality=US&when={{ when }}&desk={{ desk }}">Ultrasound · {{ modality_counts.US|default:0 }}</a>
-    <a class="rad-pill {% if modality_filter == 'MAMMO' %}is-on{% endif %}" href="?modality=MAMMO&when={{ when }}&desk={{ desk }}">Mammo · {{ modality_counts.MAMMO|default:0 }}</a>
+    <a class="rad-pill {% if scope != 'history' %}is-on{% endif %}" href="?scope=active&modality={{ modality_filter }}&when={{ when }}&desk={{ desk }}&date_from={{ date_from }}&date_to={{ date_to }}&visit={{ visit_query }}&status={{ status_filter }}">Active worklist</a>
+    <a class="rad-pill {% if scope == 'history' %}is-on{% endif %}" href="?scope=history&modality={{ modality_filter }}&when={{ when }}&desk={{ desk }}&date_from={{ date_from }}&date_to={{ date_to }}&visit={{ visit_query }}&status={{ status_filter }}">My history</a>
+  </div>
+  {% endif %}
+  <form method="get" class="row g-2 align-items-end mb-3">
+    <input type="hidden" name="desk" value="{{ desk }}">
+    <input type="hidden" name="modality" value="{{ modality_filter }}">
+    <input type="hidden" name="scope" value="{{ scope }}">
+    <div class="col-md-2">
+      <label class="form-label" for="date-from">From</label>
+      <input class="form-control form-control-sm" id="date-from" type="date" name="date_from" value="{{ date_from }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label" for="date-to">To</label>
+      <input class="form-control form-control-sm" id="date-to" type="date" name="date_to" value="{{ date_to }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label" for="visit-id">Visit ID</label>
+      <input class="form-control form-control-sm" id="visit-id" name="visit" value="{{ visit_query }}" placeholder="Visit ID">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label" for="exam-status">Status</label>
+      <select class="form-select form-select-sm" id="exam-status" name="status">
+        <option value="">All</option>
+        <option value="PENDING" {% if status_filter == 'PENDING' %}selected{% endif %}>Pending</option>
+        <option value="REPORTED" {% if status_filter == 'REPORTED' %}selected{% endif %}>Reported</option>
+        <option value="APPROVED" {% if status_filter == 'APPROVED' %}selected{% endif %}>Approved</option>
+        <option value="DISPATCHED" {% if status_filter == 'DISPATCHED' %}selected{% endif %}>Dispatched</option>
+      </select>
+    </div>
+    <div class="col-md-2">
+      <button class="btn btn-sm btn-primary" type="submit">Search</button>
+    </div>
+  </form>
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-md-3"><div class="card p-3"><div class="small muted">Pending</div><div class="h4 mb-0">{{ exam_stats.PENDING }}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><div class="small muted">Reported</div><div class="h4 mb-0">{{ exam_stats.REPORTED }}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><div class="small muted">Approved</div><div class="h4 mb-0">{{ exam_stats.APPROVED }}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card p-3"><div class="small muted">Dispatched</div><div class="h4 mb-0">{{ exam_stats.DISPATCHED }}</div></div></div>
+  </div>
+  <div class="d-flex gap-2 mb-3">
+    <a class="btn btn-outline-dark btn-sm" href="{% url 'radiology-stats-export' %}?fmt=csv&{{ list_query }}">Download CSV</a>
+    <a class="btn btn-outline-dark btn-sm" href="{% url 'radiology-stats-export' %}?fmt=pdf&{{ list_query }}">Download PDF</a>
+    <a class="btn btn-outline-dark btn-sm" href="{% url 'radiology-stats-export' %}?fmt=xlsx&{{ list_query }}">Download Excel</a>
+  </div>
+  <div class="rad-filters mb-3">
+    <a class="rad-pill {% if modality_filter == 'ALL' %}is-on{% endif %}" href="?modality=ALL&when={{ when }}&desk={{ desk }}&scope={{ scope }}&date_from={{ date_from }}&date_to={{ date_to }}&visit={{ visit_query }}&status={{ status_filter }}">All · {{ modality_counts.ALL }}</a>
+    {% for pill in modality_pills %}
+    <a class="rad-pill {% if modality_filter == pill.code %}is-on{% endif %}" href="?modality={{ pill.code }}&when={{ when }}&desk={{ desk }}&scope={{ scope }}&date_from={{ date_from }}&date_to={{ date_to }}&visit={{ visit_query }}&status={{ status_filter }}">{{ pill.label }} · {{ pill.count }}</a>
+    {% endfor %}
   </div>
   <div class="rad-grid">
     <section class="card rad-table-card">
-      <table class="table align-middle mb-0">
-        <thead><tr><th>Accession</th><th>Patient</th><th>Modality</th><th>Procedure</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-          {% for order in orders %}
-          <tr class="{% if selected and selected.pk == order.pk %}is-selected{% endif %}">
-            <td><a class="rad-acc" href="?study={{ order.pk }}&modality={{ modality_filter }}&when={{ when }}&desk={{ desk }}">{{ order.visit.visit_id }}</a></td>
-            <td>{{ order.visit.patient.first_name }}<br>{{ order.visit.patient.last_name }}</td>
-            <td>{{ order.modality.get_modality_type_display }}</td>
-            <td>{{ order.procedure.name|default:order.modality.name }}</td>
-            <td>
-              {% if order.exam.status == 'ASSIGNED' %}<span class="dot dot-wait"></span> Awaiting start
-              {% elif order.exam.status == 'IN_PROGRESS' %}<span class="dot dot-live"></span> In exam{% if order.exam.duration_label %} · {{ order.exam.duration_label }}{% endif %}
-              {% elif order.exam.status == 'ACQUIRED' and not order.exam.pacs_uploaded_at %}<span class="dot dot-wait"></span> Ended{% if order.exam.duration_label %} · {{ order.exam.duration_label }}{% endif %}
-              {% elif order.exam.report and order.exam.report.status != 'DRAFT' %}<span class="rad-status rad-status-reported"><span class="dot dot-reported"></span> Reported</span>
-              {% elif order.exam.accepted_at %}<span class="rad-status rad-status-ready"><span class="dot dot-ready"></span> Ready to report</span>
-              {% elif order.exam.pacs_uploaded_at %}<span class="rad-status rad-status-await"><span class="dot dot-await"></span> Awaiting acceptance{% if order.exam.accept_remaining != None %} · {{ order.exam.accept_remaining }} min{% endif %}</span>
-              {% else %}<span class="dot"></span> {{ order.exam.get_status_display }}{% endif %}
-            </td>
-            <td class="text-end">
-              {% if is_radiographer and order.exam.status == 'ASSIGNED' %}
-                <form method="post" {% if active_exam %}data-exam-busy="1"{% endif %} onsubmit="return guardExamStart(this)">{% csrf_token %}<input type="hidden" name="action" value="start"><input type="hidden" name="exam" value="{{ order.exam.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Start exam</button></form>
-              {% elif is_radiographer and order.exam.status == 'ACQUIRED' and not order.exam.pacs_uploaded_at %}
-                <form method="post">{% csrf_token %}<input type="hidden" name="action" value="upload_pacs"><input type="hidden" name="exam" value="{{ order.exam.pk }}"><button class="btn btn-sm btn-primary" type="submit">Upload to PACS server</button></form>
-              {% elif is_radiologist and order.exam.pacs_uploaded_at and not order.exam.accepted_at %}
-                {% if order.exam.can_reassign or order.exam.assigned_radiologist_id == request.user.pk or request.user.is_superuser %}
-                <form method="post">{% csrf_token %}<input type="hidden" name="action" value="accept"><input type="hidden" name="exam" value="{{ order.exam.pk }}"><button class="btn btn-sm btn-rad-accept" type="submit">Accept</button></form>
+      <div class="rad-table-scroll">
+        <table class="table rad-worklist mb-0">
+          <colgroup>
+            <col class="col-acc">
+            <col class="col-patient">
+            <col class="col-modality">
+            <col class="col-procedure">
+            <col class="col-status">
+            <col class="col-request">
+            <col class="col-action">
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col">Accession</th>
+              <th scope="col">Patient</th>
+              <th scope="col">Modality</th>
+              <th scope="col">Procedure</th>
+              <th scope="col">Status</th>
+              <th scope="col">Request form</th>
+              <th scope="col">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for order in orders %}
+            <tr class="{% if selected and selected.pk == order.pk %}is-selected{% endif %}">
+              <td class="rad-cell-acc"><a class="rad-acc" href="?study={{ order.pk }}&{{ list_query }}">{{ order.visit.visit_id }}</a></td>
+              <td class="rad-cell-patient">
+                <span class="rad-patient-name">{{ order.visit.patient.first_name }} {{ order.visit.patient.last_name }}</span>
+              </td>
+              <td class="rad-cell-modality">{{ order.modality.get_modality_type_display }}</td>
+              <td class="rad-cell-procedure">
+                <span class="rad-procedure-line">{{ order.procedure.name|default:order.modality.name }}</span>
+                {% include "includes/stat_badge.html" with stat=order.stat %}
+              </td>
+              <td class="rad-cell-status">
+                {% if order.exam.status == 'ASSIGNED' %}
+                  <span class="rad-status rad-status-wait"><span class="dot dot-wait"></span>Awaiting start</span>
+                {% elif order.exam.status == 'IN_PROGRESS' %}
+                  <span class="rad-status rad-status-live"><span class="dot dot-live"></span>In exam</span>
+                  {% if order.exam.duration_label %}<span class="rad-status-meta">{{ order.exam.duration_label }}</span>{% endif %}
+                {% elif order.exam.awaiting_reassignment %}
+                  <span class="rad-status rad-status-await"><span class="dot dot-await"></span>Returned for reassignment</span>
+                {% elif order.exam.status == 'ACQUIRED' and not order.exam.pacs_uploaded_at %}
+                  <span class="rad-status rad-status-wait"><span class="dot dot-wait"></span>Ended</span>
+                  {% if order.exam.duration_label %}<span class="rad-status-meta">{{ order.exam.duration_label }}</span>{% endif %}
+                {% elif order.exam.report and order.exam.report.status == 'FINAL' %}
+                  <span class="rad-status rad-status-reported"><span class="dot dot-reported"></span>Reported</span>
+                {% elif order.exam.report and order.exam.report.status == 'APPROVED' %}
+                  <span class="rad-status rad-status-ready"><span class="dot dot-ready"></span>Approved</span>
+                {% elif order.exam.report and order.exam.report.status == 'RELEASED' %}
+                  <span class="rad-status rad-status-done"><span class="dot dot-done"></span>Dispatched</span>
+                {% elif order.exam.report and order.exam.report.status == 'AMENDED' %}
+                  <span class="rad-status rad-status-done"><span class="dot dot-done"></span>Dispatched</span>
+                {% elif order.exam.accepted_at %}
+                  <span class="rad-status rad-status-ready"><span class="dot dot-ready"></span>Ready to report</span>
+                {% elif order.exam.pacs_uploaded_at %}
+                  <span class="rad-status rad-status-await"><span class="dot dot-await"></span>Awaiting acceptance</span>
+                  {% if order.exam.accept_remaining != None %}<span class="rad-status-meta">{{ order.exam.accept_remaining }} min</span>{% endif %}
+                {% else %}
+                  <span class="rad-status rad-status-wait"><span class="dot"></span>{{ order.exam.get_status_display }}</span>
                 {% endif %}
-              {% elif is_radiologist and order.exam.accepted_at %}
-                <a class="btn btn-sm btn-rad-open" href="?study={{ order.pk }}&modality={{ modality_filter }}&when={{ when }}&desk={{ desk }}">Open report</a>
-              {% endif %}
-            </td>
-          </tr>
-          {% empty %}
-          <tr><td colspan="6" class="muted p-4">{% if desk == 'report' %}No studies have been uploaded to PACS yet.{% else %}No paid studies are waiting.{% endif %}</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+              </td>
+              <td class="rad-cell-request">
+                {% if order.request_form %}
+                  <a class="btn btn-sm btn-outline-dark rad-row-btn" target="_blank" href="{% url 'patient-document-download' order.request_form.pk %}?inline=1">View Request Form</a>
+                {% else %}
+                  <span class="rad-empty">No request form</span>
+                {% endif %}
+              </td>
+              <td class="rad-cell-action">
+                <div class="rad-action-slot">
+                  {% if is_radiographer and order.exam.status == 'ASSIGNED' %}
+                    <form method="post" {% if active_exam %}data-exam-busy="1"{% endif %} onsubmit="return guardExamStart(this)">{% csrf_token %}<input type="hidden" name="action" value="start"><input type="hidden" name="exam" value="{{ order.exam.pk }}"><button class="btn btn-sm btn-outline-dark rad-row-btn" type="submit">Start exam</button></form>
+                  {% elif is_radiographer and order.exam.status == 'ACQUIRED' and not order.exam.pacs_uploaded_at %}
+                    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="upload_pacs"><input type="hidden" name="exam" value="{{ order.exam.pk }}"><button class="btn btn-sm btn-primary rad-row-btn" type="submit">Upload to PACS</button></form>
+                  {% elif is_radiologist and order.exam.pacs_uploaded_at and not order.exam.accepted_at and not order.exam.awaiting_reassignment %}
+                    {% if not order.exam.assigned_radiologist_id or order.exam.assigned_radiologist_id == request.user.pk or request.user.is_superuser %}
+                    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="accept"><input type="hidden" name="exam" value="{{ order.exam.pk }}"><button class="btn btn-sm btn-rad-accept rad-row-btn" type="submit">Accept</button></form>
+                    {% else %}
+                    <span class="rad-empty">—</span>
+                    {% endif %}
+                  {% elif is_radiologist and order.exam.accepted_at %}
+                    <a class="btn btn-sm btn-rad-open rad-row-btn" href="?study={{ order.pk }}&{{ list_query }}">Open report</a>
+                  {% else %}
+                    <span class="rad-empty">—</span>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" class="muted p-4">{% if desk == 'report' %}No studies have been uploaded to PACS yet.{% elif scope == 'history' %}No past examinations for you yet.{% else %}No paid studies are waiting.{% endif %}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
       <div class="p-3">{% include "includes/pagination.html" with page=orders %}</div>
     </section>
 
@@ -71,7 +200,7 @@
         </div>
         <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
           <div>
-            <h2 class="h5 mb-0">{{ selected.modality.get_modality_type_display }} · {{ selected.procedure.name|default:selected.modality.name }}</h2>
+            <h2 class="h5 mb-0">{{ selected.modality.get_modality_type_display }} · {{ selected.procedure.name|default:selected.modality.name }} {% include "includes/stat_badge.html" with stat=selected.stat %}</h2>
             <div class="small muted">{{ selected.visit.visit_id }}{% if selected.exam.duration_label %} · {{ selected.exam.duration_label }}{% endif %}</div>
           </div>
           <span class="small">{% if selected.exam.report %}{{ selected.exam.report.get_status_display }}{% else %}Draft{% endif %}</span>
@@ -108,9 +237,9 @@
         {% endif %}
 
         {% if is_radiographer and selected.exam.status == 'ACQUIRED' and not selected.exam.pacs_uploaded_at %}
-          {% if selected.exam.assigned_radiologist and not selected.exam.can_reassign %}
-            <p class="small">Assigned to {{ selected.exam.assigned_radiologist.get_full_name|default:selected.exam.assigned_radiologist.username }}. Reassignment opens when the accept window elapses.</p>
-          {% elif selected.exam.can_reassign %}
+          {% if selected.exam.assigned_radiologist %}
+            <p class="small">Assigned to {{ selected.exam.assigned_radiologist.get_full_name|default:selected.exam.assigned_radiologist.username }}. The accept timer starts when this study is uploaded.</p>
+          {% else %}
             <form method="post" class="row g-2 mb-3">
               {% csrf_token %}
               <input type="hidden" name="action" value="assign_radiologist">
@@ -127,27 +256,32 @@
           {% endif %}
         {% endif %}
 
+        {% if is_radiographer and selected.exam.viewer_can_reassign %}
+          <p class="small">This study was not accepted in time. Assign it to another radiologist.</p>
+          <form method="post" class="row g-2 mb-3">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="assign_radiologist">
+            <input type="hidden" name="order" value="{{ selected.pk }}">
+            <div class="col-12">
+              <label class="form-label">Reassign radiologist</label>
+              <select name="radiologist" class="form-select form-select-sm" required>
+                <option value="">Radiologist</option>
+                {% for person in radiologists %}<option value="{{ person.pk }}">{{ person.get_full_name|default:person.username }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-12"><button class="btn btn-sm btn-outline-dark" type="submit">Assign another radiologist</button></div>
+          </form>
+        {% endif %}
+
         {% if is_radiologist and selected.exam.pacs_uploaded_at %}
           {% if not selected.exam.accepted_at %}
-            {% if selected.exam.assigned_radiologist and not selected.exam.can_reassign %}
-              <p class="small">Assigned to {{ selected.exam.assigned_radiologist.get_full_name|default:selected.exam.assigned_radiologist.username }}.{% if selected.exam.accept_remaining != None %} {{ selected.exam.accept_remaining }} min left to accept.{% endif %} Reassignment opens when this time elapses.</p>
+            {% if selected.exam.assigned_radiologist %}
+              <p class="small">Assigned to {{ selected.exam.assigned_radiologist.get_full_name|default:selected.exam.assigned_radiologist.username }}.{% if selected.exam.accept_remaining != None %} {{ selected.exam.accept_remaining }} min left to accept.{% endif %} If it is not accepted in time, it returns to the radiographer who performed the exam.</p>
             {% endif %}
-            {% if selected.exam.can_reassign or selected.exam.assigned_radiologist_id == request.user.pk or request.user.is_superuser %}
-            <form method="post" class="mb-2">{% csrf_token %}<input type="hidden" name="action" value="accept"><input type="hidden" name="exam" value="{{ selected.exam.pk }}"><button class="btn btn-rad-accept" type="submit">Accept and report</button></form>
-            {% endif %}
-            {% if selected.exam.can_reassign %}
-            <form method="post" class="row g-2 mb-3">
-              {% csrf_token %}
-              <input type="hidden" name="action" value="assign_radiologist">
-              <input type="hidden" name="order" value="{{ selected.pk }}">
-              <div class="col-8">
-                <select name="radiologist" class="form-select form-select-sm" required>
-                  <option value="">Assign radiologist</option>
-                  {% for person in radiologists %}<option value="{{ person.pk }}">{{ person.get_full_name|default:person.username }}</option>{% endfor %}
-                </select>
-              </div>
-              <div class="col-4"><button class="btn btn-sm btn-outline-dark w-100" type="submit">Assign</button></div>
-            </form>
+            {% if not selected.exam.awaiting_reassignment %}
+              {% if not selected.exam.assigned_radiologist_id or selected.exam.assigned_radiologist_id == request.user.pk or request.user.is_superuser %}
+              <form method="post" class="mb-2">{% csrf_token %}<input type="hidden" name="action" value="accept"><input type="hidden" name="exam" value="{{ selected.exam.pk }}"><button class="btn btn-rad-accept" type="submit">Accept and report</button></form>
+              {% endif %}
             {% endif %}
           {% elif not selected.exam.report or selected.exam.report.status == 'DRAFT' %}
             {{ report_templates|json_script:"report-templates" }}
@@ -188,17 +322,22 @@
             <p class="small muted mt-2">Only the reporting radiologist can edit a signed report.</p>
             {% endif %}
           {% elif selected.exam.report.status == 'FINAL' %}
-            {% if selected.exam.report.release_blockers %}
-              <div class="alert alert-warning py-2 small">
-                {% for blocker in selected.exam.report.release_blockers %}<div>{{ blocker.message }}</div>{% endfor %}
-              </div>
+            <a class="btn btn-outline-dark" target="_blank" href="{% url 'radiology-report-preview' selected.exam.report.pk %}">Preview finished report</a>
+            <p class="small muted mt-2">Opens the finished PDF with an UNVERIFIED watermark. Approval changes it to APPROVED for dispatch.</p>
+            {% if can_approve_result and selected.exam.report.author_id != request.user.pk or request.user.is_superuser and can_approve_result %}
+              <form method="post" class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="approve"><input type="hidden" name="report" value="{{ selected.exam.report.pk }}"><button class="btn btn-primary" type="submit">Approve Result</button></form>
             {% else %}
-              <form method="post">{% csrf_token %}<input type="hidden" name="action" value="release"><input type="hidden" name="report" value="{{ selected.exam.report.pk }}"><button class="btn btn-primary" type="submit">Dispatch result</button></form>
-              <p class="small muted mt-2">Dispatch sends the signed report out. It stays here until the registration or referral form is on the visit and the invoice is paid.</p>
+              <p class="small mt-2">Status: Reported. Waiting for approval.</p>
             {% endif %}
+          {% elif selected.exam.report.status == 'APPROVED' %}
+            <a class="btn btn-outline-dark" target="_blank" href="{% url 'radiology-report-preview' selected.exam.report.pk %}">Preview finished report</a>
+            <p class="small mt-2">Approved and waiting for dispatch. This copy carries an APPROVED watermark.</p>
+            {% if can_dispatch %}<a class="btn btn-primary btn-sm" href="{% url 'result-dispatch' %}">Open result dispatch</a>{% endif %}
           {% elif selected.exam.report.status == 'RELEASED' or selected.exam.report.status == 'AMENDED' %}
             <p class="small">This result has been dispatched.</p>
-            <a class="btn btn-outline-dark btn-sm" href="/api/radiology-reports/{{ selected.exam.report.pk }}/pdf/">Print result</a>
+            {% if can_dispatch %}
+              <a class="btn btn-outline-dark btn-sm" target="_blank" href="/api/radiology-reports/{{ selected.exam.report.pk }}/pdf/">Print result</a>
+            {% endif %}
           {% endif %}
         {% endif %}
 
@@ -219,23 +358,54 @@
   .rad-filters { display: flex; flex-wrap: wrap; gap: .45rem; }
   .rad-pill { border: 1px solid #e4dfd6; background: #fff; color: #1c1917; border-radius: 999px; padding: .35rem .85rem; text-decoration: none; font-size: .92rem; }
   .rad-pill.is-on { background: #171717; color: #fff; border-color: #171717; }
-  .rad-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, .8fr); gap: 1rem; align-items: start; }
+  .rad-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, .75fr); gap: 1rem; align-items: start; }
   .rad-table-card, .rad-side { border-radius: 18px; }
-  .rad-table-card { padding: .4rem .6rem 0; }
-  .rad-table-card tr.is-selected { background: #f7f5f0; }
-  .rad-acc { color: inherit; font-weight: 600; text-decoration: none; }
-  .rad-table-card td:last-child, .rad-table-card .btn { white-space: nowrap; }
-  .dot { display: inline-block; width: .45rem; height: .45rem; border-radius: 50%; background: #a8a29e; margin-right: .25rem; }
+  .rad-table-card { padding: 0; overflow: hidden; }
+  .rad-table-scroll { overflow-x: auto; }
+  .rad-worklist { width: 100%; min-width: 860px; table-layout: fixed; border-collapse: collapse; vertical-align: middle; }
+  .rad-worklist col.col-acc { width: 12%; }
+  .rad-worklist col.col-patient { width: 14%; }
+  .rad-worklist col.col-modality { width: 10%; }
+  .rad-worklist col.col-procedure { width: 18%; }
+  .rad-worklist col.col-status { width: 18%; }
+  .rad-worklist col.col-request { width: 14%; }
+  .rad-worklist col.col-action { width: 14%; }
+  .rad-worklist thead th {
+    font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    color: #57534e; background: #faf8f5; border-bottom: 1px solid #e7e2d9;
+    padding: .7rem .75rem; white-space: nowrap; vertical-align: middle; text-align: left;
+  }
+  .rad-worklist tbody td {
+    padding: .7rem .75rem; border-bottom: 1px solid #efebe4; vertical-align: middle; text-align: left;
+  }
+  .rad-worklist tr.is-selected { background: #f7f5f0; }
+  .rad-acc { color: inherit; font-weight: 650; text-decoration: none; white-space: nowrap; }
+  .rad-patient-name, .rad-procedure-line { display: block; line-height: 1.25; }
+  .rad-cell-procedure .badge { margin-top: .25rem; }
+  .rad-cell-status { white-space: nowrap; }
+  .rad-status {
+    display: inline-flex; align-items: center; gap: .35rem;
+    border-radius: 999px; padding: .2rem .65rem; font-size: .78rem; font-weight: 650; line-height: 1.2;
+  }
+  .rad-status-meta { display: block; margin-top: .2rem; font-size: .72rem; color: #78716c; }
+  .dot { display: inline-block; width: .45rem; height: .45rem; border-radius: 50%; background: #a8a29e; flex-shrink: 0; }
   .dot-wait { background: #d97706; }
   .dot-live { background: #2563eb; }
   .dot-done { background: #1f6b4a; }
-  .rad-status { display: inline-flex; align-items: center; border-radius: 999px; padding: .15rem .6rem; font-size: .82rem; font-weight: 650; }
-  .rad-status-await { background: #fff1e6; color: #9a3412; }
   .dot-await { background: #ea580c; }
-  .rad-status-ready { background: #e7f0ff; color: #1e40af; }
   .dot-ready { background: #2563eb; }
-  .rad-status-reported { background: #e8f7ee; color: #166534; }
   .dot-reported { background: #15803d; }
+  .rad-status-wait { background: #fff7ed; color: #9a3412; }
+  .rad-status-live { background: #eff6ff; color: #1d4ed8; }
+  .rad-status-await { background: #fff1e6; color: #9a3412; }
+  .rad-status-ready { background: #e7f0ff; color: #1e40af; }
+  .rad-status-reported { background: #e8f7ee; color: #166534; }
+  .rad-status-done { background: #ecfdf5; color: #065f46; }
+  .rad-cell-request, .rad-cell-action { white-space: nowrap; }
+  .rad-action-slot { display: flex; align-items: center; justify-content: flex-start; min-height: 2rem; }
+  .rad-action-slot form { margin: 0; display: inline-flex; }
+  .rad-row-btn { white-space: nowrap; }
+  .rad-empty { color: #a8a29e; font-size: .82rem; }
   .btn-rad-accept { background: #0f766e; border-color: #0f766e; color: #fff; }
   .btn-rad-accept:hover { background: #115e59; border-color: #115e59; color: #fff; }
   .btn-rad-open { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }

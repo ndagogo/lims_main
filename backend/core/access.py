@@ -61,6 +61,15 @@ def can_access_platform_controls(user):
     return user.has_perm('core.access_platform_controls')
 
 
+def can_set_result_watermark(user):
+    """Platform admin or explicit grant to change the unverified-result watermark text."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if user.is_superuser or is_platform_admin(user):
+        return True
+    return user.has_perm('core.set_result_water_mark')
+
+
 def can_approve_discount(user):
     """Accountant privilege: approve/reject discount requests. Cashiers do not get this."""
     if not user or not getattr(user, 'is_authenticated', False):
@@ -81,6 +90,17 @@ def is_accountant(user):
     if user.has_perm('billing.approve_discount') or user.has_perm('billing.cancel_invoice') or user.has_perm('billing.reverse_payment'):
         return True
     if user.has_perm('billing.payment_refund') or user.has_perm('billing.bill_edit') or user.has_perm('billing.bill_modify'):
+        return True
+    return user.groups.filter(name__in=ACCOUNTS_ROLES).exists()
+
+
+def can_reprint_invoice(user):
+    """Print or reprint an invoice sheet. Granted by privilege or Accounts roles."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if user.is_superuser or is_platform_admin(user):
+        return True
+    if user.has_perm('billing.reprint_invoice'):
         return True
     return user.groups.filter(name__in=ACCOUNTS_ROLES).exists()
 
@@ -142,7 +162,10 @@ def allowed_workspaces(user):
     if user.is_superuser or user.groups.filter(name__in=OVERSIGHT_ROLES).exists():
         return {key for key, _roles in WORKSPACE_ROLES.items()}
     names = set(user.groups.values_list('name', flat=True))
-    return {key for key, roles in WORKSPACE_ROLES.items() if names.intersection(roles)}
+    allowed = {key for key, roles in WORKSPACE_ROLES.items() if names.intersection(roles)}
+    if user.has_perm('radiology.approve_result') or user.has_perm('radiology.authenticate_result'):
+        allowed.add('radiology')
+    return allowed
 
 
 def require_workspace(user, *workspaces):

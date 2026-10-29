@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Report accept window | Platform{% endblock %}
 {% block content %}
-{% include "platform/_header.html" with section_label="Workflows" title="Report accept window" subtitle="If the assigned radiologist does not accept in this time, the study can be assigned again." %}
+{% include "platform/_header.html" with section_label="Workflows" title="Report accept window" subtitle="If the assigned radiologist does not accept in this time, the study returns to the radiographer who performed the exam." %}
 <div class="card p-4" style="max-width: 32rem;">
   <form method="post" class="row g-3">
     {% csrf_token %}
@@ -11,5 +11,6 @@
     </div>
     <div class="col-4 d-flex align-items-end"><button class="btn btn-primary w-100" type="submit">Save</button></div>
   </form>
+  <p class="mt-3 mb-0"><a href="{% url 'radiology-performance' %}">Radiologist performance</a></p>
 </div>
 {% endblock %}

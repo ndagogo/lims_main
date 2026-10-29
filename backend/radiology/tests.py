@@ -65,6 +65,34 @@ class RadiologyWorkflowTests(TestCase):
         }, format='json')
         self.assertEqual(create.status_code, 201)
 
+    def test_radiographer_history_keeps_uploaded_jobs(self):
+        from django.test import Client, RequestFactory
+        from radiology.workspace import build_radiology_context
+
+        self.exam.started_by = self.radiographer
+        self.exam.ended_by = self.radiographer
+        self.exam.pacs_uploaded_by = self.radiographer
+        self.exam.pacs_uploaded_at = self.exam.updated_at
+        self.exam.status = 'ACQUIRED'
+        self.exam.save()
+        self.order.status = 'COMPLETED'
+        self.order.save(update_fields=['status'])
+        factory = RequestFactory()
+        active = factory.get('/radiology/')
+        active.user = self.radiographer
+        active_ctx = build_radiology_context(active)
+        self.assertEqual(active_ctx['orders'].paginator.count, 0)
+        history = factory.get('/radiology/?scope=history')
+        history.user = self.radiographer
+        history_ctx = build_radiology_context(history)
+        self.assertEqual(history_ctx['scope'], 'history')
+        self.assertEqual(history_ctx['orders'].paginator.count, 1)
+        web = Client()
+        web.force_login(self.radiographer)
+        page = web.get('/radiology/?scope=history')
+        self.assertContains(page, 'My history')
+        self.assertContains(page, self.visit.visit_id)
+
     def test_report_blocked_until_exam_acquired(self):
         self.client.force_authenticate(self.user)
         response = self.client.post('/api/radiology-reports/', {
@@ -114,6 +142,15 @@ class RadiologyWorkflowTests(TestCase):
         report.refresh_from_db()
         self.assertEqual(report.status, 'FINAL')
         self.assertTrue(report.configuration_snapshot)
+        denied = self.client.post(f'/api/radiology-reports/{report.pk}/release/', {}, format='json')
+        self.assertEqual(denied.status_code, 403)
+        from django.contrib.auth.models import Permission
+        approve = Permission.objects.get(codename='approve_result', content_type__app_label='radiology')
+        dispatch = Permission.objects.get(codename='dispatch_result', content_type__app_label='radiology')
+        self.other.user_permissions.add(approve, dispatch)
+        self.client.force_authenticate(self.other)
+        approved = self.client.post(f'/api/radiology-reports/{report.pk}/approve/', {}, format='json')
+        self.assertEqual(approved.status_code, 200, getattr(approved, 'data', approved.content))
         blocked = self.client.post(f'/api/radiology-reports/{report.pk}/release/', {}, format='json')
         self.assertEqual(blocked.status_code, 200, getattr(blocked, 'data', blocked.content))
         report.refresh_from_db()
@@ -159,6 +196,12 @@ class RadiologyWorkflowTests(TestCase):
         self.client.force_authenticate(self.user)
         signed = self.client.post(f'/api/radiology-reports/{report.pk}/finalize/', {}, format='json')
         self.assertEqual(signed.status_code, 200)
+        report.status = 'APPROVED'
+        report.save(update_fields=['status'])
+        from django.contrib.auth.models import Permission
+        self.user.user_permissions.add(Permission.objects.get(codename='dispatch_result', content_type__app_label='radiology'))
+        self.user = User.objects.get(pk=self.user.pk)
+        self.client.force_authenticate(self.user)
         with patch('workflows.services.workflow_blocks_release', return_value='Order CBC is still at workflow step Collected.'):
             released = self.client.post(f'/api/radiology-reports/{report.pk}/release/', {}, format='json')
         self.assertEqual(released.status_code, 200, getattr(released, 'data', released.content))
@@ -236,10 +279,45 @@ class RadiologyWorkflowTests(TestCase):
         self.assertEqual(snap['authenticator']['title'], 'Consultant Radiologist')
         self.assertEqual(snap['authenticator']['qualifications'], 'MBBS, FWACS')
         self.assertTrue(snap['authenticator']['has_signature'])
+        preview_pdf = self.client.get(f'/api/radiology-reports/{report.pk}/pdf/')
+        self.assertEqual(preview_pdf.status_code, 200)
+        self.assertEqual(preview_pdf['Content-Type'], 'application/pdf')
+        self.assertTrue(preview_pdf.content.startswith(b'%PDF'))
+        self.assertIn(b'UNVERIFIED', preview_pdf.content)
+        report.status = 'APPROVED'
+        report.save(update_fields=['status'])
         pdf = self.client.get(f'/api/radiology-reports/{report.pk}/pdf/')
         self.assertEqual(pdf.status_code, 200)
         self.assertEqual(pdf['Content-Type'], 'application/pdf')
         self.assertTrue(pdf.content.startswith(b'%PDF'))
+        self.assertIn(b'APPROVED', pdf.content)
+        self.assertNotIn(b'UNVERIFIED', pdf.content)
+        report.status = 'RELEASED'
+        report.save(update_fields=['status'])
+        clean = self.client.get(f'/api/radiology-reports/{report.pk}/pdf/')
+        self.assertEqual(clean.status_code, 200)
+        self.assertNotIn(b'UNVERIFIED', clean.content)
+        self.assertNotIn(b'APPROVED', clean.content)
+
+    def test_rich_template_can_be_signed_without_a_separate_impression(self):
+        self.exam.status = 'ACQUIRED'
+        self.exam.save(update_fields=['status'])
+        body = (
+            '<p><strong>EXAM:</strong> ECG</p>'
+            '<p><strong>FINDINGS:</strong> Sinus rhythm.</p>'
+            '<p><strong>IMPRESSION:</strong> Normal ECG.</p>'
+        )
+        report = RadiologyReport.objects.create(
+            exam=self.exam, author=self.user, findings=body, impression='',
+        )
+        self.client.force_authenticate(self.user)
+        signed = self.client.post(f'/api/radiology-reports/{report.pk}/finalize/', {}, format='json')
+        self.assertEqual(signed.status_code, 200, getattr(signed, 'data', signed.content))
+        report.refresh_from_db()
+        self.assertEqual(report.status, 'FINAL')
+        from radiology.reports import report_can_be_signed
+        plain = RadiologyReport(findings='Sinus rhythm only', impression='')
+        self.assertFalse(report_can_be_signed(plain))
 
     def test_printed_report_aligns_identity_and_keeps_markup(self):
         from datetime import date
@@ -260,7 +338,7 @@ class RadiologyWorkflowTests(TestCase):
         self.exam.accepted_at = self.exam.updated_at
         self.exam.save(update_fields=['status', 'pacs_uploaded_at', 'accepted_at'])
         report = RadiologyReport.objects.create(
-            exam=self.exam, author=self.user, status='FINAL',
+            exam=self.exam, author=self.user, status='APPROVED',
             findings='<p><strong>Lungs:</strong> Clear.</p><p>Heart size is normal.</p>',
             impression='Normal chest radiograph',
         )

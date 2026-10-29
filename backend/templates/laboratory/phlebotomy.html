@@ -53,7 +53,7 @@
             <div>
               <div class="fw-semibold">{{ order.visit.patient.first_name }} {{ order.visit.patient.last_name }}</div>
               <div class="small muted">{{ order.visit.visit_id }} · UHID {{ order.visit.patient.uhid }}</div>
-              <div class="small">{{ order.test.name }} · {{ order.test.department }} · {{ order.visit.centre.code }}</div>
+              <div class="small">{{ order.test.name }} {% include "includes/stat_badge.html" with stat=order.stat %} · {{ order.test.department }} · {{ order.visit.centre.code }}</div>
             </div>
             <div class="d-flex flex-column gap-2" style="min-width:11rem">
               <input class="form-control form-control-sm" name="note" placeholder="Collection note (optional)">
@@ -75,7 +75,7 @@
           <div class="d-flex justify-content-between gap-2 align-items-start">
             <div>
               <div class="fw-semibold font-monospace">{{ sample.sample_id }}</div>
-              <div class="small muted">{{ sample.order.test.name }} · {{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }}</div>
+              <div class="small muted">{{ sample.order.test.name }} {% include "includes/stat_badge.html" with stat=sample.order.stat %} · {{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }}</div>
               <div class="small muted">{% if sample.collected_at %}{{ sample.collected_at|date:"Y-m-d H:i" }}{% endif %}</div>
             </div>
             <a class="btn btn-sm btn-outline-dark" href="{% url 'sample-label' sample.pk %}?print=1" target="_blank"><i class="bi bi-upc"></i> Label</a>
@@ -162,7 +162,7 @@
             <div>{{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }}</div>
             <div class="small muted">{{ sample.order.visit.patient.uhid }}</div>
           </td>
-          <td class="small">{{ sample.order.test.name }}{% if sample.specimen_type %}<div class="muted">{{ sample.specimen_type }}</div>{% endif %}</td>
+          <td class="small">{{ sample.order.test.name }} {% include "includes/stat_badge.html" with stat=sample.order.stat %}{% if sample.specimen_type %}<div class="muted">{{ sample.specimen_type }}</div>{% endif %}</td>
           <td class="small">{{ sample.collected_by.get_username|default:"—" }}</td>
           <td><span class="badge-soft badge rounded-pill">{{ sample.get_status_display }}</span></td>
           <td class="text-end"><a class="btn btn-sm btn-outline-dark" href="{% url 'sample-label' sample.pk %}" target="_blank">Label</a></td>

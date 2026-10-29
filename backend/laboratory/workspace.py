@@ -142,11 +142,11 @@ def handle_phlebotomy_post(request):
 def build_phlebotomy_context(request):
     user = request.user
     orders = settled(
-        LabOrder.objects.select_related('visit__patient', 'visit__centre', 'test').filter(status__in=['ORDERED', 'COLLECTION_PENDING']),
+        LabOrder.objects.select_related('visit__patient', 'visit__centre', 'test', 'stat').filter(status__in=['ORDERED', 'COLLECTION_PENDING']),
         'lab_order_id',
     )
     samples = settled(
-        Sample.objects.select_related('centre', 'order__test', 'order__visit__patient', 'collected_by'),
+        Sample.objects.select_related('centre', 'order__test', 'order__stat', 'order__visit__patient', 'collected_by'),
         'lab_order_id', 'order_id',
     )
     if not user.is_superuser:
@@ -217,7 +217,7 @@ def build_laboratory_context(request):
     centre_ids = user.centre_access.filter(can_view=True, centre__is_active=True).values_list('centre_id', flat=True)
     samples = settled(
         Sample.objects.select_related(
-            'centre', 'order__test', 'order__test__default_template', 'order__visit__patient', 'collected_by',
+            'centre', 'order__test', 'order__stat', 'order__test__default_template', 'order__visit__patient', 'collected_by',
         ).prefetch_related(
             'order__test__parameters__reference_ranges',
             'order__test__default_template__fields__parameter',
@@ -229,7 +229,7 @@ def build_laboratory_context(request):
     batches = SampleBatch.objects.select_related('centre', 'created_by', 'received_by').prefetch_related('items__sample')
     results = settled(
         LabResult.objects.select_related(
-            'sample__centre', 'sample__order__test', 'sample__order__visit__patient',
+            'sample__centre', 'sample__order__test', 'sample__order__stat', 'sample__order__visit__patient',
             'entered_by', 'reviewed_by', 'authenticated_by',
         ).prefetch_related('sample__order__test__parameters', 'values__parameter'),
         'lab_order_id', 'sample__order_id',
@@ -269,7 +269,10 @@ def build_laboratory_context(request):
         'overview': samples.exclude(status__in=['RELEASED', 'CANCELLED', 'REJECTED', 'SUPERSEDED']).count(),
     }
 
+    from core.result_control import user_can_open_dispatch, user_can_open_modify
     ctx = {
+        'can_modify_result': user_can_open_modify(user),
+        'can_dispatch': user_can_open_dispatch(user),
         'lab_stages': LAB_STAGES,
         'active_stage': stage,
         'stage_counts': stage_counts,

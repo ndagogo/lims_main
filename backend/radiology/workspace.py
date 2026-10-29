@@ -3,11 +3,13 @@ from django.contrib.auth import get_user_model
 from django.contrib import messages
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import IntegrityError
+from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 
 from billing.visibility import imaging_payment_complete, settled
-from core.access import RADIOLOGIST_ROLES
+from core.access import RADIOLOGIST_ROLES, can_access_platform_controls
+from core.result_control import user_can_approve_radiology, user_can_open_dispatch, user_can_open_modify
 from core.models import UserCentreAccess
 from core.paging import paginate
 from core.staff_api import call_action, call_create, call_update, describe
@@ -78,11 +80,11 @@ def handle_radiology_post(request):
     if action in ('draft', 'update_draft'):
         payload = {
             'indication': post.get('indication', ''),
-            'technique': post.get('technique', ''),
             'findings': post.get('findings', ''),
-            'impression': post.get('impression', ''),
-            'recommendations': post.get('recommendations', ''),
         }
+        for name in ('technique', 'impression', 'recommendations'):
+            if name in post:
+                payload[name] = post.get(name, '')
         if post.get('template'):
             payload['template'] = post.get('template')
         if action == 'update_draft':
@@ -94,6 +96,8 @@ def handle_radiology_post(request):
         return _finish(*call_create(RadiologyReportViewSet, user, payload), 'Report draft saved.')
     if action == 'finalize':
         return _finish(*call_action(RadiologyReportViewSet, 'finalize', user, post.get('report'), {}), 'Report signed.')
+    if action == 'approve':
+        return _finish(*call_action(RadiologyReportViewSet, 'approve', user, post.get('report'), {}), 'Result approved. It can now be dispatched.')
     if action == 'release':
         return _finish(*call_action(RadiologyReportViewSet, 'release', user, post.get('report'), {}), 'Result dispatched.')
     if action == 'override':
@@ -116,8 +120,8 @@ def handle_radiology_post(request):
 def build_radiology_context(request):
     from django.utils import timezone
     from radiology.desk import (
-        SUPPLY_PRESETS, accept_window, can_reassign_radiologist, exam_duration_label, exam_minutes, is_radiographer, is_reporting_radiologist,
-        radiographer_active_exam, release_expired_assignments,
+        SUPPLY_PRESETS, accept_window, exam_duration_label, exam_minutes, is_radiographer, is_reporting_radiologist,
+        performing_radiographer_id, radiographer_active_exam, release_expired_assignments, user_may_reassign,
     )
 
     user = request.user
@@ -127,32 +131,118 @@ def build_radiology_context(request):
     ).values_list('centre_id', flat=True))
     orders = settled(
         ImagingOrder.objects.select_related(
-            'visit__patient', 'visit__centre', 'modality', 'procedure', 'exam',
-            'exam__assigned_radiographer', 'exam__assigned_radiologist',
-        ).prefetch_related('exam__activities', 'exam__report', 'exam__supplies'),
+            'visit__patient', 'visit__centre', 'modality', 'procedure', 'stat', 'exam',
+            'exam__assigned_radiographer', 'exam__assigned_radiologist', 'exam__report',
+        ).prefetch_related('exam__activities', 'exam__supplies', 'visit__documents'),
         'imaging_order_id',
     ).order_by('-created_at')
     if not user.is_superuser:
         orders = orders.filter(visit__centre_id__in=centre_ids)
     radiographer = is_radiographer(user)
-    radiologist = is_reporting_radiologist(user) and not radiographer
+    radiologist = (is_reporting_radiologist(user) or user_can_approve_radiology(user)) and not radiographer
     if user.is_superuser:
         radiologist = request.GET.get('desk') == 'report'
         radiographer = not radiologist
+    returned_to_tech = Q(
+        exam__returned_at__isnull=False,
+        exam__assigned_radiologist__isnull=True,
+        exam__accepted_at__isnull=True,
+    )
     if radiologist:
-        orders = orders.filter(exam__pacs_uploaded_at__isnull=False, exam__status='ACQUIRED')
-    elif radiographer and not user.is_superuser:
-        orders = orders.filter(exam__pacs_uploaded_at__isnull=True).exclude(status__in=['COMPLETED', 'CANCELLED'])
+        orders = orders.filter(
+            exam__pacs_uploaded_at__isnull=False, exam__status='ACQUIRED',
+        ).exclude(returned_to_tech)
+        # A radiologist only sees studies assigned to them (or where they are the substitute).
+        # Superusers on the reporting desk keep the full centre overview.
+        if not user.is_superuser:
+            orders = orders.filter(
+                Q(exam__assigned_radiologist=user) | Q(exam__reporting_substitute=user),
+            )
+    scope = (request.GET.get('scope') or 'active').lower()
+    if scope not in ('active', 'history'):
+        scope = 'active'
+    if radiographer and not user.is_superuser and not radiologist:
+        mine = (
+            Q(exam__started_by=user)
+            | Q(exam__assigned_radiographer=user)
+            | Q(exam__ended_by=user)
+            | Q(exam__pacs_uploaded_by=user)
+        )
+        if scope == 'history':
+            # Full history of exams this radiographer worked — including after PACS / dispatch.
+            orders = orders.filter(mine).exclude(status='CANCELLED')
+        else:
+            returned_mine = returned_to_tech & (
+                Q(exam__started_by=user) | Q(exam__assigned_radiographer=user) | Q(exam__ended_by=user)
+            )
+            orders = orders.filter(
+                Q(exam__pacs_uploaded_at__isnull=True) | returned_mine,
+            ).exclude(status__in=['COMPLETED', 'CANCELLED'])
+            scope = 'active'
+    elif not radiographer or radiologist:
+        scope = 'active'
     modality = (request.GET.get('modality') or 'ALL').upper()
     counts = {'ALL': orders.count()}
-    for code, _label in ImagingModality.MODALITY_TYPES:
+    type_labels = dict(ImagingModality.MODALITY_TYPES)
+    type_order = {code: index for index, (code, _label) in enumerate(ImagingModality.MODALITY_TYPES)}
+    worklist_types = {
+        code for code in orders.values_list('modality__modality_type', flat=True).distinct() if code
+    }
+    catalogue_qs = ImagingModality.objects.filter(is_active=True)
+    if not user.is_superuser:
+        catalogue_qs = catalogue_qs.filter(centre_id__in=centre_ids)
+    available_types = worklist_types | set(catalogue_qs.values_list('modality_type', flat=True).distinct())
+    if modality != 'ALL':
+        available_types.add(modality)
+    for code in available_types:
         counts[code] = orders.filter(modality__modality_type=code).count()
+    modality_pills = sorted(
+        [
+            {'code': code, 'label': type_labels.get(code, code), 'count': counts.get(code, 0)}
+            for code in available_types
+        ],
+        key=lambda row: (type_order.get(row['code'], 99), row['label'].lower()),
+    )
     if modality != 'ALL' and modality in counts:
         orders = orders.filter(modality__modality_type=modality)
     when = (request.GET.get('when') or 'all').lower()
     if when == 'today':
         today = timezone.localdate()
         orders = orders.filter(created_at__date=today)
+    from django.utils.dateparse import parse_date
+    date_from = parse_date(request.GET.get('date_from') or '')
+    date_to = parse_date(request.GET.get('date_to') or '')
+    if date_from:
+        orders = orders.filter(created_at__date__gte=date_from)
+    if date_to:
+        orders = orders.filter(created_at__date__lte=date_to)
+    visit_query = (request.GET.get('visit') or request.GET.get('patient_bill_id') or '').strip()
+    if visit_query:
+        orders = orders.filter(visit__visit_id__icontains=visit_query)
+    exam_stats = {
+        'PENDING': orders.filter(
+            Q(exam__report__isnull=True) | Q(exam__report__status='DRAFT'),
+        ).count(),
+        'REPORTED': orders.filter(exam__report__status='FINAL').count(),
+        'APPROVED': orders.filter(exam__report__status='APPROVED').count(),
+        'DISPATCHED': orders.filter(exam__report__status__in=['RELEASED', 'AMENDED']).count(),
+    }
+    status_filter = (request.GET.get('status') or '').upper()
+    if status_filter == 'PENDING':
+        orders = orders.filter(Q(exam__report__isnull=True) | Q(exam__report__status='DRAFT'))
+    elif status_filter == 'REPORTED':
+        orders = orders.filter(exam__report__status='FINAL')
+    elif status_filter == 'APPROVED':
+        orders = orders.filter(exam__report__status='APPROVED')
+    elif status_filter == 'DISPATCHED':
+        orders = orders.filter(exam__report__status__in=['RELEASED', 'AMENDED'])
+    else:
+        status_filter = ''
+    if getattr(request, '_radiology_export', False):
+        return {
+            'rows': [_exam_export_row(order) for order in orders[:5000]],
+            'stats': exam_stats,
+        }
     staff = get_user_model().objects.filter(
         is_active=True, centre_access__centre_id__in=centre_ids, centre_access__can_edit=True,
     ).distinct().order_by('username')
@@ -175,10 +265,19 @@ def build_radiology_context(request):
             exam.duration_label = exam_duration_label(exam, now)
             exam.supply_rows = list(exam.supplies.all())
             exam.accept_remaining = None
-            exam.can_reassign = can_reassign_radiologist(exam, now)
-            if exam.radiologist_assigned_at and not exam.accepted_at:
+            exam.awaiting_reassignment = bool(
+                exam.returned_at and not exam.assigned_radiologist_id and not exam.accepted_at
+            )
+            exam.viewer_can_reassign = exam.awaiting_reassignment and user_may_reassign(user, exam)
+            exam.performed_by_id = performing_radiographer_id(exam)
+            if exam.radiologist_assigned_at and not exam.accepted_at and not exam.returned_at:
                 elapsed = int((now - exam.radiologist_assigned_at).total_seconds() // 60)
                 exam.accept_remaining = max(0, window.accept_minutes - elapsed)
+        documents = list(order.visit.documents.all())
+        order.request_form = next((row for row in documents if row.document_type == 'REGISTRATION'), None)
+        if order.request_form is None:
+            order.request_form = next((row for row in documents if row.document_type == 'REFERRAL'), None)
+        order.work_status = exam_bucket(order)
     selected = None
     study_id = request.GET.get('study')
     if study_id:
@@ -196,6 +295,10 @@ def build_radiology_context(request):
         reports = reports.filter(exam__order__visit__centre_id__in=centre_ids)
     if radiologist:
         reports = reports.filter(exam__pacs_uploaded_at__isnull=False)
+        if not user.is_superuser:
+            reports = reports.filter(
+                Q(exam__assigned_radiologist=user) | Q(exam__reporting_substitute=user),
+            )
     report_page = paginate(request, reports, 'repage')
     from billing.eligibility import check_visit_release
     for report in report_page.object_list:
@@ -218,18 +321,89 @@ def build_radiology_context(request):
         'radiologists': radiologists,
         'modality_filter': modality,
         'modality_counts': counts,
+        'modality_pills': modality_pills,
         'when': when,
+        'scope': scope,
         'today_label': timezone.localtime().strftime('%A, %d %B %Y').upper(),
         'supply_presets': SUPPLY_PRESETS,
         'accept_minutes': window.accept_minutes,
         'is_radiologist': radiologist,
         'is_radiographer': radiographer or (user.is_superuser and not radiologist),
+        'show_radiographer_history': radiographer and not radiologist and not user.is_superuser,
         'active_exam': None if radiologist else radiographer_active_exam(user),
         'report_templates': _template_catalog(selected),
         'report_body': _report_body(selected),
         'show_end_form': request.GET.get('end') == '1',
         'desk': 'report' if radiologist else 'acquire',
+        'show_performance': can_access_platform_controls(user),
+        'exam_stats': exam_stats,
+        'date_from': date_from.isoformat() if date_from else '',
+        'date_to': date_to.isoformat() if date_to else '',
+        'visit_query': visit_query,
+        'status_filter': status_filter,
+        'list_query': _list_query(
+            modality, when, 'report' if radiologist else 'acquire', date_from, date_to, visit_query, status_filter,
+            scope=scope if (radiographer and not radiologist) else '',
+        ),
+        'awaiting_approval': _awaiting_approval(user, centre_ids),
+        'can_approve_result': user_can_approve_radiology(user),
+        'can_dispatch': user_can_open_dispatch(user),
+        'can_modify_result': user_can_open_modify(user),
     }
+
+
+def _awaiting_approval(user, centre_ids):
+    if not user_can_approve_radiology(user):
+        return []
+    rows = RadiologyReport.objects.select_related(
+        'exam__order__visit', 'exam__order__modality', 'exam__order__procedure', 'author',
+    ).filter(status='FINAL').order_by('-finalized_at')
+    if not user.is_superuser:
+        rows = rows.filter(exam__order__visit__centre_id__in=centre_ids)
+    return list(rows[:50])
+
+
+def exam_bucket(order):
+    try:
+        report = order.exam.report
+    except ObjectDoesNotExist:
+        report = None
+    if report is None or report.status == 'DRAFT':
+        return 'PENDING'
+    if report.status == 'FINAL':
+        return 'REPORTED'
+    if report.status == 'APPROVED':
+        return 'APPROVED'
+    if report.status in ('RELEASED', 'AMENDED'):
+        return 'DISPATCHED'
+    return 'PENDING'
+
+
+def _exam_export_row(order):
+    from django.utils import timezone
+    procedure = order.procedure.name if order.procedure_id else order.modality.name
+    return [
+        order.visit.visit_id,
+        order.modality.get_modality_type_display(),
+        procedure,
+        exam_bucket(order),
+        timezone.localtime(order.created_at).strftime('%Y-%m-%d %H:%M'),
+    ]
+
+
+def _list_query(modality, when, desk, date_from, date_to, visit_query, status_filter, scope=''):
+    from urllib.parse import urlencode
+    values = {
+        'modality': modality,
+        'when': when,
+        'desk': desk,
+        'date_from': date_from.isoformat() if date_from else '',
+        'date_to': date_to.isoformat() if date_to else '',
+        'visit': visit_query,
+        'status': status_filter,
+        'scope': scope if scope and scope != 'active' else '',
+    }
+    return urlencode({key: value for key, value in values.items() if value})
 
 
 def _template_catalog(order):

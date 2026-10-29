@@ -17,7 +17,8 @@ COPY requirements.txt ./requirements.txt
 RUN python -m pip install --upgrade pip && python -m pip install -r requirements.txt
 
 COPY . ./
-RUN mkdir -p /app/media /app/staticfiles \
+RUN chmod +x /app/docker-entrypoint.sh \
+    && mkdir -p /app/media /app/staticfiles \
     && DJANGO_DEBUG=False \
        DJANGO_SECRET_KEY=build-only-not-a-runtime-secret \
        DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1 \
@@ -25,4 +26,5 @@ RUN mkdir -p /app/media /app/staticfiles \
        python manage.py collectstatic --noinput
 
 EXPOSE 8000
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["sh", "-c", "python manage.py migrate --noinput && exec gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers ${WEB_CONCURRENCY:-2} --timeout ${GUNICORN_TIMEOUT:-120} --access-logfile - --error-logfile -"]
