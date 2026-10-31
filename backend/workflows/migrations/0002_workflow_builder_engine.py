@@ -181,8 +181,14 @@ class Migration(migrations.Migration):
             options={'ordering': ['created_at']},
         ),
         # Promote existing seeded definitions to published/active so production keeps working.
+
         migrations.RunSQL(
-            sql="UPDATE workflows_workflowdefinition SET status='PUBLISHED', is_active=1 WHERE is_active=1 OR version=1;",
-            reverse_sql=migrations.RunSQL.noop,
+            sql="UPDATE workflows_workflowdefinition SET status='PUBLISHED', is_active=TRUE WHERE is_active=TRUE OR version=1;",
+            reverse_sql="UPDATE workflows_workflowdefinition SET status='DRAFT', is_active=FALSE WHERE is_active=TRUE OR version=1;",
         ),
+        #
+        #migrations.RunSQL(
+            #sql="UPDATE workflows_workflowdefinition SET status='PUBLISHED', is_active=1 WHERE is_active=1 OR version=1;",
+            #reverse_sql=migrations.RunSQL.noop,
+       # ),
     ]
