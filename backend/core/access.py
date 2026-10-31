@@ -155,16 +155,50 @@ def staff_home_url_name(user):
     return 'dashboard'
 
 
+# Privileges that unlock a workspace for custom roles (in addition to named Groups).
+WORKSPACE_PERMISSIONS = {
+    'registration': (
+        'patients.add_patient', 'patients.change_patient', 'patients.add_visit', 'patients.change_visit',
+    ),
+    'accounts': (
+        'billing.view_invoice', 'billing.view_payment', 'billing.approve_discount', 'billing.cancel_invoice',
+        'billing.reprint_invoice', 'billing.reverse_payment', 'billing.payment_refund', 'billing.issue_refund',
+        'billing.bill_edit', 'billing.bill_modify',
+    ),
+    'phlebotomy': (
+        'laboratory.add_sample', 'laboratory.change_sample', 'laboratory.view_sample',
+    ),
+    'laboratory': (
+        'laboratory.view_labresult', 'laboratory.add_labresult', 'laboratory.change_labresult',
+        'laboratory.authenticate_labresult', 'laboratory.release_labresult', 'laboratory.modify_lab_result',
+        'laboratory.dispatch_lab_result',
+    ),
+    'radiology': (
+        'radiology.perform_exam', 'radiology.finalize_report', 'radiology.release_report',
+        'radiology.approve_result', 'radiology.authenticate_result', 'radiology.dispatch_result',
+        'radiology.modify_result', 'radiology.override_report',
+    ),
+    'audit': (
+        'core.view_auditevent',
+    ),
+}
+
+
+def _has_any_perm(user, perms):
+    return any(user.has_perm(code) for code in perms)
+
+
 def allowed_workspaces(user):
-    """Screens this person may open. Oversight roles and superusers see every staff screen."""
+    """Screens this person may open. Named roles, privileges, oversight, or superuser."""
     if not user or not getattr(user, 'is_authenticated', False):
         return set()
     if user.is_superuser or user.groups.filter(name__in=OVERSIGHT_ROLES).exists():
         return {key for key, _roles in WORKSPACE_ROLES.items()}
     names = set(user.groups.values_list('name', flat=True))
     allowed = {key for key, roles in WORKSPACE_ROLES.items() if names.intersection(roles)}
-    if user.has_perm('radiology.approve_result') or user.has_perm('radiology.authenticate_result'):
-        allowed.add('radiology')
+    for key, perms in WORKSPACE_PERMISSIONS.items():
+        if key not in allowed and _has_any_perm(user, perms):
+            allowed.add(key)
     return allowed
 
 

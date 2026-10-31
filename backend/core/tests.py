@@ -262,6 +262,25 @@ class StaffWorkspaceTests(TestCase):
             'role': str(Group.objects.get_or_create(name='Platform Administrator')[0].pk),
         }, follow=True)
         self.assertContains(blocked_delete, 'protected system role')
+        # Custom Accountant role: privileges alone must unlock /accounts/* (not only the seeded "Accounts" name).
+        from django.contrib.auth.models import Permission
+        accountant = Group.objects.create(name='Accountant')
+        accountant.permissions.set(Permission.objects.filter(codename__in=[
+            'view_invoice', 'view_payment', 'payment_refund', 'bill_edit', 'approve_discount',
+        ]))
+        custom_user = User.objects.create_user(
+            username='acct.custom', email='acct.custom@example.test', password='A-long-unique-password-2026!',
+        )
+        custom_user.groups.add(accountant)
+        UserCentreAccess.objects.create(
+            user=custom_user, centre=self.centre, can_view=True, can_register=True, can_edit=True, is_default=True,
+        )
+        custom_screen = Client()
+        custom_screen.force_login(custom_user)
+        self.assertEqual(custom_screen.get('/accounts/').status_code, 200)
+        self.assertEqual(custom_screen.get('/accounts/reports/').status_code, 200)
+        self.assertEqual(custom_screen.get('/accounts/refunds/').status_code, 200)
+        self.assertEqual(custom_screen.get('/accounts/bill-edit/').status_code, 200)
 
     def test_each_role_opens_only_its_own_workspace(self):
         from django.test import Client
