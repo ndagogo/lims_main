@@ -94,7 +94,20 @@
         <div class="col-md-4"><label class="form-label">Job title</label><input class="form-control" name="job_title"></div>
         <div class="col-12"><label class="form-label">Address</label><input class="form-control" name="address"></div>
         <div class="col-md-6"><label class="form-label">Temporary password</label><input class="form-control" type="password" name="password" required minlength="12" autocomplete="new-password"><div class="form-text">At least 12 characters. The user must change it at the next sign-in.</div></div>
-        <div class="col-md-6"><label class="form-label">Roles</label><select class="form-select" name="groups" multiple size="4">{% for role in roles %}<option value="{{ role.pk }}">{{ role.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-6">
+          <label class="form-label">Roles</label>
+          <div class="border rounded p-2" style="max-height:9.5rem;overflow:auto">
+            {% for role in roles %}
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="groups" value="{{ role.pk }}" id="create-role-{{ role.pk }}">
+                <label class="form-check-label" for="create-role-{{ role.pk }}">{{ role.name }}</label>
+              </div>
+            {% empty %}
+              <p class="muted small mb-0">No roles yet. <a href="/roles/">Create a role</a> first.</p>
+            {% endfor %}
+          </div>
+          <div class="form-text">Select one or more roles for this account. Manage roles at <a href="/roles/">Roles &amp; privileges</a>.</div>
+        </div>
         <div class="col-12 d-flex flex-wrap gap-3">
           <div class="form-check"><input class="form-check-input" type="checkbox" name="is_staff" id="create-staff"><label class="form-check-label" for="create-staff">Django admin access</label></div>
           <div class="form-check"><input class="form-check-input" type="checkbox" name="is_superuser" id="create-super"><label class="form-check-label" for="create-super">Platform superuser</label></div>
@@ -169,13 +182,18 @@
         </form>
       </div>
       <div class="card p-4 mb-4">
-        <h2 class="h6">Roles</h2>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h2 class="h6 mb-0">Roles</h2>
+          <a class="small" href="/roles/">Create / edit roles</a>
+        </div>
         <form method="post">
           {% csrf_token %}
           <input type="hidden" name="action" value="save_roles">
           <input type="hidden" name="user" value="{{ selected.pk }}">
           {% for role in roles %}
             <div class="form-check"><input class="form-check-input" type="checkbox" name="groups" value="{{ role.pk }}" id="role-{{ role.pk }}" {% if role.pk in selected.role_ids %}checked{% endif %}><label class="form-check-label" for="role-{{ role.pk }}">{{ role.name }}</label></div>
+          {% empty %}
+            <p class="muted small mb-0">No roles available. <a href="/roles/">Create a role</a>.</p>
           {% endfor %}
           <button class="btn btn-primary btn-sm mt-3" type="submit">Save roles</button>
         </form>

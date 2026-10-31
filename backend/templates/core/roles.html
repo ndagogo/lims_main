@@ -4,10 +4,25 @@
 <div class="mb-4">
   <div class="muted small">PLATFORM ADMINISTRATION</div>
   <h1 class="h3 mb-1">Roles and privileges</h1>
-  <p class="muted mb-0">Assign a role to a user, or change the privileges that role carries. Privilege changes apply to everyone who already has the role. Centre view, register, edit, and approve rights stay on each user.</p>
+  <p class="muted mb-0">Create roles for your organisation, assign privileges, then select those roles when creating staff. Privilege changes apply to everyone who already has the role. Centre view, register, edit, and approve rights stay on each user.</p>
 </div>
 <div class="row g-4">
   <div class="col-lg-4">
+    <div class="card p-3 mb-3">
+      <h2 class="h6 mb-3">Create a role</h2>
+      <form method="post" class="row g-2">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_role">
+        <div class="col-12">
+          <label class="form-label" for="new-role-name">Role name</label>
+          <input class="form-control" id="new-role-name" name="name" maxlength="150" required placeholder="e.g. Night Shift Supervisor">
+        </div>
+        <div class="col-12">
+          <button class="btn btn-primary w-100" type="submit">Create role</button>
+        </div>
+      </form>
+      <p class="muted small mb-0 mt-2">After creating, set privileges on the right. The new role appears on User management when you create or edit a staff account.</p>
+    </div>
     <div class="card p-3">
       {% for role in roles %}
         <a class="d-flex justify-content-between align-items-center text-decoration-none text-body border-bottom py-3 {% if selected.pk == role.pk %}fw-semibold{% endif %}" href="?role={{ role.pk }}">
@@ -15,15 +30,46 @@
           <span class="badge text-bg-light border">{{ role.user_set.count }}</span>
         </a>
       {% empty %}
-        <p class="muted mb-0">No roles have been seeded yet.</p>
+        <p class="muted mb-0">No roles yet. Create one above, or run <code>seed_roles</code> for the baseline set.</p>
       {% endfor %}
     </div>
   </div>
   {% if selected %}
   <div class="col-lg-8">
     <div class="card p-4 mb-4">
-      <h2 class="h5">{{ selected.name }}</h2>
-      <p class="muted">{{ selected.permissions.count }} privileges · {{ members.paginator.count }} user{{ members.paginator.count|pluralize }}</p>
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+        <div>
+          <h2 class="h5 mb-1">{{ selected.name }}</h2>
+          <p class="muted mb-0">{{ selected.permissions.count }} privileges · {{ members.paginator.count }} user{{ members.paginator.count|pluralize }}</p>
+        </div>
+        <a class="btn btn-sm btn-outline-dark" href="/users/">Assign on user create</a>
+      </div>
+      <form method="post" class="row g-2 align-items-end mb-4">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="rename_role">
+        <input type="hidden" name="role" value="{{ selected.pk }}">
+        <div class="col-md-8">
+          <label class="form-label" for="rename-role">Rename role</label>
+          <input class="form-control" id="rename-role" name="name" value="{{ selected.name }}" maxlength="150" required {% if selected.name == "Platform Administrator" %}readonly{% endif %}>
+        </div>
+        <div class="col-md-4">
+          <button class="btn btn-outline-dark w-100" type="submit" {% if selected.name == "Platform Administrator" %}disabled{% endif %}>Save name</button>
+        </div>
+      </form>
+      {% if selected.name != "Platform Administrator" %}
+      <form method="post" class="border-top pt-3 mb-4">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete_role">
+        <input type="hidden" name="role" value="{{ selected.pk }}">
+        {% if members.paginator.count %}
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" name="confirm_delete" value="1" id="confirm-delete-role">
+          <label class="form-check-label" for="confirm-delete-role">Confirm deletion (also removes this role from {{ members.paginator.count }} user{{ members.paginator.count|pluralize }})</label>
+        </div>
+        {% endif %}
+        <button class="btn btn-outline-danger btn-sm" type="submit">Delete role</button>
+      </form>
+      {% endif %}
       <h3 class="h6">Members</h3>
       {% for person in members %}
         <div class="d-flex justify-content-between align-items-center border-bottom py-2">

@@ -17,7 +17,7 @@ def platform_control_sections():
             'title': 'People & access',
             'items': [
                 ('User management', '/users/', 'bi-people', 'Create staff, centre access, password reset'),
-                ('Roles & privileges', '/roles/', 'bi-shield-lock', 'Group membership and permissions'),
+                ('Roles & privileges', '/roles/', 'bi-shield-lock', 'Create roles, set privileges, assign members'),
                 ('MFA setup', '/account/mfa/', 'bi-phone', 'Optional authenticator for platform admins'),
                 ('Audit trail', '/platform/audit/', 'bi-shield-check', 'Search and export the enterprise audit trail'),
                 ('Modify demographics', '/patients/demographics/', 'bi-person-gear', 'Permissioned demographic changes with audit'),

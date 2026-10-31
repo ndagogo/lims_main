@@ -238,6 +238,30 @@ class StaffWorkspaceTests(TestCase):
             'password': 'A-long-unique-password-2026!',
         }, follow=True)
         self.assertContains(missing, 'First name and last name are required')
+        roles_page = screen.get('/roles/')
+        self.assertContains(roles_page, 'Create a role')
+        created_role = screen.post('/roles/', {'action': 'create_role', 'name': 'Night Shift Supervisor'})
+        self.assertEqual(created_role.status_code, 302)
+        custom = Group.objects.get(name='Night Shift Supervisor')
+        self.assertContains(screen.get('/users/'), 'Night Shift Supervisor')
+        with_custom = screen.post('/users/', {
+            'action': 'create',
+            'username': 'night.lead',
+            'email': 'night.lead@example.test',
+            'password': 'A-long-unique-password-2026!',
+            'first_name': 'Chidi',
+            'last_name': 'Okeke',
+            'phone_mobile': '08039998877',
+            'groups': [str(custom.pk)],
+        })
+        self.assertEqual(with_custom.status_code, 302)
+        night = User.objects.get(username='night.lead')
+        self.assertTrue(night.groups.filter(name='Night Shift Supervisor').exists())
+        blocked_delete = screen.post('/roles/', {
+            'action': 'delete_role',
+            'role': str(Group.objects.get_or_create(name='Platform Administrator')[0].pk),
+        }, follow=True)
+        self.assertContains(blocked_delete, 'protected system role')
 
     def test_each_role_opens_only_its_own_workspace(self):
         from django.test import Client

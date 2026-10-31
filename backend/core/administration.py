@@ -334,9 +334,105 @@ def _account_state(person, now):
     return 'Active'
 
 
+PROTECTED_ROLE_NAMES = frozenset({'Platform Administrator'})
+
+
+def _normalize_role_name(raw):
+    return ' '.join((raw or '').split()).strip()[:150]
+
+
+def _create_role(request):
+    name = _normalize_role_name(request.POST.get('name'))
+    if not name:
+        messages.error(request, 'Enter a role name.')
+        return redirect('role-management')
+    if Group.objects.filter(name__iexact=name).exists():
+        messages.error(request, f'A role named “{name}” already exists.')
+        return redirect('role-management')
+    with transaction.atomic():
+        role = Group.objects.create(name=name)
+        permission_ids = request.POST.getlist('permissions')
+        if permission_ids:
+            role.permissions.set(Permission.objects.filter(pk__in=permission_ids))
+        AuditEvent.objects.create(
+            actor=request.user,
+            action='ROLE_CREATED',
+            object_type='Group',
+            object_id=str(role.pk),
+            path=request.path,
+            method='POST',
+            detail={'role': role.name, 'permissions': role.permissions.count()},
+        )
+    messages.success(
+        request,
+        f'Role “{role.name}” was created. Assign privileges below, then select it when creating or editing a user.',
+    )
+    return redirect(f'/roles/?role={role.pk}')
+
+
+def _rename_role(request, role):
+    name = _normalize_role_name(request.POST.get('name'))
+    if not name:
+        messages.error(request, 'Enter a role name.')
+        return redirect(f'/roles/?role={role.pk}')
+    if role.name in PROTECTED_ROLE_NAMES and name.casefold() != role.name.casefold():
+        messages.error(request, f'“{role.name}” is a protected system role and cannot be renamed.')
+        return redirect(f'/roles/?role={role.pk}')
+    if Group.objects.filter(name__iexact=name).exclude(pk=role.pk).exists():
+        messages.error(request, f'A role named “{name}” already exists.')
+        return redirect(f'/roles/?role={role.pk}')
+    previous = role.name
+    role.name = name
+    role.save(update_fields=['name'])
+    AuditEvent.objects.create(
+        actor=request.user,
+        action='ROLE_RENAMED',
+        object_type='Group',
+        object_id=str(role.pk),
+        path=request.path,
+        method='POST',
+        detail={'from': previous, 'to': role.name},
+    )
+    messages.success(request, f'Role renamed to “{role.name}”.')
+    return redirect(f'/roles/?role={role.pk}')
+
+
+def _delete_role(request, role):
+    if role.name in PROTECTED_ROLE_NAMES:
+        messages.error(request, f'“{role.name}” is a protected system role and cannot be deleted.')
+        return redirect(f'/roles/?role={role.pk}')
+    member_count = role.user_set.count()
+    if member_count and request.POST.get('confirm_delete') != '1':
+        messages.error(
+            request,
+            f'“{role.name}” is assigned to {member_count} user(s). Tick confirm deletion to remove it from those accounts and delete the role.',
+        )
+        return redirect(f'/roles/?role={role.pk}')
+    role_name = role.name
+    role_id = str(role.pk)
+    role.delete()
+    AuditEvent.objects.create(
+        actor=request.user,
+        action='ROLE_DELETED',
+        object_type='Group',
+        object_id=role_id,
+        path=request.path,
+        method='POST',
+        detail={'role': role_name, 'members_cleared': member_count},
+    )
+    messages.success(request, f'Role “{role_name}” was deleted.')
+    return redirect('role-management')
+
+
 def handle_role_post(request):
-    role = get_object_or_404(Group, pk=request.POST.get('role'))
     action = request.POST.get('action')
+    if action == 'create_role':
+        return _create_role(request)
+    role = get_object_or_404(Group, pk=request.POST.get('role'))
+    if action == 'rename_role':
+        return _rename_role(request, role)
+    if action == 'delete_role':
+        return _delete_role(request, role)
     if action == 'save_privileges':
         if request.POST.get('privilege_form') != '1':
             messages.error(request, 'The privilege form was incomplete.')
