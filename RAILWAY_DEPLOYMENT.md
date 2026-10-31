@@ -115,13 +115,16 @@ Runtime chain:
 2. **Pre-deploy:** `python manage.py migrate --noinput`
 3. **Start:** gunicorn on `0.0.0.0:$PORT`
 
+Roles & privileges: `seed_roles` runs automatically in `preDeployCommand` after migrations, so every GitHub → Railway deploy syncs the same role matrix as local (`Platform Administrator`, `Front Desk`, lab/radiology roles, etc.). Custom roles created in the UI are not deleted.
+
 After the first successful deploy:
 
 ```text
 railway run python manage.py createsuperuser
 # or use Railway shell / one-off command
-python manage.py seed_roles
 python manage.py seed_notification_templates
+# optional re-seed if needed outside a deploy:
+python manage.py seed_roles
 ```
 
 ---

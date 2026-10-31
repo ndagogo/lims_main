@@ -4,7 +4,7 @@ dockerfilePath = "Dockerfile"
 watchPatterns = ["backend/**", "Dockerfile", "railway.toml"]
 
 [deploy]
-preDeployCommand = ["python manage.py migrate --noinput"]
+preDeployCommand = ["sh -c \"python manage.py migrate --noinput && python manage.py seed_roles\""]
 healthcheckPath = "/healthz"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
