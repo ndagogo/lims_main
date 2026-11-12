@@ -31,6 +31,14 @@
       <label class="form-label" for="tagline">Tagline</label>
       <input class="form-control" id="tagline" name="tagline" value="{{ profile.tagline }}" maxlength="120" placeholder="LIS · RIS">
     </div>
+    <div class="col-12">
+      <label class="form-label" for="ops-alert-email">Vendor critical-error email</label>
+      <input class="form-control" id="ops-alert-email" type="email" name="ops_alert_email" value="{{ profile.ops_alert_email }}" maxlength="254" placeholder="you@vendor.com">
+      <div class="form-text">
+        When a server error happens, clients see a safe warning page; full technical details are emailed here.
+        Prefer also setting <code>ERROR_ALERT_EMAIL</code> (and SMTP) in Railway Variables so alerts still work if the database is down.
+      </div>
+    </div>
     <div class="col-12 d-flex gap-2">
       <button class="btn btn-primary" type="submit">Save business name</button>
       <a class="btn btn-outline-dark" href="{% url 'platform-hub' %}">Back</a>

@@ -27,6 +27,12 @@ ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,healthchec
 railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
 railway_environment = os.getenv("RAILWAY_ENVIRONMENT", "").strip()
 on_railway = bool(railway_domain or railway_environment or os.getenv("RAILWAY_PROJECT_ID", "").strip())
+# Never show Django stack traces to clients on Railway.
+if on_railway and DEBUG and not env_bool("ALLOW_DEBUG_ON_RAILWAY", False):
+    raise ImproperlyConfigured(
+        "DJANGO_DEBUG must be False on Railway so clients never see technical errors. "
+        "Set ERROR_ALERT_EMAIL (and SMTP vars) to receive details by email instead."
+    )
 if railway_domain:
     ALLOWED_HOSTS.append(railway_domain)
 # Preserve order while removing duplicates.
@@ -199,6 +205,16 @@ WHATSAPP_PROVIDER_URL = os.getenv("WHATSAPP_PROVIDER_URL", "").strip()
 WHATSAPP_PROVIDER_TOKEN = os.getenv("WHATSAPP_PROVIDER_TOKEN", "").strip()
 NOTIFICATION_LOG_PROVIDER = env_bool("NOTIFICATION_LOG_PROVIDER", DEBUG)
 CRITICAL_ALERT_EMAIL = os.getenv("CRITICAL_ALERT_EMAIL", "").strip()
+# Preferred Railway variable for vendor error emails (falls back to CRITICAL_ALERT_EMAIL).
+ERROR_ALERT_EMAIL = os.getenv("ERROR_ALERT_EMAIL", CRITICAL_ALERT_EMAIL).strip()
+ERROR_ALERT_SUBJECT_PREFIX = os.getenv("ERROR_ALERT_SUBJECT_PREFIX", "[LIMS]").strip() or "[LIMS]"
+SERVER_EMAIL = os.getenv("SERVER_EMAIL", DEFAULT_FROM_EMAIL).strip() or DEFAULT_FROM_EMAIL
+ADMINS = []
+for _addr in ERROR_ALERT_EMAIL.split(","):
+    _addr = _addr.strip()
+    if _addr:
+        ADMINS.append(("LIMS Ops", _addr))
+MANAGERS = ADMINS
 PATIENT_PORTAL_URL = os.getenv("PATIENT_PORTAL_URL", "https://www.example.com/patients").strip()
 _default_public_url = f"https://{railway_domain}" if railway_domain else "http://127.0.0.1:8000"
 PUBLIC_APP_URL = os.getenv("PUBLIC_APP_URL", _default_public_url).strip()
@@ -217,10 +233,30 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 
+_log_handlers = ["console"]
+_handlers = {"console": {"class": "logging.StreamHandler"}}
+if not DEBUG and ERROR_ALERT_EMAIL:
+    _handlers["mail_admins"] = {
+        "level": "ERROR",
+        "class": "core.error_alerts.VendorAlertEmailHandler",
+    }
+    _log_handlers = ["console", "mail_admins"]
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "handlers": _handlers,
     "root": {"handlers": ["console"], "level": os.getenv("LOG_LEVEL", "INFO")},
-    "loggers": {"django.security": {"handlers": ["console"], "level": "WARNING", "propagate": False}},
+    "loggers": {
+        "django.request": {
+            "handlers": _log_handlers,
+            "level": "ERROR",
+            "propagate": False,
+        },
+        "django.security": {
+            "handlers": _log_handlers,
+            "level": "ERROR",
+            "propagate": False,
+        },
+    },
 }

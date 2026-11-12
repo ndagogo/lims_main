@@ -167,3 +167,8 @@ urlpatterns=[
 # Local DEBUG or Railway volume deployments (SERVE_MEDIA=True). Prefer S3 in prod.
 if settings.DEBUG or getattr(settings, "SERVE_MEDIA", False):
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+handler400 = 'core.error_views.bad_request'
+handler403 = 'core.error_views.permission_denied'
+handler404 = 'core.error_views.page_not_found'
+handler500 = 'core.error_views.server_error'

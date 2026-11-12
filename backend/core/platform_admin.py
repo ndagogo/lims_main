@@ -1482,6 +1482,7 @@ def handle_organization_post(request):
     profile.short_name = (request.POST.get('short_name') or '').strip()
     profile.document_prefix = (request.POST.get('document_prefix') or '').strip()
     profile.tagline = (request.POST.get('tagline') or '').strip()
+    profile.ops_alert_email = (request.POST.get('ops_alert_email') or '').strip()
     try:
         profile.save()
     except ValidationError as exc:

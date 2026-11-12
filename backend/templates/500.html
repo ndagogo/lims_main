@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Something went wrong | {{ org_short_name|default:"LIMS" }}</title>
+  <style>
+    :root { color-scheme: light; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      font-family: "Segoe UI", system-ui, sans-serif; background: #f4f1ea; color: #1c1917;
+      padding: 1.5rem;
+    }
+    .panel {
+      max-width: 28rem; width: 100%; background: #fff; border: 1px solid #e7e2d9;
+      border-radius: 1.25rem; padding: 2rem 1.75rem; text-align: center;
+      box-shadow: 0 12px 40px rgba(28, 25, 23, 0.06);
+    }
+    .warn {
+      width: 4rem; height: 4rem; margin: 0 auto 1rem; border-radius: 999px;
+      display: grid; place-items: center; background: #fff7ed; color: #c2410c;
+      font-size: 2rem; font-weight: 700; border: 2px solid #fdba74;
+    }
+    h1 { font-size: 1.35rem; margin: 0 0 .6rem; letter-spacing: -0.02em; }
+    p { margin: 0 0 .85rem; color: #57534e; line-height: 1.5; }
+    .muted { font-size: .9rem; color: #78716c; }
+    a.btn {
+      display: inline-block; margin-top: .75rem; padding: .65rem 1.2rem; border-radius: 999px;
+      background: #171717; color: #fff; text-decoration: none; font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="panel" role="alert">
+    <div class="warn" aria-hidden="true">!</div>
+    <h1>Hey — something critical happened</h1>
+    <p>We could not complete that request safely. Please contact your vendor.</p>
+    <p class="muted">Technical details were sent to the support team. Nothing confidential is shown on this screen.</p>
+    <a class="btn" href="/">Return home</a>
+  </div>
+</body>
+</html>

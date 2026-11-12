@@ -277,6 +277,11 @@ class OrganizationProfile(TimeStampedModel):
         default='LIS · RIS',
         help_text='Optional subtitle under the brand in the staff shell.',
     )
+    ops_alert_email = models.EmailField(
+        blank=True,
+        default='',
+        help_text='Optional vendor email for critical server errors. Railway ERROR_ALERT_EMAIL is preferred and always included when set.',
+    )
 
     class Meta:
         verbose_name = 'Organization profile'
@@ -290,6 +295,7 @@ class OrganizationProfile(TimeStampedModel):
         import re
         self.legal_name = ' '.join((self.legal_name or '').split()).strip()[:180]
         self.short_name = ' '.join((self.short_name or '').split()).strip()[:40]
+        self.ops_alert_email = (self.ops_alert_email or '').strip()
         prefix = re.sub(r'[^A-Za-z0-9]', '', (self.document_prefix or '').strip().upper())[:12]
         if not self.legal_name:
             raise ValidationError({'legal_name': 'Enter the client / business legal name.'})
