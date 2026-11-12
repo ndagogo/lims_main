@@ -14,14 +14,26 @@ _DEFAULTS = SimpleNamespace(
     short_name='HFDN',
     document_prefix='HFDN',
     tagline='LIS · RIS',
+    ops_alert_email='',
+    is_fallback=True,
 )
+
+
+def organization_db_ready():
+    """True when OrganizationProfile table/columns match the current model."""
+    try:
+        from core.models import OrganizationProfile
+        OrganizationProfile.objects.filter(pk=1).values_list('pk', flat=True).first()
+        return True
+    except (OperationalError, ProgrammingError):
+        return False
 
 
 def get_organization_profile():
     """Return the singleton organization profile, creating defaults if missing.
 
-    Falls back to in-memory defaults when the table is not migrated yet so a
-    missed production migrate cannot take down every page that renders branding.
+    Falls back to in-memory defaults when migrations are pending so branding
+    pages do not 500. Writes must use save_organization_profile().
     """
     cached = cache.get(_CACHE_KEY)
     if cached is not None:
@@ -29,9 +41,22 @@ def get_organization_profile():
     try:
         from core.models import OrganizationProfile
         profile, _created = OrganizationProfile.objects.get_or_create(pk=1)
+        # Mark as a real row so callers can distinguish from the fallback.
+        profile.is_fallback = False
     except (OperationalError, ProgrammingError):
         return _DEFAULTS
     cache.set(_CACHE_KEY, profile, timeout=60)
+    return profile
+
+
+def save_organization_profile(**fields):
+    """Persist organization fields. Raises ProgrammingError/OperationalError if not migrated."""
+    from core.models import OrganizationProfile
+    profile, _created = OrganizationProfile.objects.get_or_create(pk=1)
+    for key, value in fields.items():
+        setattr(profile, key, value)
+    profile.save()
+    clear_organization_cache()
     return profile
 
 
