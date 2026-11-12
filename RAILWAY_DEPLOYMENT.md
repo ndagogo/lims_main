@@ -117,6 +117,35 @@ Runtime chain:
 
 Roles & privileges: `seed_roles` runs automatically in `preDeployCommand` after migrations, so every GitHub → Railway deploy syncs the same role matrix as local (`Platform Administrator`, `Front Desk`, lab/radiology roles, etc.). Custom roles created in the UI are not deleted.
 
+### Client-safe errors + vendor email alerts
+
+On Railway, keep **`DJANGO_DEBUG=False`** (enforced). Users see a friendly warning page; stack traces are emailed to you.
+
+Set in Railway Variables:
+
+- `ERROR_ALERT_EMAIL=you@vendor.com` (required for alerts)
+- `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` / `EMAIL_USE_TLS=true`
+- `DEFAULT_FROM_EMAIL` / `SERVER_EMAIL`
+
+Optional: Platform controls → Client / business name → **Vendor critical-error email**.
+
+### Client demo data (optional, removable)
+
+For an empty production DB, seed a tiny tagged walkthrough set (≤5 of each kind) via Railway shell / one-off:
+
+```text
+python manage.py seed_demo --confirm
+```
+
+Staff password (all demo users): printed by the command (`Demo-Client-Walkthrough-2026!`).
+Accounts: `demo.admin`, `demo.desk`, `demo.accounts`, `demo.lab`, `demo.radio`.
+
+Remove later (does not touch real non-demo rows):
+
+```text
+python manage.py clear_demo --confirm
+```
+
 After the first successful deploy:
 
 ```text

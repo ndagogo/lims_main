@@ -30,20 +30,21 @@ DB_CONN_MAX_AGE=60
 # First boot only (then set back to false): seed roles/templates/workflows
 # RUN_SEED_ON_START=true
 
-# Notifications (set when providers are ready)
+# Notifications + critical error alerts (recommended)
 NOTIFICATION_LOG_PROVIDER=false
-# SMS_PROVIDER_URL=
-# SMS_PROVIDER_TOKEN=
-# WHATSAPP_PROVIDER_URL=
-# WHATSAPP_PROVIDER_TOKEN=
-# EMAIL_HOST=
-# EMAIL_PORT=587
-# EMAIL_HOST_USER=
-# EMAIL_HOST_PASSWORD=
-# EMAIL_USE_TLS=true
-# DEFAULT_FROM_EMAIL=results@your-domain.com
+# SMTP required for password reset AND vendor error emails
+EMAIL_HOST=smtp.your-provider.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=
+EMAIL_HOST_PASSWORD=
+EMAIL_USE_TLS=true
+DEFAULT_FROM_EMAIL=noreply@your-domain.com
+SERVER_EMAIL=noreply@your-domain.com
+# Vendor inbox for full stack traces (clients only see a safe warning page)
+ERROR_ALERT_EMAIL=you@vendor.com
+# CRITICAL_ALERT_EMAIL=you@vendor.com
+# ERROR_ALERT_SUBJECT_PREFIX=[LIMS]
 # PATIENT_PORTAL_URL=https://www.your-domain.com/patients
-# CRITICAL_ALERT_EMAIL=ops@your-domain.com
 
 # Optional S3-compatible storage (recommended if replicas > 1)
 # AWS_STORAGE_BUCKET_NAME=
