@@ -365,9 +365,10 @@ def _pdf_response(report, title, headers, rows, basename):
     pdf = canvas.Canvas(buffer, pagesize=landscape(A4))
     width, height = landscape(A4)
     y = height - 40
-    pdf.setTitle(f'HFDN {title}')
+    from core.organization import organization_legal_name, organization_short_name
+    pdf.setTitle(f'{organization_short_name()} {title}')
     pdf.setFont('Helvetica-Bold', 12)
-    pdf.drawString(36, y, 'Health Focus Diagnostics Nigeria — Accountant report')
+    pdf.drawString(36, y, f'{organization_legal_name()} — Accountant report')
     y -= 16
     pdf.setFont('Helvetica', 9)
     pdf.drawString(36, y, f'{title} · {report["period_label"]} · {report["start_date"]} to {report["end_date"]}')

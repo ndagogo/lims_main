@@ -189,7 +189,8 @@ def render_event_message(event_key, channel, context):
         subject = _render(row.subject_template, context)
         body = _render(row.body_template, context)
         return subject, body
-    subject = _render(DEFAULT_SUBJECTS.get(event_key, 'HFDN notification'), context)
+    from core.organization import organization_short_name
+    subject = _render(DEFAULT_SUBJECTS.get(event_key, f'{organization_short_name()} notification'), context)
     body = _render(DEFAULT_BODIES.get(event_key, ''), context)
     return subject, body
 

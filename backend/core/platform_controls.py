@@ -7,6 +7,7 @@ def platform_control_sections():
         {
             'title': 'Catalogue & organisation',
             'items': [
+                ('Client / business name', '/platform/organization/', 'bi-building-check', 'Legal name, brand, and document number prefix for this deployment'),
                 ('Catalog & pricing', '/catalog/', 'bi-journal-bookmark', 'Tariffs, tests, service groups, imaging, centres, clients'),
                 ('Centres & result formatting', '/catalog/centres/', 'bi-building', 'Sites, logos, sample digits, lab/radiology print layout'),
                 ('Referral doctors', '/catalog/doctors/', 'bi-person-badge', 'Doctors, institutions, commission setup'),

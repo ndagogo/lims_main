@@ -21,8 +21,10 @@ def request_password_reset(email, *, request=None):
     token = token_generator.make_token(user)
     base = (getattr(settings, 'PUBLIC_APP_URL', '') or '').rstrip('/') or 'http://127.0.0.1:8000'
     link = f'{base}/account/password-reset/confirm/{uid}/{token}/'
+    from core.organization import organization_short_name
+    brand = organization_short_name()
     send_mail(
-        'Reset your HFDN password',
+        f'Reset your {brand} password',
         f'Use this link within 24 hours to set a new password:\n\n{link}\n\nIf you did not request this, ignore the email.',
         settings.DEFAULT_FROM_EMAIL,
         [user.email],

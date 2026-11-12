@@ -15,6 +15,7 @@ from communications.messaging import ALLOWED_TEMPLATE_VARIABLES, validate_templa
 from communications.models import NotificationOutbox, NotificationTemplate
 from core.access import can_access_platform_controls
 from core.models import AuditEvent, Centre
+from core.organization import clear_organization_cache, get_organization_profile
 from core.paging import PAGE_SIZES, paginate
 from core.platform_controls import platform_control_sections
 from integrations.models import Analyzer, AnalyzerMessage, AnalyzerTestMapping, GatewayRegistration
@@ -1469,3 +1470,44 @@ def handle_tat_rules_post(request):
         messages.success(request, f'{row.name} marked {"active" if row.is_active else "inactive"}.')
         return redirect('platform-tat-rules')
     return redirect('platform-tat-rules')
+
+
+def build_organization_context(request):
+    return {'profile': get_organization_profile()}
+
+
+def handle_organization_post(request):
+    profile = get_organization_profile()
+    profile.legal_name = (request.POST.get('legal_name') or '').strip()
+    profile.short_name = (request.POST.get('short_name') or '').strip()
+    profile.document_prefix = (request.POST.get('document_prefix') or '').strip()
+    profile.tagline = (request.POST.get('tagline') or '').strip()
+    try:
+        profile.save()
+    except ValidationError as exc:
+        if getattr(exc, 'message_dict', None):
+            detail = ' '.join(part for parts in exc.message_dict.values() for part in parts)
+        else:
+            detail = ' '.join(getattr(exc, 'messages', [str(exc)]))
+        messages.error(request, detail or 'Could not save the business name.')
+        return redirect('platform-organization')
+    clear_organization_cache()
+    AuditEvent.objects.create(
+        actor=request.user,
+        action='ORGANIZATION_PROFILE_UPDATED',
+        object_type='OrganizationProfile',
+        object_id='1',
+        path=request.path,
+        method='POST',
+        detail={
+            'legal_name': profile.legal_name,
+            'short_name': profile.short_name,
+            'document_prefix': profile.document_prefix,
+        },
+    )
+    messages.success(
+        request,
+        f'Client / business name saved as “{profile.legal_name}”. Brand “{profile.short_name}” '
+        f'and document prefix “{profile.document_prefix}” apply across the platform.',
+    )
+    return redirect('platform-organization')

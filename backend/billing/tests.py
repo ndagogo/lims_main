@@ -30,7 +30,8 @@ class PhaseTwoAccountsTests(TestCase):
         self.assertEqual(response.status_code,400)
         self.assertIn('duplicate',str(response.data))
     def test_invoice_number_is_generated(self):
-        self.assertTrue(self.invoice.invoice_number.startswith('HFDN-INV-'))
+        from core.organization import document_prefix
+        self.assertTrue(self.invoice.invoice_number.startswith(f'{document_prefix()}-INV-'))
     def test_add_test_requires_tariff_price(self):
         response=self.client.post(f'/api/invoices/{self.invoice.pk}/add_test/',{'test':self.test.pk,'tariff':self.tariff.pk},format='json')
         self.assertEqual(response.status_code,201)
@@ -42,7 +43,8 @@ class PhaseTwoAccountsTests(TestCase):
         self.assertEqual(response.status_code,201)
         self.invoice.refresh_from_db()
         self.assertEqual(self.invoice.status,'PAID')
-        self.assertTrue(response.data['receipt_number'].startswith('HFDN-RCP-'))
+        from core.organization import document_prefix
+        self.assertTrue(response.data['receipt_number'].startswith(f'{document_prefix()}-RCP-'))
     def test_overpayment_is_rejected(self):
         InvoiceItem.objects.create(invoice=self.invoice,test=self.test,unit_price=Decimal('5500.00'))
         response=self.client.post('/api/payments/',{'invoice':str(self.invoice.pk),'amount':'5501.00','method':'CASH'},format='json')

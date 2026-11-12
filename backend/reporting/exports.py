@@ -122,12 +122,13 @@ def _pdf_tables(title, tables, basename, meta_lines):
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=landscape(A4))
     width, height = landscape(A4)
-    pdf.setTitle(f'HFDN {title}')
+    from core.organization import organization_legal_name, organization_short_name
+    pdf.setTitle(f'{organization_short_name()} {title}')
 
     def header(section_title, first=False):
         y = height - 40
         pdf.setFont('Helvetica-Bold', 12)
-        pdf.drawString(36, y, 'Health Focus Diagnostics Nigeria — Management report')
+        pdf.drawString(36, y, f'{organization_legal_name()} — Management report')
         y -= 14
         pdf.setFont('Helvetica', 9)
         pdf.drawString(36, y, str(title)[:140])

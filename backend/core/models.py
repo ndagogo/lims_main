@@ -251,3 +251,55 @@ class ResultLedger(TimeStampedModel):
 
     def __str__(self):
         return f'{self.kind} {self.service} {self.object_id}'
+
+
+class OrganizationProfile(TimeStampedModel):
+    """Singleton client/business identity for the deployed tenant (centres stay separate)."""
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    legal_name = models.CharField(
+        max_length=180,
+        default='Health Focus Diagnostics Nigeria',
+        help_text='Full business name shown on invoices, receipts, and reports.',
+    )
+    short_name = models.CharField(
+        max_length=40,
+        default='HFDN',
+        help_text='Short brand used in navigation and page titles.',
+    )
+    document_prefix = models.CharField(
+        max_length=12,
+        default='HFDN',
+        help_text='Prefix for invoice, receipt, and patient ID numbers (letters/numbers only).',
+    )
+    tagline = models.CharField(
+        max_length=120,
+        blank=True,
+        default='LIS · RIS',
+        help_text='Optional subtitle under the brand in the staff shell.',
+    )
+
+    class Meta:
+        verbose_name = 'Organization profile'
+        verbose_name_plural = 'Organization profile'
+
+    def __str__(self):
+        return self.legal_name or self.short_name or 'Organization'
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        import re
+        self.legal_name = ' '.join((self.legal_name or '').split()).strip()[:180]
+        self.short_name = ' '.join((self.short_name or '').split()).strip()[:40]
+        prefix = re.sub(r'[^A-Za-z0-9]', '', (self.document_prefix or '').strip().upper())[:12]
+        if not self.legal_name:
+            raise ValidationError({'legal_name': 'Enter the client / business legal name.'})
+        if not self.short_name:
+            raise ValidationError({'short_name': 'Enter a short brand name.'})
+        if not prefix:
+            raise ValidationError({'document_prefix': 'Enter a document prefix (letters or numbers).'})
+        self.document_prefix = prefix
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        self.full_clean()
+        return super().save(*args, **kwargs)

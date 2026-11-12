@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Client / business name | {{ org_short_name }}{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="muted small">PLATFORM CONTROLS</div>
+  <h1 class="h3 mb-1">Client / business name</h1>
+  <p class="muted mb-0">
+    This is the organisation that owns this deployment. Centres are sites under this business
+    (configured separately). The legal name appears on invoices and receipts; the short name brands the staff UI.
+  </p>
+</div>
+<div class="card p-4" style="max-width:40rem">
+  <form method="post" class="row g-3">
+    {% csrf_token %}
+    <div class="col-12">
+      <label class="form-label" for="legal-name">Legal / business name</label>
+      <input class="form-control" id="legal-name" name="legal_name" value="{{ profile.legal_name }}" maxlength="180" required>
+      <div class="form-text">Shown on invoices, receipts, labels, and PDF reports.</div>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="short-name">Short brand name</label>
+      <input class="form-control" id="short-name" name="short_name" value="{{ profile.short_name }}" maxlength="40" required>
+      <div class="form-text">Navigation, login, and page titles.</div>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="document-prefix">Document prefix</label>
+      <input class="form-control" id="document-prefix" name="document_prefix" value="{{ profile.document_prefix }}" maxlength="12" required>
+      <div class="form-text">Used for new invoice, receipt, and patient ID numbers (letters/numbers only).</div>
+    </div>
+    <div class="col-12">
+      <label class="form-label" for="tagline">Tagline</label>
+      <input class="form-control" id="tagline" name="tagline" value="{{ profile.tagline }}" maxlength="120" placeholder="LIS · RIS">
+    </div>
+    <div class="col-12 d-flex gap-2">
+      <button class="btn btn-primary" type="submit">Save business name</button>
+      <a class="btn btn-outline-dark" href="{% url 'platform-hub' %}">Back</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

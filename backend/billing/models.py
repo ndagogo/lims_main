@@ -32,7 +32,8 @@ class Invoice(TimeStampedModel):
             with transaction.atomic():
                 counter, _ = SequenceCounter.objects.select_for_update().get_or_create(key='invoice-number')
                 counter.value += 1; counter.save(update_fields=['value'])
-                self.invoice_number = f'HFDN-INV-{counter.value:09d}'
+                from core.organization import document_prefix
+                self.invoice_number = f'{document_prefix()}-INV-{counter.value:09d}'
         super().save(*args, **kwargs)
     def recalculate(self):
         if self.status == 'CANCELLED':
@@ -114,7 +115,8 @@ class Payment(TimeStampedModel):
             with transaction.atomic():
                 counter, _ = SequenceCounter.objects.select_for_update().get_or_create(key='receipt-number')
                 counter.value += 1; counter.save(update_fields=['value'])
-                self.receipt_number = f'HFDN-RCP-{counter.value:09d}'
+                from core.organization import document_prefix
+                self.receipt_number = f'{document_prefix()}-RCP-{counter.value:09d}'
         super().save(*args, **kwargs)
         self.invoice.recalculate()
 

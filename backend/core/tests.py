@@ -282,6 +282,34 @@ class StaffWorkspaceTests(TestCase):
         self.assertEqual(custom_screen.get('/accounts/refunds/').status_code, 200)
         self.assertEqual(custom_screen.get('/accounts/bill-edit/').status_code, 200)
 
+    def test_platform_admin_can_configure_client_business_name(self):
+        from django.test import Client
+        from core.models import OrganizationProfile
+        from core.organization import clear_organization_cache, organization_legal_name
+        admin = User.objects.create_superuser(
+            username='org.admin', email='org.admin@example.test', password='A-long-unique-password-2026!',
+        )
+        screen = Client()
+        screen.force_login(admin)
+        page = screen.get('/platform/organization/')
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'Client / business name')
+        saved = screen.post('/platform/organization/', {
+            'legal_name': 'Auxano Diagnostics Limited',
+            'short_name': 'Auxano',
+            'document_prefix': 'AUX',
+            'tagline': 'Diagnostics platform',
+        })
+        self.assertEqual(saved.status_code, 302)
+        clear_organization_cache()
+        profile = OrganizationProfile.objects.get(pk=1)
+        self.assertEqual(profile.legal_name, 'Auxano Diagnostics Limited')
+        self.assertEqual(profile.short_name, 'Auxano')
+        self.assertEqual(profile.document_prefix, 'AUX')
+        self.assertEqual(organization_legal_name(), 'Auxano Diagnostics Limited')
+        home = screen.get('/')
+        self.assertContains(home, 'Auxano')
+
     def test_each_role_opens_only_its_own_workspace(self):
         from django.test import Client
         def person(username, role):
@@ -477,7 +505,8 @@ class StaffWorkspaceTests(TestCase):
         partial = cashier.post('/accounts/', {'action': 'pay', 'invoice': str(invoice.pk), 'amount': '5000.00', 'method': 'POS', 'reference': 'POS-4412'}, follow=True)
         self.assertEqual(partial.status_code, 200)
         self.assertContains(partial, 'Payment receipt')
-        self.assertContains(partial, 'HFDN-RCP-')
+        from core.organization import document_prefix
+        self.assertContains(partial, f'{document_prefix()}-RCP-')
         self.assertContains(partial, 'Ifeoma Dues')
         self.assertContains(partial, 'Complete Blood Count')
         self.assertContains(partial, 'Chest X-ray')

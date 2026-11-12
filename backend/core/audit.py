@@ -322,11 +322,13 @@ def export_audit_pdf(queryset):
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+    from core.organization import organization_short_name
+
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=24, rightMargin=24, topMargin=28, bottomMargin=28)
     styles = getSampleStyleSheet()
     story = [
-        Paragraph('HFDN Enterprise Audit Trail', styles['Heading1']),
+        Paragraph(f'{organization_short_name()} Enterprise Audit Trail', styles['Heading1']),
         Paragraph(
             f'Generated {_stamp()} · Times in Africa/Lagos (UTC stored) · '
             'IP/browser are metadata only and do not prove identity or location.',

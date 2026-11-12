@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Barcode {{ sample.sample_id }} | HFDN{% endblock %}
+{% block title %}Barcode {{ sample.sample_id }} | {{ org_short_name }}{% endblock %}
 {% block extra_head %}
 <style>
   @media print {
@@ -34,7 +34,7 @@
   </div>
 </div>
 <div class="label-sheet dash-enter">
-  <div class="fw-semibold mb-1">Health Focus Diagnostics</div>
+  <div class="fw-semibold mb-1">{{ org_legal_name }}</div>
   <div class="label-id mb-2">{{ sample.sample_id }}</div>
   {% if barcode_svg %}
     <div class="barcode-wrap mb-3">{{ barcode_svg|safe }}</div>

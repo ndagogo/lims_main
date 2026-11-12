@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Radiology worklist | HFDN{% endblock %}
+{% block title %}Radiology worklist | {{ org_short_name }}{% endblock %}
 {% block content %}
 <div class="rad-desk">
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
@@ -195,7 +195,7 @@
       {% if selected %}
         <div class="rad-viewer mb-3">
           <div class="small">{{ selected.visit.patient.first_name }} {{ selected.visit.patient.last_name }} · {{ selected.modality.get_modality_type_display }}</div>
-          <div class="rad-viewer-mark">HFDN viewer</div>
+          <div class="rad-viewer-mark">{{ org_short_name }} viewer</div>
           {% if selected.modality.wado_url %}<a class="small" href="{{ selected.modality.wado_url }}">Open PACS</a>{% endif %}
         </div>
         <div class="d-flex justify-content-between align-items-start gap-2 mb-3">

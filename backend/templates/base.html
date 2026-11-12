@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}HFDN Health{% endblock %}</title>
+  <title>{% block title %}{{ org_short_name }} Health{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,460;6..72,560&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
@@ -192,7 +192,7 @@
 <body>
 {% if request.path|slice:":9" == "/portals/" %}
   <header class="portal-top">
-    <a class="brand-name text-decoration-none text-dark" href="/">HFDN</a>
+    <a class="brand-name text-decoration-none text-dark" href="/">{{ org_short_name }}</a>
     <span class="eyebrow mb-0">{% if "/patient" in request.path %}Patient portal{% elif "/physician" in request.path %}Doctor portal{% elif "/corporate" in request.path %}Corporate portal{% else %}Portal{% endif %}</span>
     <nav class="d-flex gap-3 ms-2">
       {% if "/patient" in request.path %}<a class="active" href="{% url 'portal-patient-home' %}">Results</a>{% endif %}
@@ -205,7 +205,7 @@
 {% else %}
 <nav class="navbar d-lg-none mobile-nav">
   <div class="container-fluid flex-wrap py-2">
-    <a class="navbar-brand brand-name mb-0" href="{{ home_url|default:'/' }}">HFDN</a>
+    <a class="navbar-brand brand-name mb-0" href="{{ home_url|default:'/' }}">{{ org_short_name }}</a>
     {% for key, label, url, icon in workspace_nav %}<a href="{{ url }}">{{ label }}</a>{% endfor %}
     {% if is_accountant %}<a href="{% url 'accounts-reports' %}">Reports</a>{% endif %}
     {% if can_refund_payment %}<a href="{% url 'accounts-refunds' %}">Refunds</a>{% endif %}
@@ -218,8 +218,8 @@
 <div class="shell">
   <aside class="sidebar d-none d-lg-flex">
     <div class="brand">
-      <div class="brand-name">HFDN</div>
-      <div class="brand-sub">LIS · RIS</div>
+      <div class="brand-name">{{ org_short_name }}</div>
+      <div class="brand-sub">{{ org_tagline }}</div>
     </div>
     <nav class="side-nav">
       {% if home_url != '/radiology/' %}<a class="{% if request.path == '/' %}active{% endif %}" href="/">Dashboard</a>{% endif %}

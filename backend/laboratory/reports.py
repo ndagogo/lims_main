@@ -25,7 +25,8 @@ def build_result_pdf(result):
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     y = height - margin
-    pdf.setTitle(f'HFDN {sample.sample_id}')
+    from core.organization import organization_short_name
+    pdf.setTitle(f'{organization_short_name()} {sample.sample_id}')
 
     watermark = (fmt.get('watermark_text') or '').strip()
     if watermark:

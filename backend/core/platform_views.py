@@ -6,12 +6,12 @@ from core.platform_admin import (
     build_analyzer_mappings_context, build_analyzer_messages_context, build_analyzers_context,
     build_audit_context, build_bill_amendments_context, build_gateways_context, build_hub_context,
     build_inventory_skus_context, build_modalities_context, build_notification_outbox_context, build_notification_templates_context,
-    build_pacs_failures_context, build_physician_invites_context, build_qc_materials_context,
+    build_organization_context, build_pacs_failures_context, build_physician_invites_context, build_qc_materials_context,
     build_qc_runs_context, build_refunds_context, build_result_templates_context,
     build_result_template_builder_context, build_sample_codes_context, build_tat_rules_context,
     build_workflows_context, export_audit_report, handle_analyzer_mappings_post, handle_analyzers_post,
     handle_gateways_post, handle_inventory_skus_post, handle_modalities_post, handle_notification_outbox_post,
-    handle_notification_templates_post, handle_pacs_failures_post, handle_physician_invites_post,
+    handle_notification_templates_post, handle_organization_post, handle_pacs_failures_post, handle_physician_invites_post,
     handle_qc_materials_post, handle_qc_runs_post, handle_result_template_builder_post,
     handle_result_templates_post, handle_sample_codes_post, handle_tat_rules_post,
     handle_workflows_post, require_platform_controls,
@@ -181,3 +181,13 @@ def platform_inventory_skus(request):
 @login_required
 def platform_tat_rules(request):
     return _screen(request, template='platform/tat_rules.html', builder=build_tat_rules_context, handler=handle_tat_rules_post)
+
+
+@login_required
+def platform_organization(request):
+    return _screen(
+        request,
+        template='platform/organization.html',
+        builder=build_organization_context,
+        handler=handle_organization_post,
+    )

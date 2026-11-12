@@ -4,6 +4,9 @@ from .access import (
     can_change_referring_doctor, can_edit_bill, can_modify_patient_data,
     can_refund_payment, is_accountant, is_platform_admin,
 )
+from .organization import (
+    organization_legal_name, organization_short_name, organization_tagline,
+)
 
 
 def workspace_access(request):
@@ -43,6 +46,8 @@ def workspace_access(request):
         )
         if access:
             active_centre = access.centre
+    short = organization_short_name()
+    legal = organization_legal_name()
     return {
         'home_url': '/radiology/' if allowed == {'radiology'} else '/',
         'active_centre': active_centre,
@@ -56,4 +61,8 @@ def workspace_access(request):
         'can_refund_payment': authenticated and can_refund_payment(user),
         'can_edit_bill': authenticated and can_edit_bill(user),
         'can_access_platform_controls': authenticated and can_access_platform_controls(user),
+        'org_legal_name': legal,
+        'org_short_name': short,
+        'org_tagline': organization_tagline(),
+        'client_business_name': legal,
     }

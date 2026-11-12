@@ -71,7 +71,8 @@ def dispatch_one(note):
 def _handoff(note):
     if note.channel == 'EMAIL':
         if settings.EMAIL_HOST or 'console' in settings.EMAIL_BACKEND or 'locmem' in settings.EMAIL_BACKEND:
-            send_mail(note.subject or 'HFDN notification', note.body, settings.DEFAULT_FROM_EMAIL, [note.recipient], fail_silently=False)
+            from core.organization import organization_short_name
+            send_mail(note.subject or f'{organization_short_name()} notification', note.body, settings.DEFAULT_FROM_EMAIL, [note.recipient], fail_silently=False)
             return f'email:{note.pk}'
         if settings.NOTIFICATION_LOG_PROVIDER:
             logger.info('Email notification %s handed to the log provider', note.pk)

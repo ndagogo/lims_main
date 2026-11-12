@@ -43,7 +43,8 @@ class Patient(TimeStampedModel):
             with transaction.atomic():
                 counter,_=SequenceCounter.objects.select_for_update().get_or_create(key='patient-uhid')
                 counter.value+=1; counter.save(update_fields=['value'])
-                self.uhid=f'HFDN{counter.value:09d}'
+                from core.organization import document_prefix
+                self.uhid=f'{document_prefix()}{counter.value:09d}'
         super().save(*args,**kwargs)
     def __str__(self): return f'{self.uhid} — {self.first_name} {self.last_name}'
 HOW_HEARD_CHOICES=[('','—'),('WALKIN','Walk-in'),('FAMILY','Family or friend'),('DOCTOR','Referring doctor'),('HOSPITAL','Hospital'),('SOCIAL','Social media'),('CORPORATE','Employer or corporate'),('OTHER','Other')]
