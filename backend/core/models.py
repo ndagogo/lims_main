@@ -238,6 +238,10 @@ class ResultLedger(TimeStampedModel):
     object_id = models.CharField(max_length=64, db_index=True)
     summary = models.CharField(max_length=200, blank=True)
     reason = models.TextField(blank=True)
+    collector_id = models.FileField(
+        upload_to='collector-ids/%Y/%m/', blank=True,
+        help_text='Copy of the identification shown by a third party who collected the result.',
+    )
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
         related_name='result_ledger_entries',

@@ -283,7 +283,7 @@
     <a class="{% if request.path == '/' %}active{% endif %}" href="/"><i class="bi bi-grid"></i>Dashboard</a>
   {% endif %}
   {% for key, label, url, icon in workspace_nav %}
-    <a class="{% if request.path == url %}active{% endif %}" href="{{ url }}"><i class="bi {{ icon }}"></i>{{ label }}</a>
+    <a class="{% if request.path == url or key == 'dispatch' and '/results/dispatch/' in request.path %}active{% endif %}" href="{{ url }}"><i class="bi {{ icon }}"></i>{{ label }}</a>
   {% endfor %}
   {% if can_modify_patient_data %}
     <a class="{% if request.path == '/patients/demographics/' %}active{% endif %}" href="{% url 'patient-demographics' %}"><i class="bi bi-person-gear"></i>Demographics</a>
@@ -331,7 +331,7 @@
     <nav class="side-nav">
       {% if home_url != '/radiology/' %}<a class="{% if request.path == '/' %}active{% endif %}" href="/">Dashboard</a>{% endif %}
       {% for key, label, url, icon in workspace_nav %}
-        <a class="{% if request.path == url %}active{% endif %}" href="{{ url }}">{{ label }}</a>
+        <a class="{% if request.path == url or key == 'dispatch' and '/results/dispatch/' in request.path %}active{% endif %}" href="{{ url }}">{{ label }}</a>
       {% endfor %}
       {% if is_accountant %}
         <a class="{% if request.path == '/accounts/reports/' %}active{% endif %}" href="{% url 'accounts-reports' %}">Reports</a>

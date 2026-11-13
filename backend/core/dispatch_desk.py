@@ -4,6 +4,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.db.models import Q, Sum
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
@@ -50,6 +51,14 @@ LINK_EXPIRY_CHOICES = [
     ('7', '7 days'),
     ('14', '14 days'),
     ('30', '30 days'),
+]
+
+ID_MEANS = [
+    ('NIN', 'National Identification Number (NIN)'),
+    ('DRIVERS_LICENCE', "Driver's licence"),
+    ('PASSPORT', 'International passport'),
+    ('VOTERS_CARD', "Voter's card"),
+    ('OTHER', 'Other'),
 ]
 
 
@@ -126,13 +135,22 @@ def _ready_radiology(user, centre_ids):
     rows = RadiologyReport.objects.select_related(
         'exam__order__visit__patient', 'exam__order__visit__centre', 'exam__order__visit__client',
         'exam__order__modality', 'exam__order__procedure', 'approved_by',
-    ).filter(status='APPROVED').order_by('-approved_at')
-    rows = _scope_reports(rows, centre_ids)[:200]
+    ).filter(status__in=('APPROVED', 'RELEASED', 'AMENDED')).order_by(
+        Coalesce('released_at', 'approved_at').desc(),
+    )
+    rows = _scope_reports(rows, centre_ids)
     items = []
     for report in rows:
         visit = report.exam.order.visit
         blockers = check_visit_release(visit, check_workflow=False)
         procedure = report.exam.order.procedure.name if report.exam.order.procedure_id else report.exam.order.modality.name
+        sent_before = report.status in ('RELEASED', 'AMENDED')
+        if blockers:
+            label = blockers[0].message[:42]
+        elif sent_before:
+            label = 'Ready · sent before'
+        else:
+            label = 'Ready'
         items.append({
             'key': f'rad:{report.pk}',
             'service': 'RADIOLOGY',
@@ -141,10 +159,11 @@ def _ready_radiology(user, centre_ids):
             'visit_id': visit.visit_id,
             'patient_name': _patient_label(visit.patient),
             'test_label': f'{report.exam.order.modality.get_modality_type_display()} · {procedure}',
-            'status_label': 'Ready' if not blockers else (blockers[0].message[:42]),
+            'status_label': label,
             'ready': not blockers,
+            'already_sent': sent_before,
             'blockers': blockers,
-            'when': report.approved_at,
+            'when': report.released_at or report.approved_at,
             'preview_url': reverse('radiology-report-preview', args=[report.pk]),
             'object': report,
         })
@@ -158,12 +177,21 @@ def _ready_laboratory(user, centre_ids):
     rows = LabResult.objects.select_related(
         'sample__order__visit__patient', 'sample__order__visit__centre', 'sample__order__visit__client',
         'sample__order__test', 'authenticated_by',
-    ).filter(status='AUTHENTICATED').order_by('-authenticated_at')
-    rows = _scope_lab(rows, centre_ids)[:200]
+    ).filter(status__in=('AUTHENTICATED', 'RELEASED', 'AMENDED')).order_by(
+        Coalesce('released_at', 'authenticated_at').desc(),
+    )
+    rows = _scope_lab(rows, centre_ids)
     items = []
     for result in rows:
         visit = result.sample.order.visit
         blockers = check_visit_release(visit)
+        sent_before = result.status in ('RELEASED', 'AMENDED')
+        if blockers:
+            label = blockers[0].message[:42]
+        elif sent_before:
+            label = 'Ready · sent before'
+        else:
+            label = 'Ready'
         items.append({
             'key': f'lab:{result.pk}',
             'service': 'LABORATORY',
@@ -172,10 +200,11 @@ def _ready_laboratory(user, centre_ids):
             'visit_id': visit.visit_id,
             'patient_name': _patient_label(visit.patient),
             'test_label': result.sample.order.test.name,
-            'status_label': 'Ready' if not blockers else (blockers[0].message[:42]),
+            'status_label': label,
             'ready': not blockers,
+            'already_sent': sent_before,
             'blockers': blockers,
-            'when': result.authenticated_at,
+            'when': result.released_at or result.authenticated_at,
             'preview_url': '',
             'object': result,
         })
@@ -275,13 +304,68 @@ def _recipient_targets(visit, selected_chips, post):
     return unique
 
 
-def compose_dispatch(user, post, request=None):
+def _third_party_collection(post, selected_chips, upload=None):
+    """Identity of the person collecting a result on the patient's behalf."""
+    if 'third_party' not in selected_chips:
+        return '', None
+    from django.core.exceptions import ValidationError
+    name = (post.get('third_party_name') or '').strip()
+    id_type = (post.get('third_party_id_type') or '').strip()
+    id_number = (post.get('third_party_id_number') or '').strip()
+    address = ' '.join((post.get('third_party_address') or '').split())
+    phone = (post.get('third_party_phone') or '').strip()
+    auth = (post.get('third_party_auth') or '').strip()
+    means = dict(ID_MEANS)
+    missing = []
+    if not name:
+        missing.append('name')
+    if id_type not in means or not id_number:
+        missing.append('means of identification')
+    if not upload:
+        missing.append('a copy of the identification')
+    if not address:
+        missing.append('address')
+    if not phone:
+        missing.append('personal phone number')
+    if not auth:
+        missing.append('authorisation note')
+    if missing:
+        raise ValidationError('Third-party collection needs ' + ', '.join(missing) + '.')
+    from core.uploads import validate_upload
+    validate_upload(upload)
+    note = (
+        f'Third party: {name}. ID: {means[id_type]} {id_number}. '
+        f'Address: {address}. Phone: {phone}. Authorisation: {auth}. '
+        'Identification copy filed.'
+    )
+    return note, upload
+
+
+def _stamp_collector(service, object_id, note, upload=None):
+    if not note and not upload:
+        return
+    row = ResultLedger.objects.filter(
+        kind='DISPATCH', service=service, object_id=str(object_id),
+    ).order_by('-created_at').first()
+    if row is None:
+        return
+    fields = []
+    if note:
+        row.reason = note[:4000]
+        fields.append('reason')
+    if upload:
+        row.collector_id = upload
+        fields.append('collector_id')
+    if fields:
+        row.save(update_fields=fields)
+
+
+def compose_dispatch(user, post, request=None, files=None):
     """Clinical release + queued notifications for the compose form."""
     item_key = (post.get('item') or '').strip()
     selected_chips = [c for c in post.getlist('recipients') if c in dict(RECIPIENT_CHIPS)]
-    if 'third_party' in selected_chips and not (post.get('third_party_auth') or '').strip():
-        from django.core.exceptions import ValidationError
-        raise ValidationError('Third-party recipients require an authorisation note.')
+    uploaded = files.get('third_party_id_file') if files is not None else None
+    collector_note, collector_file = _third_party_collection(post, selected_chips, uploaded)
     comment = (post.get('comment') or '').strip()
     hours = int(post.get('link_expiry') or '7')
     if item_key.startswith('rad:'):
@@ -295,6 +379,7 @@ def compose_dispatch(user, post, request=None):
         dispatch_radiology_report(user, report, request=request)
         object_id = str(report.pk)
         service = 'RADIOLOGY'
+        _stamp_collector(service, object_id, collector_note, collector_file)
     elif item_key.startswith('lab:'):
         from laboratory.models import LabResult
         result = get_object_or_404(
@@ -308,6 +393,7 @@ def compose_dispatch(user, post, request=None):
         dispatch_laboratory_result(user, result, request=request)
         object_id = str(result.pk)
         service = 'LABORATORY'
+        _stamp_collector(service, object_id, collector_note, collector_file)
     else:
         from django.core.exceptions import ValidationError
         raise ValidationError('Select a result to dispatch.')
@@ -390,6 +476,7 @@ def _history_queryset(user, request):
             | Q(actor__last_name__icontains=history_q)
             | Q(visit__patient__first_name__icontains=history_q)
             | Q(visit__patient__last_name__icontains=history_q)
+            | Q(reason__icontains=history_q)
         )
     if history_service:
         ledger = ledger.filter(service=history_service)
@@ -498,8 +585,9 @@ def build_dispatch_context(request):
     message_preview = ''
     preview_url = ''
     rules = [
+        'A finished laboratory or radiology result stays here so it can be dispatched again. Each send is kept in history.',
         'Results can only be dispatched after the scanned document is attached.',
-        'Third-party recipients require a valid authorisation note.',
+        'Third-party collection requires a means of identification, an uploaded copy of that identification, an address, a personal phone number, and an authorisation note.',
         'Sharing with external health providers requires consent.',
         'Access and retrieval links are logged.',
     ]
@@ -589,6 +677,7 @@ def build_dispatch_context(request):
         'preview_url': preview_url,
         'rules': rules,
         'recipient_chips': RECIPIENT_CHIPS,
+        'id_means': ID_MEANS,
         'channel_options': CHANNEL_OPTIONS,
         'link_expiry_choices': LINK_EXPIRY_CHOICES,
         'default_recipients': default_recipients,
@@ -623,6 +712,7 @@ def dispatch_history_export_rows(request):
             patient,
             row.get_service_display(),
             row.summary or '',
+            row.reason or '',
         ])
     return {
         'rows': rows,

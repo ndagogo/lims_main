@@ -4,6 +4,7 @@ from .access import (
     can_change_referring_doctor, can_edit_bill, can_modify_patient_data,
     can_refund_payment, is_accountant, is_platform_admin,
 )
+from .result_control import user_can_open_dispatch
 from .organization import (
     organization_legal_name, organization_short_name, organization_tagline,
 )
@@ -24,6 +25,10 @@ def workspace_access(request):
             if row[0] == 'radiology':
                 built.append(('templates', 'Templates', '/radiology/templates/', 'bi-file-medical'))
         nav = built
+    can_dispatch = authenticated and user_can_open_dispatch(user)
+    if can_dispatch:
+        nav = list(nav)
+        nav.append(('dispatch', 'Result dispatch', '/results/dispatch/', 'bi-send'))
     labels = [label for _key, label, _url, _icon in nav]
     if 'audit' in allowed:
         labels.append('Audit')
@@ -61,6 +66,7 @@ def workspace_access(request):
         'can_refund_payment': authenticated and can_refund_payment(user),
         'can_edit_bill': authenticated and can_edit_bill(user),
         'can_access_platform_controls': authenticated and can_access_platform_controls(user),
+        'can_dispatch_results': can_dispatch,
         'org_legal_name': legal,
         'org_short_name': short,
         'org_tagline': organization_tagline(),

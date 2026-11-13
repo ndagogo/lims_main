@@ -2,7 +2,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.http import Http404
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.clickjacking import xframe_options_sameorigin
@@ -112,7 +112,7 @@ def result_dispatch(request):
         action = request.POST.get('action')
         try:
             if action == 'compose_dispatch':
-                outcome = compose_dispatch(request.user, request.POST, request=request)
+                outcome = compose_dispatch(request.user, request.POST, request=request, files=request.FILES)
                 count = outcome['recipient_count']
                 queued = len(outcome['queued'])
                 messages.success(
@@ -170,6 +170,27 @@ def result_dispatch(request):
 
 
 @login_required
+def download_collector_id(request, pk):
+    """Staff-only copy of the identification a third party presented at collection."""
+    if not user_can_open_dispatch(request.user):
+        raise Http404()
+    from core.models import ResultLedger, UserCentreAccess
+    row = get_object_or_404(
+        ResultLedger.objects.select_related('visit__centre'),
+        pk=pk, kind='DISPATCH',
+    )
+    if not row.collector_id:
+        raise Http404()
+    allowed = request.user.is_superuser or UserCentreAccess.objects.filter(
+        user=request.user, centre=row.visit.centre, centre__is_active=True, can_view=True,
+    ).exists()
+    if not allowed:
+        raise Http404()
+    name = row.collector_id.name.rsplit('/', 1)[-1]
+    return FileResponse(row.collector_id.open('rb'), as_attachment=False, filename=name)
+
+
+@login_required
 def dispatch_history_export(request):
     _guard(request, user_can_open_dispatch)
     from reporting.exports import tables_export
@@ -189,7 +210,7 @@ def dispatch_history_export(request):
         'Dispatch history',
         [{
             'title': 'Dispatch history',
-            'headers': ['When', 'Who', 'Visit ID', 'Patient', 'Service', 'Summary'],
+            'headers': ['When', 'Who', 'Visit ID', 'Patient', 'Service', 'Summary', 'Collector'],
             'rows': payload['rows'],
         }],
         fmt=fmt,

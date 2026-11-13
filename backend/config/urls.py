@@ -6,7 +6,7 @@ from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from core.api import CentreViewSet, UserCentreAccessViewSet, AuditEventViewSet, login_view, me_view
 from core.auth_views import password_reset_request, password_reset_confirm, mfa_setup
 from core.result_views import (
-    dispatch_history_export, modify_history_export, radiology_report_preview,
+    dispatch_history_export, download_collector_id, modify_history_export, radiology_report_preview,
     radiology_stats_export, result_dispatch, result_modify,
 )
 from core.views import (
@@ -146,6 +146,7 @@ urlpatterns=[
     path('results/modify/history/export/', modify_history_export, name='modify-history-export'),  # CSV / PDF / Excel
     path('results/dispatch/', result_dispatch, name='result-dispatch'),
     path('results/dispatch/history/export/', dispatch_history_export, name='dispatch-history-export'),
+    path('results/dispatch/history/<int:pk>/identification/', download_collector_id, name='dispatch-collector-id'),
     path('radiology/templates/', radiology_templates, name='radiology-templates'),
     path('radiology/templates/<int:pk>/', radiology_template_builder, name='radiology-template-builder'),
     path('inventory/', inventory_workspace, name='inventory-workspace'),

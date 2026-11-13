@@ -98,6 +98,9 @@ class ResultApprovalTests(TestCase):
             'recipients': ['self'], 'channels_self': ['HARDCOPY'], 'link_expiry': '7',
         })
         self.assertEqual(first.status_code, 302)
+        still = self.web.get('/results/dispatch/')
+        self.assertContains(still, self.visit.visit_id)
+        self.assertContains(still, 'Ready · sent before')
         second_user = User.objects.create_user(username='nextday', email='nextday@example.test', password='A-long-unique-password-2026!')
         second_user.user_permissions.add(Permission.objects.get(codename='dispatch_result', content_type__app_label='radiology'))
         UserCentreAccess.objects.create(user=second_user, centre=self.centre, can_view=True, can_edit=True)
@@ -112,6 +115,55 @@ class ResultApprovalTests(TestCase):
         rows = ResultLedger.objects.filter(kind='DISPATCH', object_id=str(self.report.pk))
         self.assertEqual(rows.count(), 2)
         self.assertEqual(set(rows.values_list('actor_id', flat=True)), {self.dispatcher.pk, second_user.pk})
+
+    def test_dispatch_link_follows_the_privilege(self):
+        self.web.force_login(self.dispatcher)
+        page = self.web.get('/radiology/')
+        self.assertContains(page, '/results/dispatch/')
+        self.web.force_login(self.reporter)
+        page = self.web.get('/radiology/')
+        self.assertNotContains(page, '/results/dispatch/')
+
+    def test_third_party_collection_records_identity(self):
+        self.report.status = 'APPROVED'
+        self.report.approved_at = self.report.updated_at
+        self.report.save(update_fields=['status', 'approved_at'])
+        PatientDocument.objects.create(
+            visit=self.visit, document_type='REGISTRATION',
+            file=ContentFile(b'%PDF-1.4\n', name='form.pdf'), uploaded_by=self.dispatcher,
+        )
+        self.web.force_login(self.dispatcher)
+        missing = self.web.post('/results/dispatch/', {
+            'action': 'compose_dispatch', 'item': f'rad:{self.report.pk}',
+            'recipients': ['third_party'], 'channels_third_party': ['HARDCOPY'], 'link_expiry': '7',
+        }, follow=True)
+        self.assertContains(missing, 'means of identification')
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.status, 'APPROVED')
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        id_copy = SimpleUploadedFile('nin.jpg', b'\xff\xd8\xff' + b'\x00' * 32, content_type='image/jpeg')
+        sent = self.web.post('/results/dispatch/', {
+            'action': 'compose_dispatch', 'item': f'rad:{self.report.pk}',
+            'recipients': ['third_party'], 'channels_third_party': ['HARDCOPY'], 'link_expiry': '7',
+            'third_party_name': 'Chioma Ade',
+            'third_party_id_type': 'NIN',
+            'third_party_id_number': '12345678901',
+            'third_party_address': '14 Marina Road, Lagos',
+            'third_party_phone': '08031234567',
+            'third_party_auth': 'Patient asked her sister to collect the film',
+            'third_party_id_file': id_copy,
+        }, follow=True)
+        self.assertEqual(sent.status_code, 200)
+        self.assertContains(sent, 'View identification')
+        row = ResultLedger.objects.filter(kind='DISPATCH', object_id=str(self.report.pk)).latest('created_at')
+        self.assertIn('Chioma Ade', row.reason)
+        self.assertIn('12345678901', row.reason)
+        self.assertIn('14 Marina Road, Lagos', row.reason)
+        self.assertIn('08031234567', row.reason)
+        self.assertTrue(row.collector_id)
+        evidence = self.web.get(f'/results/dispatch/history/{row.pk}/identification/')
+        self.assertEqual(evidence.status_code, 200)
+        self.assertTrue(b''.join(evidence.streaming_content).startswith(b'\xff\xd8\xff'))
 
     def test_modified_approval_requires_a_reason_and_returns_the_report(self):
         self.report.status = 'RELEASED'
