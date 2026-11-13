@@ -1,5 +1,39 @@
 {% extends "base.html" %}
 {% block title %}Operations | {{ org_short_name }}{% endblock %}
+{% block extra_head %}
+<style>
+  .workspace-shortcuts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    justify-content: flex-end;
+  }
+  @media (max-width: 991.98px) {
+    .workspace-shortcuts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: .55rem;
+      width: 100%;
+      margin-top: .35rem;
+    }
+    .workspace-shortcuts .btn {
+      width: 100%;
+      min-height: 2.75rem;
+      white-space: normal;
+      line-height: 1.2;
+      border-radius: 14px;
+      padding: .55rem .7rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    .workspace-shortcuts .btn:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+    }
+  }
+</style>
+{% endblock %}
 {% block content %}
 <div class="hero-band">
   <div class="d-flex flex-wrap justify-content-between align-items-end gap-3">
@@ -8,9 +42,9 @@
       <h1 class="h3 mb-1 text-white">Hello, {{ greeting_name|default:request.user.username }}</h1>
       <div class="muted">Figures follow the centres you can view, and only the work your role is allowed to open.</div>
     </div>
-    <div class="d-flex flex-wrap gap-2">
+    <div class="workspace-shortcuts">
       {% for key, label, url, icon in workspace_nav %}
-        <a class="btn {% if forloop.first %}btn-primary{% else %}btn-outline-light{% endif %}" href="{{ url }}">{{ label }}</a>
+        <a class="btn {% if forloop.first %}btn-primary{% else %}btn-outline-light{% endif %}" href="{{ url }}"><i class="bi {{ icon }} me-1"></i>{{ label }}</a>
       {% endfor %}
       {% if is_platform_admin %}
         <a class="btn btn-primary" href="{% url 'catalog-hub' %}"><i class="bi bi-journal-bookmark me-1"></i>Open catalog</a>

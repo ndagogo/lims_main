@@ -101,7 +101,19 @@ def login_page(request):
             request=request, actor=None, action='LOGIN_FAILED', object_type='AUTH',
             category='AUTH', detail={'username': (request.POST.get('username') or '')[:150]},
         )
-    return render(request, 'core/login.html', {'error': error, 'next': request.GET.get('next', '')})
+    from core.models import Centre
+    login_centre = (
+        Centre.objects.filter(is_active=True)
+        .exclude(logo='')
+        .exclude(logo__isnull=True)
+        .order_by('name')
+        .first()
+    )
+    return render(request, 'core/login.html', {
+        'error': error,
+        'next': request.GET.get('next', ''),
+        'login_centre': login_centre,
+    })
 
 
 @require_POST

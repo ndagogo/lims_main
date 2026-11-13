@@ -14,14 +14,26 @@
     .form-control { border-radius: 12px; border-color: #e4dfd6; min-height: 2.6rem; }
     .btn-primary { background: #171717; border-color: #171717; border-radius: 999px; font-weight: 600; }
     .btn-primary:hover { background: #2a2a2a; border-color: #2a2a2a; }
-    .eyebrow { letter-spacing: .14em; font-size: .72rem; color: #78716c; }
+    .eyebrow { letter-spacing: .14em; font-size: .72rem; color: #78716c; text-transform: uppercase; }
+    .login-head { text-align: center; margin-bottom: 1.25rem; }
+    .login-logo { display: flex; justify-content: center; margin: 0 0 1rem; }
+    .login-logo img { max-height: 96px; max-width: 220px; object-fit: contain; }
+    .login-head h1 { margin: .15rem 0 .35rem; }
+    .login-head p { margin: 0 auto; max-width: 22rem; line-height: 1.45; }
   </style>
 </head>
 <body>
 <main class="container py-5" style="max-width: 26rem">
-  <div class="eyebrow mb-2">{{ org_short_name }} · {{ org_tagline }}</div>
-  <h1 class="h2 mb-2">Sign in</h1>
-  <p class="text-secondary">Staff access stays limited to the centres you are granted.</p>
+  <header class="login-head">
+    {% if login_centre %}
+    <div class="login-logo">
+      <img src="{{ login_centre.logo.url }}" alt="{{ login_centre.name }} logo">
+    </div>
+    {% endif %}
+    <div class="eyebrow">{{ org_short_name }}{% if org_tagline %} · {{ org_tagline }}{% endif %}</div>
+    <h1 class="h2"></h1>
+    <p class="text-secondary">Staff access stays limited to the centres you are granted.</p>
+  </header>
   {% if error %}<div class="alert alert-danger border-0">{{ error }}</div>{% endif %}
   <form method="post" class="card p-4">
     {% csrf_token %}

@@ -83,8 +83,75 @@
     }
     .centre-chip .eyebrow { font-size: .62rem; }
     main.workspace { flex: 1; min-width: 0; padding: 1.6rem 1.8rem 2.5rem; }
-    .mobile-nav { background: #fff; border-bottom: 1px solid var(--line); }
-    .mobile-nav a { color: var(--ink); text-decoration: none; margin-right: .85rem; white-space: nowrap; font-size: .92rem; }
+    .mobile-bar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .75rem;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      padding: .7rem 1rem;
+    }
+    .mobile-bar .brand-name { font-size: 1.25rem; color: var(--ink); text-decoration: none; }
+    .menu-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      border: 1px solid #d6d1c7;
+      background: #fff;
+      color: var(--ink);
+      border-radius: 999px;
+      padding: .38rem .85rem .38rem .7rem;
+      font-weight: 600;
+      font-size: .9rem;
+    }
+    .mobile-drawer {
+      display: none;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      max-height: calc(100vh - 3.4rem);
+      overflow: auto;
+      padding: .35rem .7rem 1rem;
+    }
+    .mobile-drawer.is-open { display: block; }
+    .mobile-section {
+      color: var(--muted);
+      font-size: .68rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      font-weight: 600;
+      margin: .9rem .7rem .2rem;
+    }
+    .mobile-drawer a, .mobile-drawer button.linkish {
+      display: flex;
+      align-items: center;
+      gap: .7rem;
+      width: 100%;
+      text-align: left;
+      text-decoration: none;
+      color: #44403c;
+      background: transparent;
+      border: 0;
+      border-radius: 12px;
+      padding: .72rem .75rem;
+      font-size: 1rem;
+    }
+    .mobile-drawer a i, .mobile-drawer button.linkish i { width: 1.15rem; color: #78716c; }
+    .mobile-drawer a:hover, .mobile-drawer button.linkish:hover { background: #f6f4ef; color: var(--ink); }
+    .mobile-drawer a.active { background: var(--sage); color: var(--sage-ink); font-weight: 600; }
+    .mobile-drawer a.active i { color: var(--sage-ink); }
+    .mobile-centre {
+      margin: .85rem .35rem .2rem;
+      background: #f7f5f0;
+      border-radius: 14px;
+      padding: .75rem .85rem;
+    }
+    @media (min-width: 992px) {
+      .mobile-bar, .mobile-drawer { display: none !important; }
+    }
     .panel, .card {
       border: 1px solid var(--line);
       border-radius: var(--radius);
@@ -203,17 +270,57 @@
   </header>
   <main class="portal-main">
 {% else %}
-<nav class="navbar d-lg-none mobile-nav">
-  <div class="container-fluid flex-wrap py-2">
-    <a class="navbar-brand brand-name mb-0" href="{{ home_url|default:'/' }}">{{ org_short_name }}</a>
-    {% for key, label, url, icon in workspace_nav %}<a href="{{ url }}">{{ label }}</a>{% endfor %}
-    {% if is_accountant %}<a href="{% url 'accounts-reports' %}">Reports</a>{% endif %}
-    {% if can_refund_payment %}<a href="{% url 'accounts-refunds' %}">Refunds</a>{% endif %}
-    {% if can_edit_bill %}<a href="{% url 'accounts-bill-edit' %}">Bill edit</a>{% endif %}
-    {% if can_modify_patient_data %}<a href="{% url 'patient-demographics' %}">Demographics</a>{% endif %}
-    {% if can_change_referring_doctor %}<a href="{% url 'referring-doctor-remap' %}">Remap doctor</a>{% endif %}
-    {% if can_access_platform_controls %}<a href="{% url 'platform-hub' %}">Platform controls</a>{% endif %}
+<header class="mobile-bar d-lg-none">
+  <a class="brand-name" href="{{ home_url|default:'/' }}">{{ org_short_name }}</a>
+  <button class="menu-toggle" type="button" id="mobile-menu-btn" aria-expanded="false" aria-controls="mobile-drawer">
+    <i class="bi bi-list" aria-hidden="true"></i>
+    <span>Menu</span>
+  </button>
+</header>
+<nav class="mobile-drawer d-lg-none" id="mobile-drawer" aria-label="Mobile">
+  <div class="mobile-section">Workspaces</div>
+  {% if home_url != '/radiology/' %}
+    <a class="{% if request.path == '/' %}active{% endif %}" href="/"><i class="bi bi-grid"></i>Dashboard</a>
+  {% endif %}
+  {% for key, label, url, icon in workspace_nav %}
+    <a class="{% if request.path == url %}active{% endif %}" href="{{ url }}"><i class="bi {{ icon }}"></i>{{ label }}</a>
+  {% endfor %}
+  {% if can_modify_patient_data %}
+    <a class="{% if request.path == '/patients/demographics/' %}active{% endif %}" href="{% url 'patient-demographics' %}"><i class="bi bi-person-gear"></i>Demographics</a>
+  {% endif %}
+  {% if can_change_referring_doctor %}
+    <a class="{% if request.path == '/patients/referrals/remap/' %}active{% endif %}" href="{% url 'referring-doctor-remap' %}"><i class="bi bi-arrow-left-right"></i>Referrals</a>
+  {% endif %}
+  {% if is_accountant or can_refund_payment or can_edit_bill %}
+    <div class="mobile-section">Finance</div>
+    {% if is_accountant %}
+      <a class="{% if request.path == '/accounts/reports/' %}active{% endif %}" href="{% url 'accounts-reports' %}"><i class="bi bi-bar-chart"></i>Reports</a>
+    {% endif %}
+    {% if can_refund_payment %}
+      <a class="{% if request.path == '/accounts/refunds/' %}active{% endif %}" href="{% url 'accounts-refunds' %}"><i class="bi bi-arrow-counterclockwise"></i>Refunds</a>
+    {% endif %}
+    {% if can_edit_bill %}
+      <a class="{% if request.path == '/accounts/bill-edit/' %}active{% endif %}" href="{% url 'accounts-bill-edit' %}"><i class="bi bi-receipt-cutoff"></i>Bill edit</a>
+    {% endif %}
+  {% endif %}
+  {% if can_access_platform_controls or is_platform_admin or request.user.is_superuser %}
+    <div class="mobile-section">Settings</div>
+    {% if can_access_platform_controls %}
+      <a class="{% if request.path|slice:':10' == '/platform/' %}active{% endif %}" href="{% url 'platform-hub' %}"><i class="bi bi-sliders"></i>Platform controls</a>
+    {% endif %}
+    {% if is_platform_admin %}
+      <a class="{% if request.path == '/reporting/catalogue/' %}active{% endif %}" href="{% url 'report-catalogue' %}"><i class="bi bi-journal-text"></i>Report catalogue</a>
+    {% endif %}
+  {% endif %}
+  <div class="mobile-section">Account</div>
+  <a class="{% if request.path == '/account/profile/' or request.path == '/account/signature/' %}active{% endif %}" href="{% url 'account-profile' %}"><i class="bi bi-person"></i>{{ request.user.display_name|default:request.user.username }}</a>
+  <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="linkish" type="submit"><i class="bi bi-box-arrow-right"></i>Sign out</button></form>
+  {% if active_centre %}
+  <div class="mobile-centre">
+    <div class="eyebrow">Active centre</div>
+    <div class="fw-semibold">{{ active_centre.name }} · {{ active_centre.code }}</div>
   </div>
+  {% endif %}
 </nav>
 <div class="shell">
   <aside class="sidebar d-none d-lg-flex">
@@ -270,6 +377,23 @@
     {% endif %}
     {% block content %}{% endblock %}
   </main>
-{% if request.path|slice:":9" != "/portals/" %}</div>{% endif %}
+{% if request.path|slice:":9" != "/portals/" %}</div>
+<script>
+(function () {
+  var button = document.getElementById('mobile-menu-btn');
+  var drawer = document.getElementById('mobile-drawer');
+  if (!button || !drawer) return;
+  var icon = button.querySelector('i');
+  var label = button.querySelector('span');
+  button.addEventListener('click', function () {
+    var open = !drawer.classList.contains('is-open');
+    drawer.classList.toggle('is-open', open);
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (icon) icon.className = open ? 'bi bi-x-lg' : 'bi bi-list';
+    if (label) label.textContent = open ? 'Close' : 'Menu';
+  });
+})();
+</script>
+{% endif %}
 </body>
 </html>
