@@ -126,9 +126,11 @@ if os.getenv("AWS_STORAGE_BUCKET_NAME", "").strip():
     }
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", str(BASE_DIR / "media"))).resolve()
-# When using a Railway volume (not S3), set SERVE_MEDIA=True so authenticated
-# Django views can still resolve /media/ URLs. Prefer private S3 for multi-replica.
-SERVE_MEDIA = env_bool("SERVE_MEDIA", DEBUG) and not bool(os.getenv("AWS_STORAGE_BUCKET_NAME", "").strip())
+# Serve logos, avatars, and signatures from disk when object storage is not configured.
+# Defaults on outside DEBUG so Railway can show uploads. Mount a volume at MEDIA_ROOT
+# or files disappear on the next deploy.
+_using_object_storage = bool(os.getenv("AWS_STORAGE_BUCKET_NAME", "").strip())
+SERVE_MEDIA = env_bool("SERVE_MEDIA", not _using_object_storage) and not _using_object_storage
 FILE_UPLOAD_PERMISSIONS = 0o640
 FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o750
 DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv("DATA_UPLOAD_MAX_MEMORY_SIZE", str(10 * 1024 * 1024)))

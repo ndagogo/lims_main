@@ -1,7 +1,6 @@
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from core.api import CentreViewSet, UserCentreAccessViewSet, AuditEventViewSet, login_view, me_view
@@ -164,9 +163,12 @@ urlpatterns=[
     path('api/', include(router.urls)),
     path('api-auth/', include('rest_framework.urls')),
 ]
-# Local DEBUG or Railway volume deployments (SERVE_MEDIA=True). Prefer S3 in prod.
+# django.conf.urls.static.static() adds nothing when DEBUG is False.
 if settings.DEBUG or getattr(settings, "SERVE_MEDIA", False):
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    from core.media_serve import serve_uploaded_media
+    urlpatterns += [
+        re_path(r'^media/(?P<path>.*)$', serve_uploaded_media, name='serve-uploaded-media'),
+    ]
 
 handler400 = 'core.error_views.bad_request'
 handler403 = 'core.error_views.permission_denied'
