@@ -33,6 +33,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         if not visit: raise ValidationError({'visit':'Visit not found.'})
         if not request.user.is_superuser and not UserCentreAccess.objects.filter(user=request.user,centre=visit.centre,can_register=True).exists(): raise PermissionDenied('No billing/order-entry access for this centre.')
         invoice=Invoice.objects.create(visit=visit,payer_name=request.data.get('payer_name',''),created_by=request.user,status='UNPAID')
+        from communications.inbox import announce, record_corporate_invoice
+        announce(lambda: record_corporate_invoice(invoice))
         return Response(self.get_serializer(invoice).data,status=status.HTTP_201_CREATED)
     @action(detail=True, methods=['post'])
     def add_test(self, request, pk=None):

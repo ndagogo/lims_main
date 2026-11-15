@@ -158,7 +158,10 @@
           <h3>{{ p.receipt_number }}</h3>
           <div class="small muted">Receipt · invoice {{ p.invoice.invoice_number }}</div>
         </div>
-        <div class="pp-money">₦{{ p.amount|floatformat:2 }}</div>
+        <div class="pp-actions">
+          <div class="pp-money">₦{{ p.amount|floatformat:2 }}</div>
+          <a class="is-primary" href="{% url 'portal-patient-receipt-pdf' p.pk %}">Download</a>
+        </div>
       </div>
       {% empty %}
       <p class="pp-empty mb-0">No confirmed receipts.</p>
@@ -196,13 +199,13 @@
 
     <section class="pp-panel" id="help">
       <h2>Help</h2>
-      <p class="small muted">Ask the centre a question or request a correction. This does not change the clinical record.</p>
+      <p class="small muted">Send a request to the centre's support desk. It is tracked there and does not change the clinical record.</p>
+      {% if request_types %}
       <form method="post" action="{% url 'portal-patient-requests' %}" class="vstack gap-2">
         {% csrf_token %}
-        <label class="form-label mb-0" for="help-kind">Request</label>
-        <select id="help-kind" name="kind" class="form-select form-select-sm">
-          <option value="SUPPORT">Support</option>
-          <option value="CORRECTION">Ask for a correction</option>
+        <label class="form-label mb-0" for="help-kind">Request type</label>
+        <select id="help-kind" name="request_type" class="form-select form-select-sm" required>
+          {% for row in request_types %}<option value="{{ row.pk }}">{{ row.name }}</option>{% endfor %}
         </select>
         <label class="form-label mb-0" for="help-visit">Visit</label>
         <select id="help-visit" name="visit" class="form-select form-select-sm">
@@ -213,8 +216,24 @@
         <textarea id="help-message" name="message" class="form-control" rows="3" required placeholder="What should the centre look at?"></textarea>
         <button class="btn btn-outline-dark btn-sm" type="submit">Send request</button>
       </form>
+      {% else %}
+      <p class="pp-empty">The centre has not opened any request types yet.</p>
+      {% endif %}
       {% for row in portal_requests %}
-      <div class="pp-note small"><span class="pp-status">{{ row.get_kind_display }}</span> {{ row.message|truncatechars:80 }}</div>
+      <div class="pp-note small">
+        <div><span class="pp-status">{{ row.reference }}</span> {{ row.request_type.name|default:row.kind }} · {{ row.get_status_display }}</div>
+        <div class="mt-1">{{ row.message|truncatechars:80 }}</div>
+        {% for event in row.events.all %}
+          {% if event.kind != 'OPENED' %}<div class="muted mt-1">{{ event.get_kind_display }}: {{ event.note|truncatechars:80 }}</div>{% endif %}
+        {% endfor %}
+        {% if row.is_open %}
+        <form method="post" action="{% url 'portal-patient-request-reply' row.pk %}" class="mt-2 vstack gap-1">
+          {% csrf_token %}
+          <textarea name="message" class="form-control form-control-sm" rows="2" required placeholder="Add a reply"></textarea>
+          <button class="btn btn-sm btn-outline-dark" type="submit">Send reply</button>
+        </form>
+        {% endif %}
+      </div>
       {% endfor %}
     </section>
   </div>

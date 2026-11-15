@@ -92,4 +92,6 @@ def process_registration(visit, user, post):
         visit.status = 'PROCESSED'
         visit.save(update_fields=['status', 'updated_at'])
         invoice.refresh_from_db()
+        from communications.inbox import announce, record_corporate_invoice
+        announce(lambda: record_corporate_invoice(invoice))
     return invoice

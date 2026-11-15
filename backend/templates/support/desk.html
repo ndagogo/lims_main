@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Patient support | {{ org_short_name }}{% endblock %}
+{% block extra_head %}
+<style>
+  .support-desk .kpi { min-height: 5.2rem; }
+  .support-link { color: var(--sage-ink); font-weight: 600; text-decoration: none; }
+  .support-overdue { color: var(--danger); font-weight: 600; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="support-desk">
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
+    <div>
+      <div class="eyebrow">Patient portal</div>
+      <h1>Patient support</h1>
+      <p class="muted mb-0">Requests sent from the patient portal. Assign them, keep the timeline, and reply without changing the clinical record.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      {% if can_manage_types %}<a class="btn btn-outline-dark btn-sm" href="{% url 'support-types' %}">Request types</a>{% endif %}
+      <a class="btn btn-outline-dark btn-sm" href="{% url 'support-export' %}?fmt=csv&{{ filter_query }}">CSV</a>
+      <a class="btn btn-outline-dark btn-sm" href="{% url 'support-export' %}?fmt=pdf&{{ filter_query }}">PDF</a>
+      <a class="btn btn-outline-dark btn-sm" href="{% url 'support-export' %}?fmt=xlsx&{{ filter_query }}">Excel</a>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-xl-2"><div class="kpi"><div class="kpi-label">Open</div><div class="kpi-value">{{ stats.open }}</div></div></div>
+    <div class="col-6 col-xl-2"><div class="kpi"><div class="kpi-label">Mine</div><div class="kpi-value">{{ stats.mine }}</div></div></div>
+    <div class="col-6 col-xl-2"><div class="kpi"><div class="kpi-label">Unassigned</div><div class="kpi-value">{{ stats.unassigned }}</div></div></div>
+    <div class="col-6 col-xl-2"><div class="kpi"><div class="kpi-label">Overdue</div><div class="kpi-value">{{ stats.overdue }}</div></div></div>
+    <div class="col-6 col-xl-2"><div class="kpi"><div class="kpi-label">Resolved today</div><div class="kpi-value">{{ stats.resolved_today }}</div></div></div>
+    <div class="col-6 col-xl-2"><div class="kpi"><div class="kpi-label">Avg first reply</div><div class="kpi-value">{% if stats.average_response_hours != None %}{{ stats.average_response_hours }}h{% else %}—{% endif %}</div></div></div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-6">
+      <section class="card p-3 h-100">
+        <h2 class="h6">By request type</h2>
+        {% for row in stats.by_type %}
+        <div class="d-flex justify-content-between border-top py-2"><span>{{ row.request_type__name|default:"Unspecified" }}</span><strong>{{ row.total }}</strong></div>
+        {% empty %}<p class="muted mb-0">No requests yet.</p>{% endfor %}
+      </section>
+    </div>
+    <div class="col-md-6">
+      <section class="card p-3 h-100">
+        <h2 class="h6">Open work by owner</h2>
+        {% for row in stats.by_owner %}
+        <div class="d-flex justify-content-between border-top py-2">
+          <span>{% if row.assignee__username %}{{ row.assignee__first_name }} {{ row.assignee__last_name }}{% if not row.assignee__first_name and not row.assignee__last_name %}{{ row.assignee__username }}{% endif %}{% else %}Unassigned{% endif %}</span>
+          <strong>{{ row.total }}</strong>
+        </div>
+        {% empty %}<p class="muted mb-0">Nothing open.</p>{% endfor %}
+      </section>
+    </div>
+  </div>
+
+  <section class="card mb-3">
+    <form method="get" class="row g-2 align-items-end p-3">
+      <div class="col-md-3"><label class="form-label" for="q">Search</label><input class="form-control form-control-sm" id="q" name="q" value="{{ filters.q }}" placeholder="Reference, patient, UHID"></div>
+      <div class="col-md-2">
+        <label class="form-label" for="status">Status</label>
+        <select class="form-select form-select-sm" id="status" name="status">
+          <option value="">All</option>
+          {% for code, label in statuses %}<option value="{{ code }}" {% if filters.status == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="type">Type</label>
+        <select class="form-select form-select-sm" id="type" name="type">
+          <option value="">All</option>
+          {% for row in types %}<option value="{{ row.pk }}" {% if filters.type == row.pk|stringformat:"s" %}selected{% endif %}>{{ row.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="assignee">Owner</label>
+        <select class="form-select form-select-sm" id="assignee" name="assignee">
+          <option value="">Anyone</option>
+          <option value="me" {% if filters.assignee == "me" %}selected{% endif %}>Assigned to me</option>
+          <option value="none" {% if filters.assignee == "none" %}selected{% endif %}>Unassigned</option>
+          {% for person in staff %}<option value="{{ person.pk }}" {% if filters.assignee == person.pk|stringformat:"s" %}selected{% endif %}>{{ person.get_full_name|default:person.username }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="centre">Centre</label>
+        <select class="form-select form-select-sm" id="centre" name="centre">
+          <option value="">All</option>
+          {% for centre in centres %}<option value="{{ centre.pk }}" {% if filters.centre == centre.pk|stringformat:"s" %}selected{% endif %}>{{ centre.code }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2"><label class="form-label" for="from">From</label><input class="form-control form-control-sm" id="from" type="date" name="from" value="{{ filters.from }}"></div>
+      <div class="col-md-2"><label class="form-label" for="to">To</label><input class="form-control form-control-sm" id="to" type="date" name="to" value="{{ filters.to }}"></div>
+      <div class="col-md-2">
+        <label class="form-check mt-4"><input class="form-check-input" type="checkbox" name="overdue" value="1" {% if filters.overdue %}checked{% endif %}><span class="form-check-label">Overdue</span></label>
+      </div>
+      <div class="col-md-3 d-flex gap-2">
+        <button class="btn btn-sm btn-primary" type="submit">Filter</button>
+        <a class="btn btn-sm btn-outline-dark" href="{% url 'support-desk' %}">Clear</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="table-responsive">
+      <table class="table mb-0">
+        <thead>
+          <tr><th>Reference</th><th>Patient</th><th>Type</th><th>Status</th><th>Owner</th><th>Due</th></tr>
+        </thead>
+        <tbody>
+          {% for row in queue %}
+          <tr>
+            <td><a class="support-link" href="{% url 'support-case' row.pk %}">{{ row.reference }}</a><div class="small muted">{{ row.created_at|date:"d M Y H:i" }}</div></td>
+            <td>{{ row.patient.first_name }} {{ row.patient.last_name }}<div class="small muted">{{ row.patient.uhid }}{% if row.visit_id %} · {{ row.visit.visit_id }}{% endif %}</div></td>
+            <td>{{ row.request_type.name|default:row.kind }}{% if row.priority == "URGENT" %}<div class="small support-overdue">Urgent</div>{% endif %}</td>
+            <td>{{ row.get_status_display }}</td>
+            <td>{% if row.assignee %}{{ row.assignee.get_full_name|default:row.assignee.username }}{% else %}—{% endif %}</td>
+            <td class="{% if row.due_at and row.is_open and row.due_at < now %}support-overdue{% endif %}">{{ row.due_at|date:"d M Y H:i"|default:"—" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="muted p-3">No requests match these filters.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="p-3">{% include "includes/pagination.html" with page=queue %}</div>
+  </section>
+</div>
+{% endblock %}

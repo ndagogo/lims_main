@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Notifications · {{ org_short_name }}{% endblock %}
+{% block extra_head %}
+<style>
+  .inbox-wrap { max-width: 720px; }
+  .inbox-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+  .inbox-head h1 { font-size: 2rem; margin: 0; }
+  .inbox-tools { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  .inbox-chip {
+    display: inline-flex; align-items: center; border-radius: 999px;
+    border: 1px solid var(--line); background: #fff; color: var(--ink);
+    text-decoration: none; font-weight: 600; font-size: .88rem; padding: .35rem .8rem;
+  }
+  .inbox-chip.is-on { background: var(--sage); color: var(--sage-ink); border-color: transparent; }
+  .inbox-mark {
+    border: 0; background: transparent; color: var(--sage-ink); font-weight: 650; padding: .35rem .4rem;
+  }
+  .inbox-card {
+    background: #fff; border: 1px solid var(--line); border-radius: 18px; overflow: hidden;
+  }
+  .inbox-row {
+    display: block; width: 100%; text-align: left; background: #fff; border: 0;
+    border-bottom: 1px solid #f1eee8; padding: .95rem 1.05rem .95rem 1rem;
+  }
+  .inbox-row:last-child { border-bottom: 0; }
+  .inbox-row.is-unread { box-shadow: inset 3px 0 0 var(--sage-ink); background: #f7faf8; }
+  .inbox-row:hover { background: #fbfaf7; }
+  .inbox-title { display: block; font-weight: 650; }
+  .inbox-body { display: block; color: #57534e; margin-top: .2rem; }
+  .inbox-time { display: block; color: var(--muted); font-size: .8rem; margin-top: .28rem; }
+  .inbox-empty {
+    background: #fff; border: 1px dashed var(--line); border-radius: 18px;
+    padding: 2.4rem 1.4rem; text-align: center; color: #57534e;
+  }
+  .inbox-empty i { font-size: 1.6rem; color: var(--sage-ink); }
+  .inbox-empty h2 { font-size: 1.35rem; margin: .6rem 0 .3rem; }
+  .inbox-links { display: flex; justify-content: center; gap: .6rem; flex-wrap: wrap; margin-top: .9rem; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="inbox-wrap">
+  <div class="inbox-head">
+    <div>
+      <div class="eyebrow">While you are here</div>
+      <h1>Notifications</h1>
+    </div>
+    {% if audience %}
+    <div class="inbox-tools">
+      <a class="inbox-chip{% if not unread_only %} is-on{% endif %}" href="{% url 'notification-inbox' %}">All</a>
+      <a class="inbox-chip{% if unread_only %} is-on{% endif %}" href="?unread=1">Unread{% if unread_total %} · {{ unread_total }}{% endif %}</a>
+      {% if unread_total %}
+      <form method="post" action="{% url 'notification-read-all' %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button class="inbox-mark" type="submit">Mark all read</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  {% if not audience %}
+  <div class="inbox-empty">
+    <i class="bi bi-bell" aria-hidden="true"></i>
+    <h2>Sign in to see your notifications</h2>
+    <p class="mb-0">Assignments, requests, results, and replies appear here once you are in the app.</p>
+    <div class="inbox-links">
+      <a class="inbox-chip" href="{% url 'login' %}">Staff</a>
+      <a class="inbox-chip" href="{% url 'portal-patient-login' %}">Patient</a>
+      <a class="inbox-chip" href="{% url 'portal-physician-login' %}">Physician</a>
+      <a class="inbox-chip" href="{% url 'portal-corporate-login' %}">Corporate</a>
+    </div>
+  </div>
+  {% elif not rows %}
+  <div class="inbox-empty">
+    <i class="bi bi-bell" aria-hidden="true"></i>
+    <h2>{% if unread_only %}No unread notifications{% else %}You're up to date{% endif %}</h2>
+    <p class="mb-0">New studies, discount requests, results, receipts, and replies will show up here.</p>
+  </div>
+  {% else %}
+  <div class="inbox-card">
+    {% for note in rows %}
+    <form method="post" action="{% url 'notification-open' note.pk %}">
+      {% csrf_token %}
+      <button class="inbox-row{% if not note.read_at %} is-unread{% endif %}" type="submit">
+        <span class="inbox-title">{{ note.title }}</span>
+        {% if note.body %}<span class="inbox-body">{{ note.body }}</span>{% endif %}
+        <span class="inbox-time">{% if note.created_at|timesince == "0 minutes" %}Just now{% else %}{{ note.created_at|timesince }} ago{% endif %}</span>
+      </button>
+    </form>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

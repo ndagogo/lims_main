@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}{{ case.reference }} | Patient support{% endblock %}
+{% block content %}
+<p class="mb-2"><a class="support-link" href="{% url 'support-desk' %}">Back to patient support</a></p>
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+  <div>
+    <div class="eyebrow">{{ case.reference }}</div>
+    <h1>{{ case.request_type.name|default:"Support request" }}</h1>
+    <p class="muted mb-0">{{ case.patient.first_name }} {{ case.patient.last_name }} · {{ case.patient.uhid }}{% if case.visit_id %} · {{ case.visit.visit_id }}{% endif %}{% if case.centre_id %} · {{ case.centre.name }}{% endif %}</p>
+  </div>
+  <div class="text-md-end">
+    <div class="fw-semibold">{{ case.get_status_display }} · {{ case.get_priority_display }}</div>
+    <div class="small muted">Opened {{ case.created_at|date:"d M Y H:i" }}</div>
+    {% if case.due_at %}<div class="small">Due {{ case.due_at|date:"d M Y H:i" }}</div>{% endif %}
+    <div class="small muted">Owner {% if case.assignee %}{{ case.assignee.get_full_name|default:case.assignee.username }}{% else %}Unassigned{% endif %}</div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <section class="card p-3 p-md-4 mb-3">
+      <h2 class="h5">Request</h2>
+      <p class="mb-0">{{ case.message|linebreaksbr }}</p>
+    </section>
+    <section class="card p-3 p-md-4">
+      <h2 class="h5">Timeline</h2>
+      {% for event in events %}
+      <div class="border-top py-3">
+        <div class="d-flex justify-content-between gap-2">
+          <strong>{{ event.get_kind_display }}</strong>
+          <span class="small muted">{{ event.created_at|date:"d M Y H:i" }}</span>
+        </div>
+        <div class="small muted">{% if event.actor %}{{ event.actor.get_full_name|default:event.actor.username }}{% else %}Patient{% endif %}{% if event.to_status %} · {{ event.to_status }}{% endif %}{% if event.visible_to_patient %} · visible to the patient{% else %} · internal{% endif %}</div>
+        {% if event.note %}<p class="mb-0 mt-1">{{ event.note|linebreaksbr }}</p>{% endif %}
+      </div>
+      {% empty %}
+      <p class="muted mb-0">No timeline yet.</p>
+      {% endfor %}
+    </section>
+  </div>
+  <div class="col-lg-5">
+    <section class="card p-3 p-md-4 mb-3">
+      <h2 class="h6">Assign</h2>
+      <form method="post" class="vstack gap-2">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="assign">
+        <select class="form-select form-select-sm" name="assignee" required>
+          <option value="">Choose support staff</option>
+          {% for person in staff %}<option value="{{ person.pk }}" {% if case.assignee_id == person.pk %}selected{% endif %}>{{ person.get_full_name|default:person.username }}</option>{% endfor %}
+        </select>
+        <input class="form-control form-control-sm" name="note" placeholder="Optional note for the timeline">
+        <button class="btn btn-dark btn-sm" type="submit">Route this request</button>
+      </form>
+    </section>
+    <section class="card p-3 p-md-4 mb-3">
+      <h2 class="h6">Status</h2>
+      <form method="post" class="vstack gap-2">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="status">
+        <select class="form-select form-select-sm" name="status">
+          {% for code, label in statuses %}<option value="{{ code }}" {% if case.status == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <textarea class="form-control" name="note" rows="3" placeholder="Required when resolving, closing, or waiting on the patient"></textarea>
+        <button class="btn btn-outline-dark btn-sm" type="submit">Update status</button>
+      </form>
+    </section>
+    <section class="card p-3 p-md-4">
+      <h2 class="h6">Reply or note</h2>
+      <form method="post" class="vstack gap-2">
+        {% csrf_token %}
+        <textarea class="form-control" name="note" rows="4" required placeholder="What should be recorded?"></textarea>
+        <div class="d-flex flex-wrap gap-2">
+          <button class="btn btn-primary btn-sm" type="submit" name="action" value="reply">Reply to patient</button>
+          <button class="btn btn-outline-dark btn-sm" type="submit" name="action" value="note">Internal note</button>
+        </div>
+        <p class="form-text mb-0">A reply appears on the patient portal and starts the response clock. An internal note stays on this desk.</p>
+      </form>
+    </section>
+  </div>
+</div>
+<style>.support-link { color: var(--sage-ink); font-weight: 600; text-decoration: none; }</style>
+{% endblock %}

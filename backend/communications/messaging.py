@@ -224,6 +224,8 @@ def notify_patient(*, event_key, visit, user=None, idempotency_key=None, extra=N
         )
         if note:
             queued.append(note)
+    from .inbox import announce, record_patient_event
+    announce(lambda: record_patient_event(visit, event_key, idempotency_key=idempotency_key, extra=extra))
     return queued
 
 
@@ -286,6 +288,8 @@ def notify_referral_received(visit, user=None):
         })
         channel = 'EMAIL' if (doctor.email or '').strip() else 'SMS'
         recipient = (doctor.email or '').strip() or (doctor.phone or '').strip()
+        from .inbox import announce, record_referral
+        announce(lambda: record_referral(visit, doctor))
         note = notify_address(
             centre=visit.centre, channel=channel, recipient=recipient,
             event_key=EVENT_REFERRAL_RECEIVED, context=context, user=user, visit=visit,
@@ -299,6 +303,8 @@ def notify_payment_receipt(payment, user=None):
     def send():
         invoice = payment.invoice
         visit = invoice.visit
+        from .inbox import announce, record_corporate_payment
+        announce(lambda: record_corporate_payment(payment))
         return notify_patient(
             event_key=EVENT_PAYMENT_RECEIPT, visit=visit, user=user,
             idempotency_key=f'payment-receipt:{payment.pk}',
@@ -312,6 +318,8 @@ def notify_payment_receipt(payment, user=None):
 
 
 def notify_discount_approvers(discount, user=None):
+    from .inbox import announce, record_discount_request
+    announce(lambda: record_discount_request(discount, actor=user))
     invoice = discount.invoice
     visit = invoice.visit
     context = build_patient_context(visit, {'invoice_number': invoice.invoice_number})
@@ -325,6 +333,8 @@ def notify_discount_approvers(discount, user=None):
 
 def notify_discount_decision(discount, user=None):
     def send():
+        from .inbox import announce, record_discount_decision
+        announce(lambda: record_discount_decision(discount))
         invoice = discount.invoice
         visit = invoice.visit
         requester = discount.requested_by

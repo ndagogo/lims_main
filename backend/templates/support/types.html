@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Support request types | {{ org_short_name }}{% endblock %}
+{% block content %}
+<p class="mb-2"><a href="{% url 'support-desk' %}">Back to patient support</a></p>
+<div class="eyebrow">Centre administration</div>
+<h1>Request types</h1>
+<p class="muted">Patients choose one of these when they ask for help. A default owner receives new requests of that type.</p>
+
+<section class="card p-3 p-md-4 mb-4">
+  <h2 class="h5">New type</h2>
+  <form method="post" class="row g-2 align-items-end">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create">
+    <input type="hidden" name="is_active" value="1">
+    <div class="col-md-3"><label class="form-label" for="name">Name</label><input class="form-control form-control-sm" id="name" name="name" required maxlength="80"></div>
+    <div class="col-md-3"><label class="form-label" for="description">Description</label><input class="form-control form-control-sm" id="description" name="description" maxlength="240"></div>
+    <div class="col-md-2">
+      <label class="form-label" for="centre">Centre</label>
+      <select class="form-select form-select-sm" id="centre" name="centre">
+        <option value="">All centres</option>
+        {% for centre in centres %}<option value="{{ centre.pk }}">{{ centre.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label" for="owner">Default owner</label>
+      <select class="form-select form-select-sm" id="owner" name="default_assignee">
+        <option value="">Unassigned queue</option>
+        {% for person in staff %}<option value="{{ person.pk }}">{{ person.get_full_name|default:person.username }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-1"><label class="form-label" for="hours">Hours</label><input class="form-control form-control-sm" id="hours" name="response_hours" type="number" min="1" max="720" value="24"></div>
+    <div class="col-md-1"><button class="btn btn-primary btn-sm" type="submit">Add</button></div>
+  </form>
+</section>
+
+<section class="card">
+  <div class="table-responsive">
+    <table class="table mb-0 align-middle">
+      <thead><tr><th>Type</th><th>Centre</th><th>Default owner</th><th>Hours</th><th>Active</th><th></th></tr></thead>
+      <tbody>
+        {% for row in types %}
+        <tr>
+          <td colspan="6" class="p-2">
+            <form method="post" class="row g-2 align-items-center">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="update">
+              <input type="hidden" name="type" value="{{ row.pk }}">
+              <div class="col-md-3"><input class="form-control form-control-sm" name="name" value="{{ row.name }}" required maxlength="80"></div>
+              <div class="col-md-2">
+                <select class="form-select form-select-sm" name="centre">
+                  <option value="">All centres</option>
+                  {% for centre in centres %}<option value="{{ centre.pk }}" {% if row.centre_id == centre.pk %}selected{% endif %}>{{ centre.code }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-md-3">
+                <select class="form-select form-select-sm" name="default_assignee">
+                  <option value="">Unassigned queue</option>
+                  {% for person in staff %}<option value="{{ person.pk }}" {% if row.default_assignee_id == person.pk %}selected{% endif %}>{{ person.get_full_name|default:person.username }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-md-1"><input class="form-control form-control-sm" name="response_hours" type="number" min="1" max="720" value="{{ row.response_hours }}"></div>
+              <div class="col-md-1"><label class="form-check m-0"><input class="form-check-input" type="checkbox" name="is_active" value="1" {% if row.is_active %}checked{% endif %}> On</label></div>
+              <div class="col-md-2 d-flex gap-2">
+                <button class="btn btn-sm btn-outline-dark" type="submit">Save</button>
+              </div>
+              <div class="col-12"><input class="form-control form-control-sm" name="description" value="{{ row.description }}" placeholder="Description shown to staff"></div>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td class="muted p-3">No request types yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -71,6 +71,7 @@ TEMPLATES = [{
         "django.contrib.auth.context_processors.auth",
         "django.contrib.messages.context_processors.messages",
         "core.context.workspace_access",
+        "communications.inbox.notification_tray",
     ]},
 }]
 WSGI_APPLICATION = "config.wsgi.application"

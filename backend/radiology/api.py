@@ -242,6 +242,9 @@ class ImagingOrderViewSet(viewsets.ModelViewSet):
             note=f'Radiologist {staff.get_username()}', request=request,
         )
         log_event(request, 'RADIOLOGY_RADIOLOGIST_ASSIGNED', exam, order.visit.centre, {'radiologist': staff.username})
+        if staff.pk != request.user.pk:
+            from communications.inbox import announce, record_study_assigned
+            announce(lambda: record_study_assigned(exam, staff))
         return Response(RadiologyExamSerializer(exam).data)
 
     @action(detail=True, methods=['post'], url_path='authorize-substitute')
@@ -283,6 +286,8 @@ class ImagingOrderViewSet(viewsets.ModelViewSet):
         log_event(request, 'RADIOLOGY_SUBSTITUTE_AUTHORIZED', exam, order.visit.centre, {
             'substitute': staff.username, 'reason': reason,
         })
+        from communications.inbox import announce, record_study_assigned
+        announce(lambda: record_study_assigned(exam, staff, substitute=True))
         return Response(RadiologyExamSerializer(exam).data)
 
     @action(detail=True, methods=['post'])
@@ -411,6 +416,9 @@ class RadiologyExamViewSet(viewsets.ReadOnlyModelViewSet):
                     from_status='ACQUIRED', to_status='ACQUIRED',
                     note=f'Radiologist {staff.get_username()}', request=request,
                 )
+                if staff.pk != request.user.pk:
+                    from communications.inbox import announce, record_study_assigned
+                    announce(lambda: record_study_assigned(exam, staff))
         used = ', '.join(f'{name} x{qty}' for name, qty in supplies)
         record_exam_activity(
             exam, action='END_EXAM', user=request.user,
@@ -447,6 +455,9 @@ class RadiologyExamViewSet(viewsets.ReadOnlyModelViewSet):
             from_status='ACQUIRED', to_status='ACQUIRED', note=note, request=request,
         )
         log_event(request, 'RADIOLOGY_PACS_UPLOAD', exam, exam.order.visit.centre)
+        if exam.assigned_radiologist_id and exam.assigned_radiologist_id != request.user.pk:
+            from communications.inbox import announce, record_study_ready
+            announce(lambda: record_study_ready(exam))
         return Response(RadiologyExamSerializer(exam).data)
 
     @action(detail=True, methods=['post'])

@@ -1,0 +1,38 @@
+{% if notice_audience %}
+<div class="nb" data-notice>
+  <button class="nb-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="{% if notice_unread %}Notifications, {{ notice_unread }} unread{% else %}Notifications{% endif %}">
+    <i class="bi bi-bell" aria-hidden="true"></i>
+    <span class="nb-count" data-notice-count {% if notice_unread < 1 %}hidden{% endif %}>{% if notice_unread > 9 %}9+{% else %}{{ notice_unread }}{% endif %}</span>
+  </button>
+  <div class="nb-panel" hidden>
+    <div class="nb-head">
+      <strong>Notifications</strong>
+      {% if notice_unread %}
+      <form method="post" action="{% url 'notification-read-all' %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button class="nb-mark" type="submit">Mark all read</button>
+      </form>
+      {% endif %}
+    </div>
+    {% if notice_items %}
+      {% for note in notice_items %}
+      <form method="post" action="{% url 'notification-open' note.pk %}">
+        {% csrf_token %}
+        <button class="nb-item{% if not note.read_at %} is-unread{% endif %}" type="submit">
+          <span class="nb-title">{{ note.title }}</span>
+          {% if note.body %}<span class="nb-body">{{ note.body }}</span>{% endif %}
+          <span class="nb-time">{% if note.created_at|timesince == "0 minutes" %}Just now{% else %}{{ note.created_at|timesince }} ago{% endif %}</span>
+        </button>
+      </form>
+      {% endfor %}
+    {% else %}
+      <div class="nb-empty">
+        <i class="bi bi-bell" aria-hidden="true"></i>
+        <div>You're up to date.</div>
+      </div>
+    {% endif %}
+    <a class="nb-foot" href="{% url 'notification-inbox' %}">See all</a>
+  </div>
+</div>
+{% endif %}

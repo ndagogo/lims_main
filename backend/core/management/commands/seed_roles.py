@@ -16,12 +16,12 @@ ROLE_PERMISSIONS = {
         'approve_referral_settlement', 'finalize_report', 'release_report',
         'approve_result', 'authenticate_result', 'dispatch_result', 'modify_result',
         'override_report', 'add_report_addendum', 'authorize_reporting_substitute',
-        'perform_exam',
+        'perform_exam', 'patient_support', 'manage_support_types',
     ],
     'Centre Administrator': [
         'view_user', 'view_centre', 'view_usercentreaccess', 'add_usercentreaccess',
         'change_usercentreaccess', 'can_modify_patient_data', 'change_referring_doctor',
-        'bill_edit', 'payment_refund',
+        'bill_edit', 'payment_refund', 'patient_support', 'manage_support_types',
     ],
     'Front Desk': [
         'view_patient', 'add_patient', 'change_patient', 'view_visit', 'add_visit',

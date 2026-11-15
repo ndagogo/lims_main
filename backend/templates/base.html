@@ -56,7 +56,7 @@
       top: 0;
       height: 100vh;
     }
-    .brand { padding: .2rem .55rem 1.1rem; }
+    .brand { padding: .2rem .55rem .85rem; }
     .brand-name { font-size: 1.35rem; line-height: 1; }
     .brand-sub { color: var(--muted); font-size: .72rem; letter-spacing: .14em; margin-top: .2rem; }
     .side-nav { display: flex; flex-direction: column; gap: .15rem; overflow: auto; }
@@ -265,7 +265,104 @@
       top: 0;
       z-index: 20;
     }
-    .pp-bar form { grid-area: signout; justify-self: end; }
+    .pp-tools { grid-area: signout; justify-self: end; display: flex; align-items: center; gap: .45rem; }
+    .nb { position: relative; }
+    .sidebar .nb { display: flex; justify-content: flex-end; margin: 0 .35rem .85rem; }
+    .nb-btn {
+      position: relative;
+      width: 2.35rem;
+      height: 2.35rem;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      display: grid;
+      place-items: center;
+      padding: 0;
+      line-height: 1;
+    }
+    .nb-btn:hover, .nb-btn[aria-expanded="true"] { background: #f6f4ef; }
+    .nb-count {
+      position: absolute;
+      top: -.28rem;
+      right: -.28rem;
+      min-width: 1.15rem;
+      height: 1.15rem;
+      padding: 0 .28rem;
+      border-radius: 999px;
+      background: #9a3412;
+      color: #fff;
+      font-size: .65rem;
+      font-weight: 700;
+      line-height: 1.15rem;
+      text-align: center;
+    }
+    .nb-panel {
+      position: fixed;
+      width: min(22rem, calc(100vw - 1.5rem));
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 18px 44px rgba(28, 25, 23, .14);
+      z-index: 80;
+      overflow: auto;
+      max-height: min(28rem, calc(100vh - 5rem));
+    }
+    .nb-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .75rem;
+      padding: .8rem .95rem .7rem;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      background: #fff;
+    }
+    .nb-mark {
+      border: 0;
+      background: transparent;
+      color: var(--sage-ink);
+      font-weight: 650;
+      font-size: .82rem;
+      padding: 0;
+    }
+    .nb-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: 0;
+      border-bottom: 1px solid #f1eee8;
+      background: #fff;
+      padding: .75rem .95rem;
+    }
+    .nb-item.is-unread { background: #f4f8f5; box-shadow: inset 3px 0 0 var(--sage-ink); }
+    .nb-item:hover { background: #fbfaf7; }
+    .nb-title { display: block; font-weight: 650; color: var(--ink); }
+    .nb-body {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      color: #57534e;
+      font-size: .86rem;
+      margin-top: .15rem;
+    }
+    .nb-time { display: block; color: var(--muted); font-size: .75rem; margin-top: .28rem; }
+    .nb-foot {
+      display: block;
+      text-align: center;
+      padding: .75rem;
+      font-weight: 650;
+      color: var(--sage-ink);
+      text-decoration: none;
+      position: sticky;
+      bottom: 0;
+      background: #fff;
+      border-top: 1px solid var(--line);
+    }
+    .nb-empty { padding: 1.5rem 1rem 1.3rem; text-align: center; color: #57534e; }
+    .nb-empty i { display: block; font-size: 1.3rem; color: var(--sage-ink); margin-bottom: .35rem; }
     .pp-brand-link {
       grid-area: brand;
       display: flex;
@@ -340,8 +437,8 @@
   </style>
   {% block extra_head %}{% endblock %}
 </head>
-<body class="{% if request.path|slice:':16' == '/portals/patient' %}patient-portal{% endif %}">
-{% if request.path|slice:":16" == "/portals/patient" %}
+<body class="{% if request.path|slice:':16' == '/portals/patient' or portal_chrome == 'patient' %}patient-portal{% endif %}">
+{% if request.path|slice:":16" == "/portals/patient" or portal_chrome == "patient" %}
   <header class="pp-bar">
     <a class="pp-brand-link" href="{% url 'portal-patient-home' %}">
       <span class="pp-mark">{{ org_short_name|slice:":1" }}</span>
@@ -359,29 +456,38 @@
     </nav>
     {% endif %}
     {% if request.session.portal_token %}
-    <form method="post" action="{% url 'portal-logout' %}">{% csrf_token %}<button class="pp-signout" type="submit">Sign out</button></form>
+    <div class="pp-tools">
+      {% include "includes/notification_bell.html" %}
+      <form method="post" action="{% url 'portal-logout' %}">{% csrf_token %}<button class="pp-signout" type="submit">Sign out</button></form>
+    </div>
     {% endif %}
   </header>
   <main class="portal-main">
-{% elif request.path|slice:":9" == "/portals/" %}
+{% elif request.path|slice:":9" == "/portals/" or portal_chrome == "physician" or portal_chrome == "corporate" %}
   <header class="portal-top">
-    <a class="brand-name text-decoration-none text-dark" href="/">{{ org_short_name }}</a>
-    <span class="eyebrow mb-0">{% if "/patient" in request.path %}Patient portal{% elif "/physician" in request.path %}Doctor portal{% elif "/corporate" in request.path %}Corporate portal{% else %}Portal{% endif %}</span>
+    <a class="brand-name text-decoration-none text-dark" href="{% if '/physician' in request.path or portal_chrome == 'physician' %}{% url 'portal-physician-home' %}{% elif '/corporate' in request.path or portal_chrome == 'corporate' %}{% url 'portal-corporate-home' %}{% else %}/{% endif %}">{{ org_short_name }}</a>
+    <span class="eyebrow mb-0">{% if "/patient" in request.path %}Patient portal{% elif "/physician" in request.path or portal_chrome == "physician" %}Doctor portal{% elif "/corporate" in request.path or portal_chrome == "corporate" %}Corporate portal{% else %}Portal{% endif %}</span>
     <nav class="d-flex gap-3 ms-2">
       {% if "/patient" in request.path %}<a class="active" href="{% url 'portal-patient-home' %}">Results</a>{% endif %}
-      {% if "/physician" in request.path %}<a class="active" href="{% url 'portal-physician-home' %}">Overview</a>{% endif %}
-      {% if "/corporate" in request.path %}<a class="active" href="{% url 'portal-corporate-home' %}">Statement</a>{% endif %}
+      {% if "/physician" in request.path or portal_chrome == "physician" %}<a class="{% if '/physician' in request.path %}active{% endif %}" href="{% url 'portal-physician-home' %}">Overview</a>{% endif %}
+      {% if "/corporate" in request.path or portal_chrome == "corporate" %}<a class="{% if '/corporate' in request.path %}active{% endif %}" href="{% url 'portal-corporate-home' %}">Statement</a>{% endif %}
     </nav>
-    <div class="ms-auto">{% if request.session.portal_token %}<a href="{% url 'portal-logout' %}">Sign out</a>{% endif %}</div>
+    <div class="ms-auto d-flex align-items-center gap-3">
+      {% include "includes/notification_bell.html" %}
+      {% if request.session.portal_token %}<a href="{% url 'portal-logout' %}">Sign out</a>{% endif %}
+    </div>
   </header>
   <main class="portal-main">
 {% else %}
 <header class="mobile-bar d-lg-none">
   <a class="brand-name" href="{{ home_url|default:'/' }}">{{ org_short_name }}</a>
+  <div class="d-flex align-items-center gap-2">
+    {% include "includes/notification_bell.html" %}
   <button class="menu-toggle" type="button" id="mobile-menu-btn" aria-expanded="false" aria-controls="mobile-drawer">
     <i class="bi bi-list" aria-hidden="true"></i>
     <span>Menu</span>
   </button>
+  </div>
 </header>
 <nav class="mobile-drawer d-lg-none" id="mobile-drawer" aria-label="Mobile">
   <div class="mobile-section">Workspaces</div>
@@ -389,7 +495,7 @@
     <a class="{% if request.path == '/' %}active{% endif %}" href="/"><i class="bi bi-grid"></i>Dashboard</a>
   {% endif %}
   {% for key, label, url, icon in workspace_nav %}
-    <a class="{% if request.path == url or key == 'dispatch' and '/results/dispatch/' in request.path %}active{% endif %}" href="{{ url }}"><i class="bi {{ icon }}"></i>{{ label }}</a>
+    <a class="{% if request.path == url or key == 'dispatch' and '/results/dispatch/' in request.path or key == 'support' and '/support/' in request.path %}active{% endif %}" href="{{ url }}"><i class="bi {{ icon }}"></i>{{ label }}</a>
   {% endfor %}
   {% if can_modify_patient_data %}
     <a class="{% if request.path == '/patients/demographics/' %}active{% endif %}" href="{% url 'patient-demographics' %}"><i class="bi bi-person-gear"></i>Demographics</a>
@@ -434,10 +540,11 @@
       <div class="brand-name">{{ org_short_name }}</div>
       <div class="brand-sub">{{ org_tagline }}</div>
     </div>
+    {% include "includes/notification_bell.html" %}
     <nav class="side-nav">
       {% if home_url != '/radiology/' %}<a class="{% if request.path == '/' %}active{% endif %}" href="/">Dashboard</a>{% endif %}
       {% for key, label, url, icon in workspace_nav %}
-        <a class="{% if request.path == url or key == 'dispatch' and '/results/dispatch/' in request.path %}active{% endif %}" href="{{ url }}">{{ label }}</a>
+        <a class="{% if request.path == url or key == 'dispatch' and '/results/dispatch/' in request.path or key == 'support' and '/support/' in request.path %}active{% endif %}" href="{{ url }}">{{ label }}</a>
       {% endfor %}
       {% if is_accountant %}
         <a class="{% if request.path == '/accounts/reports/' %}active{% endif %}" href="{% url 'accounts-reports' %}">Reports</a>
@@ -483,7 +590,7 @@
     {% endif %}
     {% block content %}{% endblock %}
   </main>
-{% if request.path|slice:":9" != "/portals/" %}</div>
+{% if request.path|slice:":9" != "/portals/" and not portal_chrome %}</div>
 <script>
 (function () {
   var button = document.getElementById('mobile-menu-btn');
@@ -498,6 +605,74 @@
     if (icon) icon.className = open ? 'bi bi-x-lg' : 'bi bi-list';
     if (label) label.textContent = open ? 'Close' : 'Menu';
   });
+})();
+</script>
+{% endif %}
+{% if notice_audience %}
+<script>
+(function () {
+  var feed = "{% url 'notification-feed' %}";
+  function place(box) {
+    var button = box.querySelector('.nb-btn');
+    var panel = box.querySelector('.nb-panel');
+    var rect = button.getBoundingClientRect();
+    var width = Math.min(352, window.innerWidth - 24);
+    panel.style.width = width + 'px';
+    var left = rect.left;
+    if (rect.left < 280) left = rect.right + 10;
+    if (left + width > window.innerWidth - 12) left = Math.max(12, rect.right - width);
+    panel.style.left = left + 'px';
+    panel.style.top = Math.min(rect.bottom + 8, window.innerHeight - 80) + 'px';
+  }
+  function closeBox(box) {
+    box.classList.remove('is-open');
+    box.querySelector('.nb-panel').hidden = true;
+    box.querySelector('.nb-btn').setAttribute('aria-expanded', 'false');
+  }
+  function openBox(box) {
+    document.querySelectorAll('[data-notice].is-open').forEach(function (other) {
+      if (other !== box) closeBox(other);
+    });
+    place(box);
+    box.querySelector('.nb-panel').hidden = false;
+    box.classList.add('is-open');
+    box.querySelector('.nb-btn').setAttribute('aria-expanded', 'true');
+  }
+  document.querySelectorAll('[data-notice]').forEach(function (box) {
+    box.querySelector('.nb-btn').addEventListener('click', function (event) {
+      event.stopPropagation();
+      if (box.classList.contains('is-open')) closeBox(box);
+      else openBox(box);
+    });
+  });
+  document.addEventListener('click', function (event) {
+    document.querySelectorAll('[data-notice].is-open').forEach(function (box) {
+      if (!box.contains(event.target)) closeBox(box);
+    });
+  });
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') {
+      document.querySelectorAll('[data-notice].is-open').forEach(closeBox);
+    }
+  });
+  window.addEventListener('resize', function () {
+    document.querySelectorAll('[data-notice].is-open').forEach(place);
+  });
+  function paint(count) {
+    document.querySelectorAll('[data-notice-count]').forEach(function (el) {
+      el.hidden = count < 1;
+      el.textContent = count > 9 ? '9+' : String(count);
+    });
+    document.querySelectorAll('.nb-btn').forEach(function (button) {
+      button.setAttribute('aria-label', count ? 'Notifications, ' + count + ' unread' : 'Notifications');
+    });
+  }
+  setInterval(function () {
+    fetch(feed, {headers: {Accept: 'application/json'}, credentials: 'same-origin'})
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (data) { if (data) paint(data.unread || 0); })
+      .catch(function () {});
+  }, 25000);
 })();
 </script>
 {% endif %}

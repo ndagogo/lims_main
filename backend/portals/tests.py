@@ -1,9 +1,11 @@
 from datetime import date
 from decimal import Decimal
 
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
 from django.test import Client, TestCase
 
-from core.models import Centre
+from core.models import Centre, UserCentreAccess
 from laboratory.models import LabOrder, LabResult, Sample, SampleCodeConfig, ServiceGroup, Test
 from patients.models import Patient, Visit
 from billing.models import Invoice, Payment
@@ -80,3 +82,42 @@ class PatientPortalTests(TestCase):
         home = self.client.get('/portals/patient/')
         self.assertContains(home, self.minor.uhid)
         self.assertNotContains(home, self.adult.first_name)
+
+    def test_patient_can_download_only_their_receipt(self):
+        self.assertEqual(self._login(self.adult).status_code, 302)
+        own = self.client.get(f'/portals/patient/receipts/{self.payment.pk}/pdf/')
+        self.assertEqual(own.status_code, 200)
+        self.assertEqual(own['Content-Type'], 'application/pdf')
+        self.assertTrue(own.content.startswith(b'%PDF'))
+        self.assertEqual(self._login(self.shared).status_code, 302)
+        denied = self.client.get(f'/portals/patient/receipts/{self.payment.pk}/pdf/')
+        self.assertEqual(denied.status_code, 404)
+
+    def test_support_desk_routes_and_hides_internal_notes(self):
+        User = get_user_model()
+        agent = User.objects.create_user(username='support.agent', email='support.agent@example.test', password='A-long-unique-password-2026!')
+        agent.user_permissions.add(Permission.objects.get(codename='patient_support', content_type__app_label='portals'))
+        UserCentreAccess.objects.create(user=agent, centre=self.centre, can_view=True)
+        self._login(self.adult)
+        sent = self.client.post('/portals/patient/requests/', {
+            'kind': 'CORRECTION',
+            'message': 'Please check the spelling of my name.',
+            'visit': str(self.visit.pk),
+        })
+        self.assertEqual(sent.status_code, 302)
+        row = PortalRequest.objects.get(patient=self.adult, kind='CORRECTION')
+        self.assertTrue(row.reference.startswith('SUP-'))
+        staff = Client()
+        staff.force_login(agent)
+        desk = staff.get('/support/')
+        self.assertContains(desk, row.reference)
+        self.assertContains(desk, 'Patient support')
+        staff.post(f'/support/{row.pk}/', {'action': 'note', 'note': 'Checked the spelling internally.'})
+        staff.post(f'/support/{row.pk}/', {'action': 'reply', 'note': 'We have reviewed the spelling.'})
+        self._login(self.adult)
+        home = self.client.get('/portals/patient/')
+        self.assertContains(home, 'We have reviewed the spelling.')
+        self.assertNotContains(home, 'Checked the spelling internally.')
+        export = staff.get('/support/export/?fmt=csv')
+        self.assertEqual(export.status_code, 200)
+        self.assertIn(row.reference.encode(), export.content)

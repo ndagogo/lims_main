@@ -5,6 +5,8 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from core.api import CentreViewSet, UserCentreAccessViewSet, AuditEventViewSet, login_view, me_view
 from core.auth_views import password_reset_request, password_reset_confirm, mfa_setup
+from portals.support_views import support_case, support_desk, support_export, support_types
+from communications.inbox_views import notification_feed, notification_inbox, notification_open, notification_read_all
 from core.result_views import (
     dispatch_history_export, download_collector_id, modify_history_export, radiology_report_preview,
     radiology_stats_export, result_dispatch, result_modify,
@@ -147,6 +149,14 @@ urlpatterns=[
     path('results/dispatch/', result_dispatch, name='result-dispatch'),
     path('results/dispatch/history/export/', dispatch_history_export, name='dispatch-history-export'),
     path('results/dispatch/history/<int:pk>/identification/', download_collector_id, name='dispatch-collector-id'),
+    path('notifications/', notification_inbox, name='notification-inbox'),
+    path('notifications/feed/', notification_feed, name='notification-feed'),
+    path('notifications/read/', notification_read_all, name='notification-read-all'),
+    path('notifications/<uuid:pk>/open/', notification_open, name='notification-open'),
+    path('support/', support_desk, name='support-desk'),
+    path('support/export/', support_export, name='support-export'),
+    path('support/types/', support_types, name='support-types'),
+    path('support/<uuid:pk>/', support_case, name='support-case'),
     path('radiology/templates/', radiology_templates, name='radiology-templates'),
     path('radiology/templates/<int:pk>/', radiology_template_builder, name='radiology-template-builder'),
     path('inventory/', inventory_workspace, name='inventory-workspace'),

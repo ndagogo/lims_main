@@ -5,6 +5,7 @@ from .access import (
     can_refund_payment, is_accountant, is_platform_admin,
 )
 from .result_control import user_can_open_dispatch
+from portals.support import user_can_handle_support, user_can_manage_support_types
 from .organization import (
     organization_legal_name, organization_short_name, organization_tagline,
 )
@@ -26,9 +27,13 @@ def workspace_access(request):
                 built.append(('templates', 'Templates', '/radiology/templates/', 'bi-file-medical'))
         nav = built
     can_dispatch = authenticated and user_can_open_dispatch(user)
-    if can_dispatch:
+    can_support = authenticated and user_can_handle_support(user)
+    if can_dispatch or can_support:
         nav = list(nav)
+    if can_dispatch:
         nav.append(('dispatch', 'Result dispatch', '/results/dispatch/', 'bi-send'))
+    if can_support:
+        nav.append(('support', 'Patient support', '/support/', 'bi-life-preserver'))
     labels = [label for _key, label, _url, _icon in nav]
     if 'audit' in allowed:
         labels.append('Audit')
@@ -67,6 +72,8 @@ def workspace_access(request):
         'can_edit_bill': authenticated and can_edit_bill(user),
         'can_access_platform_controls': authenticated and can_access_platform_controls(user),
         'can_dispatch_results': can_dispatch,
+        'can_patient_support': can_support,
+        'can_manage_support_types': authenticated and user_can_manage_support_types(user),
         'org_legal_name': legal,
         'org_short_name': short,
         'org_tagline': organization_tagline(),

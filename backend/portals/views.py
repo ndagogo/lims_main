@@ -1,6 +1,7 @@
 """Patient, physician, and corporate portal screens."""
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.db import models
 from django.db.models import Sum
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -9,10 +10,12 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from billing.models import Invoice, Payment
+from billing.receipt_pdf import build_receipt_pdf
 from laboratory.models import LabResult
 from patients.models import OrganisationClient, Patient, Visit
 from patients.registration import apply_notification_prefs, normalize_phone_digits, patient_is_minor
-from portals.models import PhysicianInvite, PortalAccessToken, PortalRequest
+from portals.models import PhysicianInvite, PortalAccessToken, PortalRequest, SupportEvent
+from portals.support import add_patient_reply, open_patient_request, types_for_patient
 from radiology.models import RadiologyReport
 from referrals.models import CommissionLedgerEntry, ReferralDoctor
 
@@ -99,10 +102,13 @@ def patient_home(request):
     imaging = RadiologyReport.objects.filter(
         exam__order__visit__patient=patient, status__in=('RELEASED', 'AMENDED'),
     ).select_related('exam__order__procedure').order_by('-updated_at')[:20]
-    requests = patient.portal_requests.all()[:10]
+    requests = patient.portal_requests.select_related('request_type').prefetch_related(
+        models.Prefetch('events', queryset=SupportEvent.objects.filter(visible_to_patient=True).order_by('created_at')),
+    )[:10]
     return render(request, 'portals/patient_home.html', {
         'patient': patient, 'visits': visits, 'invoices': invoices, 'receipts': receipts,
         'results': results, 'imaging': imaging, 'portal_requests': requests,
+        'request_types': types_for_patient(patient),
         'open_invoice_count': open_invoice_count,
         'is_minor': patient_is_minor(patient.date_of_birth),
     })
@@ -127,17 +133,55 @@ def patient_request(request):
     patient = _patient_from_request(request)
     if patient is None:
         return redirect('portal-patient-login')
-    kind = (request.POST.get('kind') or 'SUPPORT').strip().upper()
-    if kind not in dict(PortalRequest.KINDS):
-        kind = 'SUPPORT'
     message = (request.POST.get('message') or '').strip()
     if not message:
-        messages.error(request, 'Describe the support or correction request.')
+        messages.error(request, 'Describe the support request.')
+        return redirect('portal-patient-home')
+    offered = types_for_patient(patient)
+    type_id = (request.POST.get('request_type') or '').strip()
+    code = (request.POST.get('kind') or '').strip().upper()
+    request_type = offered.filter(pk=type_id).first() if type_id else None
+    if request_type is None and code:
+        request_type = offered.filter(code=code).first()
+    if request_type is None:
+        messages.error(request, 'Choose a request type the centre has made available.')
         return redirect('portal-patient-home')
     visit = Visit.objects.filter(pk=request.POST.get('visit') or None, patient=patient).first()
-    PortalRequest.objects.create(patient=patient, visit=visit, kind=kind, message=message[:4000])
-    messages.success(request, 'Your request was sent to the centre. It does not change the clinical record.')
+    row = open_patient_request(patient, request_type, message, visit)
+    messages.success(request, f'{row.reference} was sent to the centre. It does not change the clinical record.')
     return redirect('portal-patient-home')
+
+
+@require_http_methods(['POST'])
+def patient_request_reply(request, pk):
+    patient = _patient_from_request(request)
+    if patient is None:
+        return redirect('portal-patient-login')
+    row = get_object_or_404(PortalRequest, pk=pk, patient=patient)
+    try:
+        add_patient_reply(row, request.POST.get('message') or '')
+    except ValidationError as exc:
+        messages.error(request, ' '.join(exc.messages))
+    else:
+        messages.success(request, f'Your reply was added to {row.reference}.')
+    return redirect('portal-patient-home')
+
+
+def patient_receipt_pdf(request, payment_id):
+    patient = _patient_from_request(request)
+    if patient is None:
+        return redirect('portal-patient-login')
+    payment = Payment.objects.select_related(
+        'invoice__visit__patient', 'invoice__visit__centre',
+    ).filter(
+        pk=payment_id, status='CONFIRMED', invoice__visit__patient=patient,
+    ).first()
+    if payment is None:
+        raise Http404()
+    payload = build_receipt_pdf(payment)
+    response = HttpResponse(payload, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{payment.receipt_number}.pdf"'
+    return response
 
 
 def _released_lab_result(patient, result_id):
