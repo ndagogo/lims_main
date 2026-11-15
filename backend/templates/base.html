@@ -241,6 +241,90 @@
     .portal-top a { color: #57534e; text-decoration: none; font-weight: 500; }
     .portal-top a.active, .portal-top a:hover { color: var(--sage-ink); }
     .portal-main { padding: 1.6rem 1.8rem 2.5rem; max-width: 1180px; }
+    body.patient-portal {
+      background:
+        radial-gradient(900px 280px at 0% 0%, #e7f0ea 0%, transparent 60%),
+        var(--paper);
+    }
+    body.patient-portal .portal-main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 1.5rem 1.15rem 3rem;
+    }
+    .pp-bar {
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      padding: .75rem 1.25rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas: "brand signout" "nav nav";
+      align-items: center;
+      column-gap: 1rem;
+      row-gap: .55rem;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+    .pp-bar form { grid-area: signout; justify-self: end; }
+    .pp-brand-link {
+      grid-area: brand;
+      display: flex;
+      align-items: center;
+      gap: .7rem;
+      text-decoration: none;
+      color: var(--ink);
+      min-width: 0;
+    }
+    .pp-mark {
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 12px;
+      background: var(--sage);
+      color: var(--sage-ink);
+      display: grid;
+      place-items: center;
+      font-family: Newsreader, Georgia, serif;
+      font-size: 1.15rem;
+    }
+    .pp-brand { font-family: Newsreader, Georgia, serif; font-size: 1.25rem; line-height: 1; }
+    .pp-brand-sub { color: var(--muted); font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; margin-top: .15rem; }
+    .pp-nav { grid-area: nav; display: flex; gap: .25rem; overflow: auto; }
+    @media (min-width: 860px) {
+      .pp-bar {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-areas: "brand nav signout";
+        padding: .7rem 1.5rem;
+      }
+      .pp-nav { justify-content: flex-end; }
+    }
+    .pp-nav a {
+      color: #44403c;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: .92rem;
+      padding: .4rem .75rem;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .pp-nav a:hover { background: var(--sage); color: var(--sage-ink); }
+    .pp-signout {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 999px;
+      padding: .4rem .9rem;
+      font-weight: 600;
+      font-size: .9rem;
+    }
+    .pp-signout:hover { background: #f6f4ef; }
+    .pp-back { color: var(--sage-ink); font-weight: 600; text-decoration: none; }
+    .pp-sheet {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.25rem 1.4rem;
+    }
+    .pp-sheet h1 { font-size: 1.85rem; }
     .balance-card {
       background: #171717;
       color: #fff;
@@ -256,8 +340,30 @@
   </style>
   {% block extra_head %}{% endblock %}
 </head>
-<body>
-{% if request.path|slice:":9" == "/portals/" %}
+<body class="{% if request.path|slice:':16' == '/portals/patient' %}patient-portal{% endif %}">
+{% if request.path|slice:":16" == "/portals/patient" %}
+  <header class="pp-bar">
+    <a class="pp-brand-link" href="{% url 'portal-patient-home' %}">
+      <span class="pp-mark">{{ org_short_name|slice:":1" }}</span>
+      <span>
+        <span class="pp-brand d-block">{{ org_short_name }}</span>
+        <span class="pp-brand-sub d-block">Patient portal</span>
+      </span>
+    </a>
+    {% if request.session.portal_token and request.path == "/portals/patient/" %}
+    <nav class="pp-nav" aria-label="Your record">
+      <a href="#results">Results</a>
+      <a href="#billing">Bills</a>
+      <a href="#visits">Visits</a>
+      <a href="#help">Help</a>
+    </nav>
+    {% endif %}
+    {% if request.session.portal_token %}
+    <form method="post" action="{% url 'portal-logout' %}">{% csrf_token %}<button class="pp-signout" type="submit">Sign out</button></form>
+    {% endif %}
+  </header>
+  <main class="portal-main">
+{% elif request.path|slice:":9" == "/portals/" %}
   <header class="portal-top">
     <a class="brand-name text-decoration-none text-dark" href="/">{{ org_short_name }}</a>
     <span class="eyebrow mb-0">{% if "/patient" in request.path %}Patient portal{% elif "/physician" in request.path %}Doctor portal{% elif "/corporate" in request.path %}Corporate portal{% else %}Portal{% endif %}</span>

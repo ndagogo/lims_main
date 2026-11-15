@@ -1,102 +1,222 @@
 {% extends "base.html" %}
-{% block title %}Patient portal{% endblock %}
+{% block title %}Your record | {{ org_short_name }}{% endblock %}
+{% block extra_head %}
+<style>
+  .pp-hello { margin-bottom: 1.25rem; }
+  .pp-hello h1 { font-size: clamp(1.8rem, 3vw, 2.4rem); margin-bottom: .35rem; }
+  .pp-meta { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .85rem; }
+  .pp-chip {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: .28rem .7rem;
+    font-size: .86rem;
+    color: #44403c;
+  }
+  .pp-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin-bottom: 1.25rem; }
+  .pp-stat {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: .9rem 1rem;
+  }
+  .pp-stat strong {
+    display: block;
+    font-family: Newsreader, Georgia, serif;
+    font-size: 1.7rem;
+    font-weight: 460;
+    line-height: 1.1;
+  }
+  .pp-stat span { color: var(--muted); font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; font-weight: 600; }
+  .pp-panel {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 1.1rem 1.15rem 1.15rem;
+    margin-bottom: 1rem;
+  }
+  .pp-panel h2 { font-size: 1.35rem; margin-bottom: .2rem; }
+  .pp-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .85rem 0;
+    border-top: 1px solid var(--line);
+  }
+  .pp-row:first-of-type { border-top: 0; }
+  .pp-row h3 { font-family: "Source Sans 3", "Segoe UI", sans-serif; font-size: 1rem; font-weight: 600; margin: 0 0 .15rem; letter-spacing: 0; }
+  .pp-actions { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: flex-end; }
+  .pp-actions a {
+    text-decoration: none;
+    border-radius: 999px;
+    padding: .35rem .75rem;
+    font-size: .86rem;
+    font-weight: 600;
+    border: 1px solid var(--line);
+    color: var(--ink);
+    background: #fff;
+  }
+  .pp-actions a.is-primary { background: var(--sage-ink); border-color: var(--sage-ink); color: #fff; }
+  .pp-empty { color: var(--muted); padding: .4rem 0 .2rem; }
+  .pp-status {
+    display: inline-block;
+    border-radius: 999px;
+    padding: .12rem .55rem;
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .03em;
+    background: #f4f1ea;
+    color: #57534e;
+  }
+  .pp-status.is-paid { background: var(--sage); color: var(--sage-ink); }
+  .pp-status.is-unpaid, .pp-status.is-part_paid { background: #fff4e5; color: var(--warn); }
+  .pp-money { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+  .pp-side .pp-panel { padding-bottom: 1rem; }
+  .pp-visit { display: flex; justify-content: space-between; gap: .75rem; padding: .7rem 0; border-top: 1px solid var(--line); }
+  .pp-visit:first-of-type { border-top: 0; padding-top: .2rem; }
+  .pp-check { display: flex; align-items: center; gap: .55rem; padding: .35rem 0; }
+  .pp-note { background: #f7f5f0; border-radius: 12px; padding: .65rem .75rem; margin-top: .75rem; }
+  @media (max-width: 991.98px) {
+    .pp-stats { grid-template-columns: 1fr 1fr; }
+    .pp-row, .pp-visit { align-items: flex-start; flex-direction: column; }
+    .pp-actions { justify-content: flex-start; }
+    .pp-actions a { min-height: 2.4rem; display: inline-flex; align-items: center; }
+  }
+</style>
+{% endblock %}
 {% block content %}
-<div class="d-flex flex-wrap justify-content-between align-items-end gap-2">
-  <div>
-    <div class="eyebrow">UHID {{ patient.uhid }}</div>
-    <h1>Hello, {{ patient.first_name }}</h1>
-    <p class="muted mb-0">{{ patient.first_name }} {{ patient.last_name }}{% if patient.date_of_birth %} · born {{ patient.date_of_birth }}{% endif %}{% if patient.phone_number %} · {{ patient.phone_country_code }} {{ patient.phone_number }}{% endif %}</p>
+<section class="pp-hello">
+  <div class="eyebrow">Your health record</div>
+  <h1>Hello, {{ patient.first_name }}</h1>
+  <p class="muted mb-0">Released laboratory and imaging reports, visits, and bills for this record. Results still being prepared are not shown.</p>
+  <div class="pp-meta">
+    <span class="pp-chip">UHID {{ patient.uhid }}</span>
+    {% if patient.date_of_birth %}<span class="pp-chip">Born {{ patient.date_of_birth|date:"d M Y" }}</span>{% endif %}
+    {% if patient.phone_number %}<span class="pp-chip">{{ patient.phone_country_code }} {{ patient.phone_number }}</span>{% endif %}
+    {% if is_minor %}<span class="pp-chip">Opened with the registered guardian</span>{% endif %}
   </div>
-  <form method="post" action="{% url 'portal-logout' %}">{% csrf_token %}<button class="btn btn-outline-dark btn-sm">Sign out</button></form>
-</div>
-{% if messages %}{% for message in messages %}<div class="alert alert-info mt-3">{{ message }}</div>{% endfor %}{% endif %}
-<div class="row g-3 mt-1">
+</section>
+
+<section class="pp-stats" aria-label="Summary">
+  <div class="pp-stat"><span>Laboratory</span><strong>{{ results|length }}</strong></div>
+  <div class="pp-stat"><span>Imaging</span><strong>{{ imaging|length }}</strong></div>
+  <div class="pp-stat"><span>Visits</span><strong>{{ visits|length }}</strong></div>
+  <div class="pp-stat"><span>Bills open</span><strong>{{ open_invoice_count }}</strong></div>
+</section>
+
+<div class="row g-3">
   <div class="col-lg-8">
-    <div class="card p-3 p-md-4 mb-3">
-      <h2 class="section-title">My results</h2>
-      <p class="muted small">Only released reports for this UHID are listed. Draft results stay in the laboratory.</p>
-      <div class="table-responsive">
-        <table class="table mb-0">
-          <thead><tr><th>Test</th><th>Sample</th><th></th></tr></thead>
-          <tbody>
-            {% for r in results %}
-            <tr>
-              <td class="fw-semibold">{{ r.sample.order.test.name }}</td>
-              <td class="font-monospace small">{{ r.sample.sample_id }}</td>
-              <td class="text-end">
-                <a href="{% url 'portal-patient-result' r.pk %}">View</a>
-                · <a href="{% url 'portal-patient-result-pdf' r.pk %}">Download</a>
-              </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="3" class="muted">No released results yet.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
+    <section class="pp-panel" id="results">
+      <h2>Results</h2>
+      <p class="muted small mb-0">Only reports the centre has released for this UHID.</p>
+      {% for r in results %}
+      <div class="pp-row">
+        <div>
+          <h3>{{ r.sample.order.test.name }}</h3>
+          <div class="small muted">Sample {{ r.sample.sample_id }}{% if r.released_at %} · {{ r.released_at|date:"d M Y" }}{% endif %}</div>
+        </div>
+        <div class="pp-actions">
+          <a class="is-primary" href="{% url 'portal-patient-result' r.pk %}">View</a>
+          <a href="{% url 'portal-patient-result-pdf' r.pk %}">Download</a>
+        </div>
       </div>
-      {% if imaging %}
-      <h3 class="h6 mt-4">Imaging reports</h3>
-      <ul class="mb-0">
-        {% for report in imaging %}
-        <li><a href="{% url 'portal-patient-imaging' report.pk %}">{{ report.exam.order.procedure.name|default:"Imaging report" }}</a> · <a href="{% url 'portal-patient-imaging-pdf' report.pk %}">Download</a></li>
-        {% endfor %}
-      </ul>
-      {% endif %}
-    </div>
-    <div class="card p-3 p-md-4 mb-3">
-      <h2 class="section-title">Invoices</h2>
-      <table class="table mb-0">
-        <thead><tr><th>Invoice</th><th>Visit</th><th>Status</th><th class="text-end">Total</th></tr></thead>
-        <tbody>
-          {% for i in invoices %}
-          <tr><td>{{ i.invoice_number }}</td><td class="font-monospace small">{{ i.visit.visit_id }}</td><td>{{ i.status }}</td><td class="text-end">₦{{ i.total }}</td></tr>
-          {% empty %}<tr><td colspan="4" class="muted">None</td></tr>{% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <div class="card p-3 p-md-4">
-      <h2 class="section-title">Receipts</h2>
-      <table class="table mb-0">
-        <thead><tr><th>Receipt</th><th>Invoice</th><th class="text-end">Amount</th></tr></thead>
-        <tbody>
-          {% for p in receipts %}
-          <tr><td class="font-monospace small">{{ p.receipt_number }}</td><td>{{ p.invoice.invoice_number }}</td><td class="text-end">₦{{ p.amount }}</td></tr>
-          {% empty %}<tr><td colspan="3" class="muted">No confirmed receipts</td></tr>{% endfor %}
-        </tbody>
-      </table>
-    </div>
+      {% empty %}
+      <p class="pp-empty mb-0">No released laboratory results yet.</p>
+      {% endfor %}
+      {% for report in imaging %}
+      <div class="pp-row">
+        <div>
+          <h3>{{ report.exam.order.procedure.name|default:"Imaging report" }}</h3>
+          <div class="small muted">Imaging{% if report.updated_at %} · {{ report.updated_at|date:"d M Y" }}{% endif %}</div>
+        </div>
+        <div class="pp-actions">
+          <a class="is-primary" href="{% url 'portal-patient-imaging' report.pk %}">View</a>
+          <a href="{% url 'portal-patient-imaging-pdf' report.pk %}">Download</a>
+        </div>
+      </div>
+      {% endfor %}
+    </section>
+
+    <section class="pp-panel" id="billing">
+      <h2>Bills and receipts</h2>
+      <p class="muted small mb-2">Invoices for your visits, and receipts for payments the centre has confirmed.</p>
+      {% for i in invoices %}
+      <div class="pp-row">
+        <div>
+          <h3>{{ i.invoice_number }}</h3>
+          <div class="small muted">Visit {{ i.visit.visit_id }} · <span class="pp-status is-{{ i.status|lower }}">{{ i.get_status_display }}</span></div>
+        </div>
+        <div class="pp-money">₦{{ i.total|floatformat:2 }}</div>
+      </div>
+      {% empty %}
+      <p class="pp-empty">No invoices on this record.</p>
+      {% endfor %}
+      {% for p in receipts %}
+      <div class="pp-row">
+        <div>
+          <h3>{{ p.receipt_number }}</h3>
+          <div class="small muted">Receipt · invoice {{ p.invoice.invoice_number }}</div>
+        </div>
+        <div class="pp-money">₦{{ p.amount|floatformat:2 }}</div>
+      </div>
+      {% empty %}
+      <p class="pp-empty mb-0">No confirmed receipts.</p>
+      {% endfor %}
+    </section>
   </div>
-  <div class="col-lg-4">
-    <div class="card p-3 p-md-4 mb-3">
-      <h2 class="section-title">Visits</h2>
+
+  <div class="col-lg-4 pp-side">
+    <section class="pp-panel" id="visits">
+      <h2>Visits</h2>
       {% for v in visits %}
-        <div class="status-pill"><span class="font-monospace">{{ v.visit_id }}</span><span class="muted small">{{ v.centre.name }}</span></div>
-      {% empty %}<p class="muted mb-0">No visits</p>{% endfor %}
-    </div>
-    <div class="card p-3 p-md-4 mb-3">
-      <h2 class="section-title">Notification preferences</h2>
+      <div class="pp-visit">
+        <div>
+          <div class="fw-semibold">{{ v.visit_id }}</div>
+          <div class="small muted">{{ v.centre.name }}</div>
+        </div>
+        <div class="small muted">{{ v.created_at|date:"d M Y" }}</div>
+      </div>
+      {% empty %}
+      <p class="pp-empty mb-0">No visits yet.</p>
+      {% endfor %}
+    </section>
+
+    <section class="pp-panel">
+      <h2>Notifications</h2>
+      <p class="small muted">Messages confirm a visit, a receipt, or that a result is ready. They do not include the result.</p>
       <form method="post" action="{% url 'portal-patient-preferences' %}">
         {% csrf_token %}
-        <div class="form-check"><input class="form-check-input" type="checkbox" name="notify_sms" value="1" id="pref-sms" {% if patient.notify_sms %}checked{% endif %}><label class="form-check-label" for="pref-sms">SMS</label></div>
-        <div class="form-check"><input class="form-check-input" type="checkbox" name="notify_email" value="1" id="pref-email" {% if patient.notify_email %}checked{% endif %}><label class="form-check-label" for="pref-email">Email</label></div>
-        <div class="form-check"><input class="form-check-input" type="checkbox" name="notify_whatsapp" value="1" id="pref-wa" {% if patient.notify_whatsapp %}checked{% endif %}><label class="form-check-label" for="pref-wa">WhatsApp</label></div>
-        <p class="form-text">Messages confirm a visit, receipt, or that a result is ready. They do not contain the result itself.</p>
-        <button class="btn btn-sm btn-dark" type="submit">Save preferences</button>
+        <label class="pp-check" for="pref-sms"><input class="form-check-input m-0" type="checkbox" name="notify_sms" value="1" id="pref-sms" {% if patient.notify_sms %}checked{% endif %}>SMS</label>
+        <label class="pp-check" for="pref-email"><input class="form-check-input m-0" type="checkbox" name="notify_email" value="1" id="pref-email" {% if patient.notify_email %}checked{% endif %}>Email</label>
+        <label class="pp-check" for="pref-wa"><input class="form-check-input m-0" type="checkbox" name="notify_whatsapp" value="1" id="pref-wa" {% if patient.notify_whatsapp %}checked{% endif %}>WhatsApp</label>
+        <button class="btn btn-dark btn-sm mt-2" type="submit">Save preferences</button>
       </form>
-    </div>
-    <div class="card p-3 p-md-4">
-      <h2 class="section-title">Support or correction</h2>
+    </section>
+
+    <section class="pp-panel" id="help">
+      <h2>Help</h2>
+      <p class="small muted">Ask the centre a question or request a correction. This does not change the clinical record.</p>
       <form method="post" action="{% url 'portal-patient-requests' %}" class="vstack gap-2">
         {% csrf_token %}
-        <select name="kind" class="form-select form-select-sm"><option value="SUPPORT">Support</option><option value="CORRECTION">Ask for a correction</option></select>
-        <select name="visit" class="form-select form-select-sm"><option value="">No specific visit</option>{% for v in visits %}<option value="{{ v.pk }}">{{ v.visit_id }}</option>{% endfor %}</select>
-        <textarea name="message" class="form-control" rows="3" required placeholder="What should the centre look at?"></textarea>
-        <button class="btn btn-sm btn-outline-dark" type="submit">Send request</button>
+        <label class="form-label mb-0" for="help-kind">Request</label>
+        <select id="help-kind" name="kind" class="form-select form-select-sm">
+          <option value="SUPPORT">Support</option>
+          <option value="CORRECTION">Ask for a correction</option>
+        </select>
+        <label class="form-label mb-0" for="help-visit">Visit</label>
+        <select id="help-visit" name="visit" class="form-select form-select-sm">
+          <option value="">No specific visit</option>
+          {% for v in visits %}<option value="{{ v.pk }}">{{ v.visit_id }}</option>{% endfor %}
+        </select>
+        <label class="form-label mb-0" for="help-message">Message</label>
+        <textarea id="help-message" name="message" class="form-control" rows="3" required placeholder="What should the centre look at?"></textarea>
+        <button class="btn btn-outline-dark btn-sm" type="submit">Send request</button>
       </form>
       {% for row in portal_requests %}
-      <div class="small mt-2"><span class="badge-soft badge rounded-pill">{{ row.kind }}</span> {{ row.message|truncatechars:80 }}</div>
+      <div class="pp-note small"><span class="pp-status">{{ row.get_kind_display }}</span> {{ row.message|truncatechars:80 }}</div>
       {% endfor %}
-    </div>
+    </section>
   </div>
 </div>
 {% endblock %}

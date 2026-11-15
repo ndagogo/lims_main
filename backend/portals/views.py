@@ -89,7 +89,9 @@ def patient_home(request):
     if patient is None:
         return redirect('portal-patient-login')
     visits = Visit.objects.filter(patient=patient).select_related('centre').order_by('-created_at')[:20]
-    invoices = Invoice.objects.filter(visit__patient=patient).select_related('visit').order_by('-created_at')[:20]
+    invoice_qs = Invoice.objects.filter(visit__patient=patient).select_related('visit').order_by('-created_at')
+    open_invoice_count = invoice_qs.filter(status__in=('UNPAID', 'PART_PAID')).count()
+    invoices = invoice_qs[:20]
     receipts = Payment.objects.filter(invoice__visit__patient=patient, status='CONFIRMED').select_related('invoice').order_by('-created_at')[:20]
     results = LabResult.objects.filter(
         sample__order__visit__patient=patient, status__in=('RELEASED', 'AMENDED'),
@@ -101,6 +103,7 @@ def patient_home(request):
     return render(request, 'portals/patient_home.html', {
         'patient': patient, 'visits': visits, 'invoices': invoices, 'receipts': receipts,
         'results': results, 'imaging': imaging, 'portal_requests': requests,
+        'open_invoice_count': open_invoice_count,
         'is_minor': patient_is_minor(patient.date_of_birth),
     })
 
