@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import logging
+import threading
 import traceback
 
 from django.conf import settings
-from django.core.mail import send_mail
+from django.core.mail import get_connection, send_mail
 from django.views.debug import ExceptionReporter
 
 logger = logging.getLogger(__name__)
@@ -34,24 +35,38 @@ def alert_recipient_emails():
 
 
 def send_error_alert(*, subject, body, html_body=None):
+    """Queue the vendor email and return immediately.
+
+    A blocked SMTP connection used to run on the request that had already
+    failed. Gunicorn then aborted that worker, so the client received an
+    empty 500 and the original exception was replaced by SystemExit.
+    """
     recipients = alert_recipient_emails()
     if not recipients:
         logger.error('Server error with no ERROR_ALERT_EMAIL configured.\n%s', body)
         return False
     from_email = getattr(settings, 'SERVER_EMAIL', None) or settings.DEFAULT_FROM_EMAIL
-    try:
-        send_mail(
-            subject=subject[:200],
-            message=body,
-            from_email=from_email,
-            recipient_list=recipients,
-            fail_silently=False,
-            html_message=html_body,
-        )
-        return True
-    except Exception:  # noqa: BLE001
-        logger.exception('Failed to send critical error alert email')
-        return False
+    timeout = int(getattr(settings, 'ERROR_ALERT_EMAIL_TIMEOUT', 8) or 8)
+    payload = (subject[:200], body, from_email, list(recipients), html_body, timeout)
+
+    def _deliver():
+        mail_subject, message, sender, recipient_list, html, mail_timeout = payload
+        try:
+            connection = get_connection(timeout=mail_timeout)
+            send_mail(
+                mail_subject,
+                message,
+                sender,
+                recipient_list,
+                fail_silently=False,
+                html_message=html,
+                connection=connection,
+            )
+        except Exception:  # noqa: BLE001 — the page must already have been answered
+            logger.exception('Failed to send critical error alert email')
+
+    threading.Thread(target=_deliver, name='lims-error-alert', daemon=True).start()
+    return True
 
 
 def report_request_exception(request, exc_info):

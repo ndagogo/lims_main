@@ -382,9 +382,9 @@
           {% for row in history %}
           <tr>
             <td class="text-nowrap">{{ row.created_at|date:"d M Y H:i" }}</td>
-            <td>{{ row.actor.get_full_name|default:row.actor.username }}</td>
-            <td>{{ row.visit.visit_id }}</td>
-            <td>{{ row.visit.patient.first_name }} {{ row.visit.patient.last_name }}</td>
+            <td>{% if row.actor %}{{ row.actor.get_full_name|default:row.actor.username }}{% else %}—{% endif %}</td>
+            <td>{% if row.visit_id %}{{ row.visit.visit_id }}{% else %}—{% endif %}</td>
+            <td>{% if row.visit_id %}{{ row.visit.patient.first_name }} {{ row.visit.patient.last_name }}{% else %}—{% endif %}</td>
             <td>{{ row.get_service_display }}</td>
             <td class="small">{{ row.summary }}{% if row.reason %}<div class="muted mt-1">{{ row.reason }}</div>{% endif %}{% if row.collector_id %}<div class="mt-1"><a href="{% url 'dispatch-collector-id' row.pk %}" target="_blank" rel="noopener">View identification</a></div>{% endif %}</td>
           </tr>

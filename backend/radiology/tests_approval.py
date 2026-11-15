@@ -73,8 +73,14 @@ class ResultApprovalTests(TestCase):
         self.report.refresh_from_db()
         self.assertEqual(self.report.status, 'APPROVED')
         self.web.force_login(self.dispatcher)
+        ResultLedger.objects.create(
+            service='RADIOLOGY', kind='DISPATCH', visit=self.visit,
+            object_type='RadiologyReport', object_id=str(self.report.pk),
+            summary='Earlier send', actor=None,
+        )
         desk = self.web.get('/results/dispatch/')
         self.assertContains(desk, self.visit.visit_id)
+        self.assertContains(desk, 'Earlier send')
         self.assertContains(desk, 'Ready to dispatch')
         self.assertContains(desk, 'Dispatch —')
         self.assertContains(desk, 'Dispatch to recipients')
