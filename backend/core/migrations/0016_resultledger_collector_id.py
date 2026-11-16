@@ -13,8 +13,10 @@ class Migration(migrations.Migration):
             name='collector_id',
             field=models.FileField(
                 blank=True,
+                default='',
                 help_text='Copy of the identification shown by a third party who collected the result.',
                 upload_to='collector-ids/%Y/%m/',
             ),
+            preserve_default=False,
         ),
     ]
