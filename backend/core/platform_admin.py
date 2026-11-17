@@ -31,7 +31,7 @@ from laboratory.models import (
 )
 from laboratory.templates_svc import clone_template_version, publish_template
 from portals.models import PhysicianInvite
-from radiology.models import PacsFailure
+from radiology.models import ImagingProcedure, PacsFailure
 from referrals.models import ReferralDoctor
 from workflows.models import WorkflowAssignment, WorkflowDefinition, WorkflowStep, WorkflowTransition
 from workflows.services import clone_workflow_version, preview_workflow, publish_workflow
@@ -374,7 +374,7 @@ def build_workflows_context(request):
             preview = preview_workflow(selected)
             assignments = list(
                 WorkflowAssignment.objects.filter(workflow_code=selected.code)
-                .select_related('test', 'service_group')
+                .select_related('test', 'service_group', 'procedure')
                 .order_by('priority', 'workflow_code')
             )
             sid = request.GET.get('step')
@@ -405,6 +405,7 @@ def build_workflows_context(request):
         'doc_choices': WORKFLOW_DOC_CHOICES,
         'department_choices': WORKFLOW_DEPARTMENTS,
         'tests': Test.objects.filter(is_active=True).order_by('code'),
+        'procedures': ImagingProcedure.objects.filter(is_active=True).order_by('code'),
         'service_groups': ServiceGroup.objects.filter(is_active=True).order_by('name'),
         'workflow_codes': list(
             WorkflowDefinition.objects.order_by('code').values_list('code', flat=True).distinct()
@@ -574,18 +575,32 @@ def handle_workflows_post(request):
                 return redirect('platform-workflows')
             test_id = _text(request.POST, 'test') or None
             group_id = _text(request.POST, 'service_group') or None
-            if not test_id and not group_id:
-                messages.error(request, 'Assign to a test or a service group.')
+            procedure_id = _text(request.POST, 'procedure') or None
+            chosen = [bool(test_id), bool(group_id), bool(procedure_id)].count(True)
+            if chosen != 1:
+                messages.error(request, 'Assign to one test, one investigation, or one service group.')
+                return redirect(_wf_url(request.POST.get('workflow'), q=q) if request.POST.get('workflow') else 'platform-workflows')
+            if not WorkflowDefinition.objects.filter(code=code, status='PUBLISHED', is_active=True).exists():
+                messages.error(request, 'Publish the workflow before assigning it.')
                 return redirect(_wf_url(request.POST.get('workflow'), q=q) if request.POST.get('workflow') else 'platform-workflows')
             row = WorkflowAssignment.objects.create(
                 workflow_code=code,
                 test_id=test_id,
-                service_group_id=group_id if not test_id else None,
+                service_group_id=group_id,
+                procedure_id=procedure_id,
                 priority=_int(request.POST, 'priority', 100),
                 is_active=True,
             )
-            _audit(request, 'WORKFLOW_ASSIGNMENT_CREATED', row, {'code': code})
-            messages.success(request, f'Assigned {code} to {"test" if test_id else "service group"}.')
+            if test_id:
+                Test.objects.filter(pk=test_id).update(default_workflow_code=code)
+                target = 'test'
+            elif procedure_id:
+                ImagingProcedure.objects.filter(pk=procedure_id).update(default_workflow_code=code)
+                target = 'investigation'
+            else:
+                target = 'service group'
+            _audit(request, 'WORKFLOW_ASSIGNMENT_CREATED', row, {'code': code, 'target': target})
+            messages.success(request, f'Assigned {code} to the {target}.')
             return redirect(_wf_url(request.POST.get('workflow'), q=q) if request.POST.get('workflow') else 'platform-workflows')
 
         if action == 'delete_assignment':
@@ -708,6 +723,12 @@ def build_result_template_builder_context(request, pk):
     available = template.test.parameters.exclude(pk__in=used_ids).order_by('display_order', 'name')
     fields = template.fields.select_related('parameter').order_by('display_order', 'parameter__name')
     next_order = (fields.order_by('-display_order').values_list('display_order', flat=True).first() or 0) + 10
+    centres = Centre.objects.filter(is_active=True).order_by('name')
+    preview_centre = centres.filter(pk=request.GET.get('centre')).first() or centres.first()
+    preview_format = None
+    if preview_centre:
+        from core.report_format import get_report_format
+        preview_format = get_report_format(preview_centre)
     return {
         'template': template,
         'fields': fields,
@@ -715,6 +736,9 @@ def build_result_template_builder_context(request, pk):
         'next_order': next_order,
         'builder_subtitle': f'{template.test.code} — {template.test.name} · versioned clinical report layout',
         'sensitive': True,
+        'centres': centres,
+        'preview_centre': preview_centre,
+        'preview_format': preview_format,
     }
 
 

@@ -46,7 +46,7 @@ class WorkflowDefinition(TimeStampedModel):
 
 
 class WorkflowAssignment(TimeStampedModel):
-    """Map a published workflow code to a test and/or service group (most specific wins)."""
+    """Map a published workflow code to a test, investigation, or service group."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     workflow_code = models.CharField(max_length=40, db_index=True)
@@ -56,6 +56,10 @@ class WorkflowAssignment(TimeStampedModel):
     )
     service_group = models.ForeignKey(
         'laboratory.ServiceGroup', null=True, blank=True, on_delete=models.CASCADE,
+        related_name='workflow_assignments',
+    )
+    procedure = models.ForeignKey(
+        'radiology.ImagingProcedure', null=True, blank=True, on_delete=models.CASCADE,
         related_name='workflow_assignments',
     )
     priority = models.PositiveSmallIntegerField(
@@ -68,7 +72,14 @@ class WorkflowAssignment(TimeStampedModel):
         ordering = ['priority', 'workflow_code']
 
     def __str__(self):
-        target = self.test.code if self.test_id else (self.service_group.name if self.service_group_id else '*')
+        if self.test_id:
+            target = self.test.code
+        elif self.procedure_id:
+            target = self.procedure.code
+        elif self.service_group_id:
+            target = self.service_group.name
+        else:
+            target = '*'
         return f'{self.workflow_code} → {target}'
 
 

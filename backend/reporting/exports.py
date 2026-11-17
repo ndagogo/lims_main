@@ -14,7 +14,11 @@ def _export_category(report_type):
     if (
         'revenue' in report_type
         or report_type.startswith(('accountant', 'management'))
-        or report_type in ('commission', 'hmo_statements')
+        or report_type in (
+            'commission', 'commission_due', 'commission_due_pack', 'referral_activity',
+            'institution_referrals', 'hmo_statements', 'doctors', 'visits', 'activity',
+            'institutions', 'marketers',
+        )
     ):
         return 'BILLING'
     return 'SYSTEM'

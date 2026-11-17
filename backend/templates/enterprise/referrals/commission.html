@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Commission due | {{ org_short_name }}{% endblock %}
+{% block content %}
+{% with page_title="Commission due" page_subtitle="Period earnings plus outstanding payable balances from preset commissions." %}
+{% include "enterprise/referrals/_nav.html" %}
+{% endwith %}
+
+<form method="get" class="card p-3 mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-2"><label class="form-label small mb-0">Period</label>
+      <select class="form-select form-select-sm" name="period">{% for value, label in period_choices %}<option value="{{ value }}" {% if filters.period == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    </div>
+    <div class="col-md-2"><label class="form-label small mb-0">Centre</label>
+      <select class="form-select form-select-sm" name="centre"><option value="">All</option>{% for centre in filters.centres %}<option value="{{ centre.pk }}" {% if filters.centre_id == centre.pk|stringformat:'s' %}selected{% endif %}>{{ centre.code }}</option>{% endfor %}</select>
+    </div>
+    <div class="col-md-2"><label class="form-label small mb-0">Start</label><input class="form-control form-control-sm" type="date" name="start" value="{{ filters.start_date }}"></div>
+    <div class="col-md-2"><label class="form-label small mb-0">End</label><input class="form-control form-control-sm" type="date" name="end" value="{{ filters.end_date }}"></div>
+    <div class="col-md-2"><label class="form-label small mb-0">Due status</label>
+      <select class="form-select form-select-sm" name="due_status">
+        <option value="">All balances</option>
+        <option value="due" {% if filters.due_status == 'due' %}selected{% endif %}>Outstanding &gt; 0</option>
+        <option value="zero" {% if filters.due_status == 'zero' %}selected{% endif %}>Zero</option>
+        <option value="credit" {% if filters.due_status == 'credit' %}selected{% endif %}>Negative</option>
+      </select>
+    </div>
+    <div class="col-md-2"><label class="form-label small mb-0">Commission</label>
+      <select class="form-select form-select-sm" name="commission_type">
+        <option value="">Any</option>
+        <option value="PERCENT" {% if filters.commission_type == 'PERCENT' %}selected{% endif %}>Percentage</option>
+        <option value="FIXED" {% if filters.commission_type == 'FIXED' %}selected{% endif %}>Fixed</option>
+      </select>
+    </div>
+    <div class="col-md-3"><label class="form-label small mb-0">Doctor</label>
+      <select class="form-select form-select-sm" name="doctor"><option value="">All</option>{% for doctor in doctor_choices %}<option value="{{ doctor.pk }}" {% if filters.doctor_id == doctor.pk|stringformat:'s' %}selected{% endif %}>{{ doctor.doctor_code }}</option>{% endfor %}</select>
+    </div>
+    <div class="col-md-3"><label class="form-label small mb-0">Institution</label>
+      <select class="form-select form-select-sm" name="institution"><option value="">All</option>{% for row in institution_choices %}<option value="{{ row.pk }}" {% if filters.institution_id == row.pk|stringformat:'s' %}selected{% endif %}>{{ row.name }}</option>{% endfor %}</select>
+    </div>
+    <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" type="submit">Apply</button></div>
+  </div>
+</form>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-sm btn-outline-dark" href="{% url 'enterprise-referrals-export' %}?{{ export_query }}&kind=commission_due&format=csv">Due CSV</a>
+  <a class="btn btn-sm btn-outline-dark" href="{% url 'enterprise-referrals-export' %}?{{ export_query }}&kind=commission_due&format=xlsx">Due Excel</a>
+  <a class="btn btn-sm btn-outline-dark" href="{% url 'enterprise-referrals-export' %}?{{ export_query }}&kind=commission_due&format=pdf">Due PDF</a>
+  <a class="btn btn-sm btn-dark" href="{% url 'enterprise-referrals-export' %}?{{ export_query }}&kind=commission_pack&format=xlsx">Pack (Excel)</a>
+  <a class="btn btn-sm btn-outline-dark" href="{% url 'enterprise-referrals-export' %}?{{ export_query }}&kind=activity&format=csv">Activity CSV</a>
+  <a class="btn btn-sm btn-outline-dark" href="{% url 'report-catalogue' %}?report=commission_due&period={{ filters.period }}&centre={{ filters.centre_id }}">Catalogue</a>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4"><div class="kpi"><div class="kpi-label">Doctors in report</div><div class="kpi-value">{{ due.totals.doctors }}</div></div></div>
+  <div class="col-md-4"><div class="kpi"><div class="kpi-label">Period net</div><div class="kpi-value">₦{{ due.totals.period_net }}</div></div></div>
+  <div class="col-md-4"><div class="kpi"><div class="kpi-label">Outstanding due</div><div class="kpi-value">₦{{ due.totals.outstanding }}</div></div></div>
+</div>
+
+<div class="card p-4 mb-4">
+  <h2 class="h5 mb-3">{{ due.title }}</h2>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr>
+          {% for h in due.headers %}<th>{{ h }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in due.rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% empty %}
+        <tr><td colspan="{{ due.headers|length }}" class="muted text-center py-4">No commission rows for this filter.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card p-4 mb-4">
+  <div class="d-flex justify-content-between mb-3">
+    <h2 class="h5 mb-0">{{ institutions.title }}</h2>
+    <a class="open-link" href="{% url 'enterprise-referrals-export' %}?{{ export_query }}&kind=institutions&format=xlsx">Export</a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr>{% for h in institutions.headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for row in institutions.rows|slice:":40" %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% empty %}
+        <tr><td colspan="6" class="muted text-center py-3">No institution activity.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card p-4">
+  <div class="d-flex justify-content-between mb-3">
+    <h2 class="h5 mb-0">{{ marketers.title }}</h2>
+    <a class="open-link" href="{% url 'enterprise-referrals-export' %}?{{ export_query }}&kind=marketers&format=xlsx">Export</a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr>{% for h in marketers.headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for row in marketers.rows|slice:":40" %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% empty %}
+        <tr><td colspan="6" class="muted text-center py-3">No introducer data.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

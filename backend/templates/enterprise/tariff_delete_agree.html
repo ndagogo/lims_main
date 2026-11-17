@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Confirm tariff deletion | {{ org_short_name }}{% endblock %}
+{% block content %}
+<div class="card p-4" style="max-width:40rem;margin:2rem auto">
+  <h1 class="h4">Tariff deletion agreement</h1>
+  <p>You are about to permanently delete tariff <strong>{{ tariff.name }}</strong> ({{ tariff.code }}).</p>
+  <ul>
+    <li>All laboratory and imaging prices on this tariff will be removed.</li>
+    <li>Channels or clients still mapped to this tariff must be remapped before registration can use them.</li>
+    <li>This action is audited with your username and timestamp.</li>
+  </ul>
+  <form method="post" class="row g-3">
+    {% csrf_token %}
+    <input type="hidden" name="step" value="agree">
+    <div class="col-12">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="agree" id="agree" value="1" required>
+        <label class="form-check-label" for="agree">I have read and agree to delete this tariff.</label>
+      </div>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Type your username to confirm</label>
+      <input class="form-control" name="username" required autocomplete="username">
+    </div>
+    <div class="col-12 d-flex gap-2">
+      <button class="btn btn-danger" type="submit">Approve deletion</button>
+      <a class="btn btn-outline-dark" href="{% url 'enterprise-tariff-editor' tariff.pk %}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

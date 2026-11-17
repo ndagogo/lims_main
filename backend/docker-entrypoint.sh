@@ -17,4 +17,7 @@ if [ "${RUN_SEED_ON_START:-false}" = "true" ] || [ "${RUN_SEED_ON_START:-0}" = "
   python manage.py seed_workflows || true
 fi
 
+# Always ensure channels + default Self tariff per centre (idempotent; safe after seed_roles).
+python manage.py seed_channel_tariffs || true
+
 exec "$@"

@@ -1,8 +1,8 @@
 """Template values for the role-based staff navigation."""
 from .access import (
     WORKSPACE_NAV, allowed_workspaces, can_access_platform_controls,
-    can_change_referring_doctor, can_edit_bill, can_modify_patient_data,
-    can_refund_payment, is_accountant, is_platform_admin,
+    can_change_referring_doctor, can_edit_bill, can_manage_referrals,
+    can_modify_patient_data, can_refund_payment, is_accountant, is_platform_admin,
 )
 from .result_control import user_can_open_dispatch
 from portals.support import user_can_handle_support, user_can_manage_support_types
@@ -68,6 +68,7 @@ def workspace_access(request):
         'is_accountant': accountant,
         'can_modify_patient_data': authenticated and can_modify_patient_data(user),
         'can_change_referring_doctor': authenticated and can_change_referring_doctor(user),
+        'can_manage_referrals': authenticated and can_manage_referrals(user),
         'can_refund_payment': authenticated and can_refund_payment(user),
         'can_edit_bill': authenticated and can_edit_bill(user),
         'can_access_platform_controls': authenticated and can_access_platform_controls(user),

@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}Clients master | {{ org_short_name }}{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="muted small"><a class="text-decoration-none muted" href="{% url 'catalog-hub' %}">Catalog</a> · MY CLIENTS</div>
+  <h1 class="h3 mb-1">Clients master</h1>
+  <p class="muted mb-0">Onboard HMOs, hospitals, and corporates as Credit and/or On Payment clients — each with its own tariff and Test_Price_Display setting.</p>
+</div>
+<div class="row g-4">
+  <div class="col-xl-5">
+    <div class="card p-4">
+      <form method="get" class="row g-2 mb-3">
+        <div class="col-md-6"><input class="form-control" name="q" value="{{ query }}" placeholder="Name or code"></div>
+        <div class="col-md-6">
+          <select class="form-select" name="type">
+            <option value="">All types</option>
+            {% for row in client_types %}<option value="{{ row.code }}" {% if type_code == row.code %}selected{% endif %}>{{ row.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <select class="form-select" name="centre">
+            <option value="">All centres</option>
+            {% for centre in centres %}<option value="{{ centre.pk }}" {% if centre_id == centre.pk|stringformat:"s" %}selected{% endif %}>{{ centre.code }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <select class="form-select" name="status">
+            <option value="all" {% if status == 'all' %}selected{% endif %}>All</option>
+            <option value="active" {% if status == 'active' %}selected{% endif %}>Active</option>
+            <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive</option>
+          </select>
+        </div>
+        <div class="col-md-2"><button class="btn btn-outline-dark w-100" type="submit">Go</button></div>
+      </form>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Client</th><th>Type</th><th>Tariff</th><th>Wallet</th></tr></thead>
+          <tbody>
+            {% for client in directory %}
+            <tr>
+              <td>
+                <a class="fw-semibold text-decoration-none" href="?client={{ client.pk }}&q={{ query|urlencode }}&type={{ type_code }}&centre={{ centre_id }}&status={{ status }}">{{ client.name }}</a>
+                <div class="small muted">{{ client.code }} · {{ client.centre.code }}</div>
+              </td>
+              <td class="small">{{ client.client_type.name|default:client.client_type_code|default:client.kind }}</td>
+              <td class="small">{{ client.tariff.name|default:"—" }}</td>
+              <td class="small">{% if client.client_type_code == 'CREDIT' %}₦{{ client.credit_wallet_balance }}{% else %}—{% endif %}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-center muted py-4">No clients match.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=directory %}
+    </div>
+  </div>
+  <div class="col-xl-7">
+    <div class="card p-4 mb-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h5 mb-0">{% if selected %}Edit {{ selected.name }}{% else %}Create client{% endif %}</h2>
+        {% if selected %}
+          {% if selected.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-danger-soft">Inactive</span>{% endif %}
+        {% endif %}
+      </div>
+      <form method="post" enctype="multipart/form-data" class="row g-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="{% if selected %}update{% else %}create{% endif %}">
+        <input type="hidden" name="is_active_submitted" value="1">
+        {% if selected %}<input type="hidden" name="client" value="{{ selected.pk }}">{% endif %}
+        <div class="col-md-4">
+          <label class="form-label">Client type <span class="text-danger">*</span></label>
+          <select class="form-select" name="client_type" required>
+            {% for row in client_types %}
+            <option value="{{ row.pk }}" {% if selected and selected.client_type_id == row.pk %}selected{% elif not selected and row.code == 'CREDIT' %}selected{% endif %}>{{ row.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Centre <span class="text-danger">*</span></label>
+          <select class="form-select" name="centre" required>
+            {% for centre in centres %}<option value="{{ centre.pk }}" {% if selected and selected.centre_id == centre.pk %}selected{% endif %}>{{ centre.code }} — {{ centre.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Code</label>
+          <input class="form-control" name="code" value="{{ selected.code|default:'' }}" placeholder="Auto if blank" {% if selected %}readonly{% endif %}>
+        </div>
+        <div class="col-md-8">
+          <label class="form-label">Client name <span class="text-danger">*</span></label>
+          <input class="form-control" name="name" value="{{ selected.name|default:'' }}" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Category</label>
+          <select class="form-select" name="category">
+            <option value="">—</option>
+            {% for value, label in categories %}<option value="{{ value }}" {% if selected and selected.category == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Tariff (P1) <span class="text-danger">*</span></label>
+          <select class="form-select" name="tariff" required>
+            <option value="">Choose tariff</option>
+            {% for tariff in tariffs %}<option value="{{ tariff.pk }}" {% if selected and selected.tariff_id == tariff.pk %}selected{% endif %}>{{ tariff.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Effective from</label>
+          <input class="form-control" type="date" name="effective_from" value="{% if selected and selected.effective_from %}{{ selected.effective_from|date:'Y-m-d' }}{% else %}{{ today }}{% endif %}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Effective to</label>
+          <input class="form-control" type="date" name="effective_to" value="{% if selected and selected.effective_to %}{{ selected.effective_to|date:'Y-m-d' }}{% endif %}">
+        </div>
+        <div class="col-md-3"><label class="form-label">Credit limit / wallet</label><input class="form-control" name="credit_limit" value="{{ selected.credit_limit|default:'0' }}"></div>
+        <div class="col-md-3"><label class="form-label">Credit limit days</label><input class="form-control" name="credit_limit_days" value="{{ selected.credit_limit_days|default:'0' }}"></div>
+        <div class="col-md-3"><label class="form-label">Threshold</label><input class="form-control" name="threshold_value" value="{{ selected.threshold_value|default:'0' }}"></div>
+        <div class="col-md-3"><label class="form-label">Security deposit</label><input class="form-control" name="security_deposit" value="{{ selected.security_deposit|default:'0' }}"></div>
+        <div class="col-md-3"><label class="form-label">Org %</label><input class="form-control" name="org_percent" value="{{ selected.org_percent|default:'100' }}"></div>
+        <div class="col-md-3"><label class="form-label">Emp %</label><input class="form-control" name="emp_percent" value="{{ selected.emp_percent|default:'0' }}"></div>
+        <div class="col-md-3">
+          <label class="form-label">Billing type</label>
+          <select class="form-select" name="billing_type">
+            <option value="">—</option>
+            {% for value, label in billing_types %}<option value="{{ value }}" {% if selected and selected.billing_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Invoice frequency</label>
+          <select class="form-select" name="invoice_frequency">
+            {% for value, label in invoice_frequencies %}<option value="{{ value }}" {% if selected and selected.invoice_frequency == value %}selected{% elif not selected and value == 'MONTHLY' %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-12"><hr class="my-1"><div class="fw-semibold small">Address &amp; tax</div></div>
+        <div class="col-md-6"><label class="form-label">Address 1</label><input class="form-control" name="address_1" value="{{ selected.address_1|default:'' }}"></div>
+        <div class="col-md-6"><label class="form-label">Address 2</label><input class="form-control" name="address_2" value="{{ selected.address_2|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label">Area</label><input class="form-control" name="area" value="{{ selected.area|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label">City</label><input class="form-control" name="city" value="{{ selected.city|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label">State</label><input class="form-control" name="state" value="{{ selected.state|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label">Country</label><input class="form-control" name="country" value="{{ selected.country|default:'Nigeria' }}"></div>
+        <div class="col-md-3"><label class="form-label">Pin / Zip</label><input class="form-control" name="pin_zip" value="{{ selected.pin_zip|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label">Phone</label><input class="form-control" name="phone" value="{{ selected.phone|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label">SAP code</label><input class="form-control" name="sap_code" value="{{ selected.sap_code|default:'' }}"></div>
+        <div class="col-md-3"><label class="form-label">GST #</label><input class="form-control" name="gst_number" value="{{ selected.gst_number|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label">TIN #</label><input class="form-control" name="tin_number" value="{{ selected.tin_number|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label">PAN #</label><input class="form-control" name="pan_number" value="{{ selected.pan_number|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label">Report dispatch type</label><input class="form-control" name="report_dispatch_type" value="{{ selected.report_dispatch_type|default:'' }}"></div>
+        <div class="col-12"><hr class="my-1"><div class="fw-semibold small">Contacts &amp; registration</div></div>
+        <div class="col-md-4"><label class="form-label">Contact person</label><input class="form-control" name="contact_person" value="{{ selected.contact_person|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label">Designation</label><input class="form-control" name="contact_designation" value="{{ selected.contact_designation|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label">Contact phone</label><input class="form-control" name="contact_phone" value="{{ selected.contact_phone|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label">Mobile 1</label><input class="form-control" name="contact_mobile_1" value="{{ selected.contact_mobile_1|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label">Mobile 2</label><input class="form-control" name="contact_mobile_2" value="{{ selected.contact_mobile_2|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label">Portal username</label><input class="form-control" name="portal_username" value="{{ selected.portal_username|default:'' }}"></div>
+        <div class="col-md-6"><label class="form-label">Report email</label><input class="form-control" name="report_email" value="{{ selected.report_email|default:'' }}"></div>
+        <div class="col-md-6"><label class="form-label">Comm email</label><input class="form-control" name="comm_email" value="{{ selected.comm_email|default:'' }}"></div>
+        <div class="col-md-6"><label class="form-label">Nature of business</label><input class="form-control" name="nature_of_business" value="{{ selected.nature_of_business|default:'' }}"></div>
+        <div class="col-md-6"><label class="form-label">Scope of business</label><input class="form-control" name="scope_of_business" value="{{ selected.scope_of_business|default:'' }}"></div>
+        <div class="col-md-6"><label class="form-label">Covering letter info</label><textarea class="form-control" name="covering_letter_info" rows="2">{{ selected.covering_letter_info|default:'' }}</textarea></div>
+        <div class="col-md-6"><label class="form-label">Invoice footer</label><textarea class="form-control" name="invoice_footer" rows="2">{{ selected.invoice_footer|default:'' }}</textarea></div>
+        <div class="col-md-6"><label class="form-label">Agreement file</label><input class="form-control" type="file" name="agreement_file"></div>
+        <div class="col-12">
+          <div class="row g-2">
+            <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" name="show_test_prices" id="show-prices" {% if selected and selected.show_test_prices or not selected %}checked{% endif %}><label class="form-check-label" for="show-prices">Test_Price_Display on receipt</label></div></div>
+            <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" name="enable_auto_locking" id="auto-lock" {% if selected and selected.enable_auto_locking %}checked{% endif %}><label class="form-check-label" for="auto-lock">Enable auto locking</label></div></div>
+            <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_copayment" id="copay" {% if selected and selected.is_copayment %}checked{% endif %}><label class="form-check-label" for="copay">Is co-payment</label></div></div>
+            <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" name="email_required" id="email-req" {% if selected and selected.email_required %}checked{% endif %}><label class="form-check-label" for="email-req">Email required to customer</label></div></div>
+            <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" name="sms_required" id="sms-req" {% if selected and selected.sms_required %}checked{% endif %}><label class="form-check-label" for="sms-req">SMS required to customer</label></div></div>
+            <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" name="trf_mandatory" id="trf" {% if selected and selected.trf_mandatory %}checked{% endif %}><label class="form-check-label" for="trf">TRF# mandatory</label></div></div>
+            <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" name="employee_id_mandatory" id="emp" {% if selected and selected.employee_id_mandatory %}checked{% endif %}><label class="form-check-label" for="emp">Employee ID mandatory</label></div></div>
+            <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" name="do_not_process_invoice" id="no-inv" {% if selected and selected.do_not_process_invoice %}checked{% endif %}><label class="form-check-label" for="no-inv">Do not process invoice</label></div></div>
+            <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_locked" id="lock" {% if selected and selected.is_locked %}checked{% endif %}><label class="form-check-label" for="lock">Lock</label></div></div>
+            <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="active" {% if selected and selected.is_active or not selected %}checked{% endif %}><label class="form-check-label" for="active">Active</label></div></div>
+          </div>
+        </div>
+        <div class="col-12 d-flex flex-wrap gap-2">
+          <button class="btn btn-primary" type="submit">{% if selected %}Save client{% else %}Create client{% endif %}</button>
+          {% if selected %}
+            <a class="btn btn-outline-dark" href="{% url 'enterprise-clients' %}">Clear</a>
+            {% if selected.is_active %}
+              <button class="btn btn-outline-warning" type="submit" name="action" value="deactivate" formaction="" formmethod="post">Deactivate</button>
+            {% else %}
+              <button class="btn btn-outline-success" type="submit" name="action" value="activate">Activate</button>
+            {% endif %}
+          {% endif %}
+        </div>
+      </form>
+    </div>
+    {% if selected and selected.client_type_code == 'CREDIT' %}
+    <div class="card p-4 mb-4">
+      <h2 class="h5">Credit wallet</h2>
+      <p class="muted">Balance <strong>₦{{ selected.credit_wallet_balance }}</strong> · Used <strong>₦{{ selected.credit_wallet_used }}</strong> · Allocated limit <strong>₦{{ selected.credit_limit }}</strong></p>
+      <form method="post" class="row g-2 align-items-end">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="top_up">
+        <input type="hidden" name="client" value="{{ selected.pk }}">
+        <div class="col-md-3"><label class="form-label">Top-up amount</label><input class="form-control" name="amount" required></div>
+        <div class="col-md-3"><label class="form-label">Reference</label><input class="form-control" name="reference"></div>
+        <div class="col-md-4"><label class="form-label">Note</label><input class="form-control" name="note"></div>
+        <div class="col-md-2"><button class="btn btn-outline-dark w-100" type="submit">Top up</button></div>
+      </form>
+      <div class="table-responsive mt-3">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>When</th><th>Type</th><th>Amount</th><th>Balance after</th><th>By</th><th>Note</th></tr></thead>
+          <tbody>
+            {% for row in ledger %}
+            <tr>
+              <td class="small">{{ row.created_at|date:"d M Y H:i" }}</td>
+              <td>{{ row.get_entry_type_display }}</td>
+              <td>₦{{ row.amount }}</td>
+              <td>₦{{ row.balance_after }}</td>
+              <td class="small">{{ row.created_by|default:"—" }}</td>
+              <td class="small">{{ row.note|default:row.reference }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="muted text-center">No wallet activity yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

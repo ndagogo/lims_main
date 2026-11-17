@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Bulk upload | {{ org_short_name }}{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="muted small">ENTERPRISE · CATALOGUE ONBOARDING</div>
+  <h1 class="h3 mb-1">Bulk upload</h1>
+  <p class="muted mb-0">Download a template, keep the header row, upload CSV/Excel, review duplicates and errors, then save ready rows. Missing optional fields can be completed later in the catalogue.</p>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-3">
+    <div class="card p-3">
+      <h2 class="h6">Datasets</h2>
+      <div class="list-group list-group-flush">
+        {% for row in datasets %}
+        <a class="list-group-item list-group-item-action {% if row.key == dataset_key %}active{% endif %}" href="?dataset={{ row.key }}">{{ row.label }}</a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-9">
+    <div class="card p-4 mb-4">
+      <h2 class="h5 mb-1">{{ dataset.label }}</h2>
+      <p class="muted">{{ dataset.description }}</p>
+      <div class="small mb-3">
+        <div class="fw-semibold">Template headers</div>
+        <code class="d-block mt-1" style="white-space:normal">{{ dataset.headers|join:", " }}</code>
+        {% if dataset.required_headers %}
+        <div class="muted mt-1">Required: {{ dataset.required_headers|join:", " }}</div>
+        {% endif %}
+      </div>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <form method="post" class="row g-2">
+            {% csrf_token %}
+            <input type="hidden" name="dataset" value="{{ dataset_key }}">
+            <input type="hidden" name="action" value="download_template">
+            <div class="col-8">
+              <select class="form-select" name="format">
+                <option value="xlsx">Excel template (.xlsx)</option>
+                <option value="csv">CSV template (.csv)</option>
+              </select>
+            </div>
+            <div class="col-4"><button class="btn btn-outline-dark w-100" type="submit">Download</button></div>
+          </form>
+        </div>
+        <div class="col-md-6">
+          <form method="post" enctype="multipart/form-data" class="row g-2">
+            {% csrf_token %}
+            <input type="hidden" name="dataset" value="{{ dataset_key }}">
+            <input type="hidden" name="action" value="validate">
+            <div class="col-8"><input class="form-control" type="file" name="upload_file" accept=".csv,.xlsx,.xlsm" required></div>
+            <div class="col-4"><button class="btn btn-primary w-100" type="submit">Validate</button></div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    {% if preview %}
+    <div class="card p-4">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+          <h2 class="h5 mb-1">Validation preview</h2>
+          <div class="muted small">
+            Ready {{ preview.ready_count }} · Duplicates {{ preview.duplicate_count }} · Errors {{ preview.error_count }}
+          </div>
+        </div>
+        <div class="d-flex gap-2">
+          <form method="post">{% csrf_token %}<input type="hidden" name="dataset" value="{{ dataset_key }}"><input type="hidden" name="action" value="clear"><button class="btn btn-outline-dark btn-sm" type="submit">Clear</button></form>
+          {% if preview.ready_count %}
+          <form method="post">{% csrf_token %}<input type="hidden" name="dataset" value="{{ dataset_key }}"><input type="hidden" name="action" value="save"><button class="btn btn-primary btn-sm" type="submit">Validate and Save</button></form>
+          {% endif %}
+        </div>
+      </div>
+      {% if preview.missing_headers %}
+      <div class="alert alert-danger">Missing headers: {{ preview.missing_headers|join:", " }}</div>
+      {% endif %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>Row</th><th>Status</th><th>Message</th><th>Preview</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in preview.outcomes %}
+            <tr class="{% if row.status == 'error' %}table-danger{% elif row.status == 'duplicate' %}table-warning{% elif row.status == 'ready' %}table-success{% endif %}">
+              <td>{{ row.row_number }}</td>
+              <td class="text-uppercase small fw-semibold">{{ row.status }}</td>
+              <td class="small">{{ row.message }}</td>
+              <td class="small muted">
+                {% for key, value in row.preview.items %}
+                  <span class="me-2"><strong>{{ key }}:</strong> {{ value }}</span>
+                {% empty %}—{% endfor %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="muted text-center py-3">No rows analysed.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="muted small mb-0">Only rows marked <strong>ready</strong> are saved. Duplicates and errors are skipped. Test/procedure/doctor codes are assigned automatically when blank.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

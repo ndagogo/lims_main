@@ -60,6 +60,78 @@ def active_workflow(code):
     )
 
 
+def published_workflows():
+    """One active published version per workflow code, for catalogue mapping."""
+    chosen = []
+    seen = set()
+    rows = WorkflowDefinition.objects.filter(status='PUBLISHED', is_active=True).order_by('name', 'code', '-version')
+    for row in rows:
+        if row.code in seen:
+            continue
+        seen.add(row.code)
+        chosen.append(row)
+    return chosen
+
+
+def require_published_workflow(code):
+    """Return a published workflow code. Required once any workflow is published."""
+    cleaned = (code or '').strip().upper().replace(' ', '_')
+    options = published_workflows()
+    if not cleaned:
+        if options:
+            raise ValidationError(
+                'Choose a published workflow. Each test and investigation must be mapped to one.'
+            )
+        return ''
+    if not any(row.code == cleaned for row in options):
+        if WorkflowDefinition.objects.filter(code=cleaned).exists():
+            raise ValidationError(
+                f'Workflow {cleaned} is not the active published version. Publish it, then map the item.'
+            )
+        raise ValidationError('Choose a workflow from the published list.')
+    return cleaned
+
+
+def bind_catalog_workflow(code, *, test=None, procedure=None):
+    """Record the catalogue mapping. Test-level and procedure-level assignments win over a service group."""
+    cleaned = require_published_workflow(code)
+    if test is not None:
+        if test.default_workflow_code != cleaned:
+            test.default_workflow_code = cleaned
+            test.save(update_fields=['default_workflow_code', 'updated_at'])
+        if cleaned:
+            WorkflowAssignment.objects.filter(test=test).exclude(workflow_code=cleaned).update(is_active=False)
+            row = WorkflowAssignment.objects.filter(test=test, workflow_code=cleaned).order_by('priority').first()
+            if row is None:
+                WorkflowAssignment.objects.create(
+                    test=test, workflow_code=cleaned, priority=10, is_active=True,
+                )
+            else:
+                row.is_active = True
+                row.priority = min(row.priority or 10, 10)
+                row.procedure = None
+                row.service_group = None
+                row.save(update_fields=['is_active', 'priority', 'procedure', 'service_group', 'updated_at'])
+    if procedure is not None:
+        if procedure.default_workflow_code != cleaned:
+            procedure.default_workflow_code = cleaned
+            procedure.save(update_fields=['default_workflow_code', 'updated_at'])
+        if cleaned:
+            WorkflowAssignment.objects.filter(procedure=procedure).exclude(workflow_code=cleaned).update(is_active=False)
+            row = WorkflowAssignment.objects.filter(procedure=procedure, workflow_code=cleaned).order_by('priority').first()
+            if row is None:
+                WorkflowAssignment.objects.create(
+                    procedure=procedure, workflow_code=cleaned, priority=10, is_active=True,
+                )
+            else:
+                row.is_active = True
+                row.priority = min(row.priority or 10, 10)
+                row.test = None
+                row.service_group = None
+                row.save(update_fields=['is_active', 'priority', 'test', 'service_group', 'updated_at'])
+    return cleaned
+
+
 def bind_workflow(lab_order):
     """Attach the active published workflow version. Never rewrite an existing binding."""
     existing = OrderWorkflowInstance.objects.filter(lab_order=lab_order).select_related(

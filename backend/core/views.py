@@ -242,13 +242,8 @@ def dashboard(request):
     accesses = UserCentreAccess.objects.filter(user=user, centre__is_active=True, can_view=True).select_related('centre')
     centres = list(Centre.objects.filter(is_active=True) if user.is_superuser else [row.centre for row in accesses])
     summary = build_operations_summary(user)
-    summary['sample_peak'] = max((row['count'] for row in summary['sample_pipeline']), default=1) or 1
-    summary['imaging_peak'] = max((row['count'] for row in summary['imaging_pipeline']), default=1) or 1
     queues = build_work_queues(user)
-    queues['recent_events'] = paginate(request, _events_for_role(queues['recent_events'], allowed_workspaces(user)), 'epage')
     queues['unpaid_invoices'] = paginate(request, queues['unpaid_invoices'], 'qpage')
-    queues['active_samples'] = paginate(request, queues['active_samples'], 'sampage')
-    queues['open_imaging'] = paginate(request, queues['open_imaging'], 'ipage')
     context = {
         'centres': centres,
         'centre_accesses': accesses,
@@ -261,26 +256,6 @@ def dashboard(request):
         context['catalog_counts'] = build_hub_context(request)['counts']
     context['show_platform_controls_entry'] = can_access_platform_controls(user)
     return render(request, 'core/dashboard.html', context)
-
-
-def _events_for_role(events, allowed):
-    if 'audit' in allowed:
-        return events
-    prefixes = []
-    if 'registration' in allowed:
-        prefixes.extend(('PATIENT_', 'VISIT_', 'REFERRAL_'))
-    if 'accounts' in allowed:
-        prefixes.extend(('INVOICE', 'PAYMENT', 'DISCOUNT'))
-    if 'laboratory' in allowed or 'phlebotomy' in allowed:
-        prefixes.append('LAB_')
-    if 'radiology' in allowed:
-        prefixes.extend(('RADIOLOGY_', 'IMAGING_'))
-    if not prefixes:
-        return events.none()
-    allowed_actions = Q()
-    for prefix in prefixes:
-        allowed_actions |= Q(action__startswith=prefix)
-    return events.filter(allowed_actions)
 
 
 @login_required
@@ -569,7 +544,15 @@ def patient_registration(request):
     doctors = ReferralDoctor.objects.filter(
         pk__in=doctor_ids_serving(centre_ids), is_active=True, is_default_placeholder=False,
     ).prefetch_related('institutions', 'centres').select_related('centre').order_by('last_name', 'first_name')
-    clients = OrganisationClient.objects.filter(is_active=True, centre_id__in=centre_ids).order_by('name')
+    clients = OrganisationClient.objects.filter(is_active=True, centre_id__in=centre_ids).select_related('tariff').order_by('name')
+    from patients.channel_seed import ensure_centre_channels, ensure_default_client_types
+    ensure_default_client_types()
+    for centre in centres:
+        ensure_centre_channels(centre, seed_self_tariff=True)
+    from patients.models import RegistrationChannel
+    reg_channels = RegistrationChannel.objects.filter(
+        centre_id__in=centre_ids, is_active=True,
+    ).select_related('tariff', 'centre')
     channel_catalog = {
         'doctors': [
             {
@@ -587,8 +570,29 @@ def patient_registration(request):
             for doctor in doctors
         ],
         'clients': [
-            {'id': str(client.pk), 'centre': str(client.centre_id), 'kind': client.kind, 'name': client.name}
+            {
+                'id': str(client.pk),
+                'centre': str(client.centre_id),
+                'kind': client.kind,
+                'client_type_code': client.client_type_code,
+                'name': client.name,
+                'tariff': str(client.tariff_id) if client.tariff_id else '',
+                'tariff_name': client.tariff.name if client.tariff_id else '',
+                'show_test_prices': bool(client.show_test_prices),
+                'wallet_balance': f'{client.credit_wallet_balance:.2f}',
+            }
             for client in clients
+        ],
+        'channels': [
+            {
+                'id': str(row.pk),
+                'centre': str(row.centre_id),
+                'code': row.code,
+                'tariff': str(row.tariff_id) if row.tariff_id else '',
+                'tariff_name': row.tariff.name if row.tariff_id else '',
+                'show_test_prices': bool(row.show_test_prices),
+            }
+            for row in reg_channels
         ],
     }
     selected = None

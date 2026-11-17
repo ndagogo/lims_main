@@ -20,6 +20,7 @@ from django.db.models import Count, Sum
 from billing.models import Invoice, Payment, Refund
 from billing.reports import PERIOD_CHOICES, _centre_scope, resolve_period
 from core.models import Centre
+from patients.models import CreditWalletLedger, OrganisationClient
 
 ZERO = Decimal('0.00')
 
@@ -77,6 +78,7 @@ def financial_kpis(user, *, period='monthly', centre_id=None, start=None, end=No
     refunds_total = money(refunds.aggregate(t=Sum('amount'))['t'])
     net_receipts = money(collections - refunds_total)
     outstanding = outstanding_receivables(centre_ids)
+    wallets = credit_wallet_kpis(centre_ids, start_dt, end_dt)
 
     payments_by_method = [
         {'method': row['method'], 'count': row['count'], 'total': money(row['total'])}
@@ -102,6 +104,11 @@ def financial_kpis(user, *, period='monthly', centre_id=None, start=None, end=No
             'refunds': 'Completed refunds in the period.',
             'net_receipts': 'Collections minus refunds.',
             'outstanding_receivables': 'Open invoice balances after net paid (payments − refunds).',
+            'credit_wallet_balance': 'Sum of remaining credit-client wallet balances (snapshot).',
+            'credit_wallet_used': 'Sum of wallet spend recorded on credit clients (snapshot).',
+            'credit_wallet_allocated': 'Sum of credit limits / allocated wallets (snapshot).',
+            'credit_top_ups': 'Wallet top-ups posted in the period.',
+            'credit_debits': 'Wallet registration debits posted in the period.',
         },
         'kpis': {
             'gross_charges': gross_charges,
@@ -114,8 +121,63 @@ def financial_kpis(user, *, period='monthly', centre_id=None, start=None, end=No
             'payment_count': payments.count(),
             'invoice_count': invoices.count(),
             'refund_count': refunds.count(),
+            **wallets['totals'],
         },
         'payments_by_method': payments_by_method,
+        'credit_wallets': wallets,
+    }
+
+
+def credit_wallet_kpis(centre_ids=None, start_dt=None, end_dt=None):
+    """Credit-client wallet snapshot plus period top-ups / debits."""
+    clients = OrganisationClient.objects.filter(
+        is_active=True, client_type_code='CREDIT',
+    ).select_related('centre', 'tariff').order_by('name')
+    if centre_ids is not None:
+        clients = clients.filter(centre_id__in=centre_ids)
+
+    rows = []
+    allocated = ZERO
+    balance = ZERO
+    used = ZERO
+    for client in clients:
+        allocated += money(client.credit_limit)
+        balance += money(client.credit_wallet_balance)
+        used += money(client.credit_wallet_used)
+        rows.append({
+            'id': str(client.pk),
+            'name': client.name,
+            'code': client.code,
+            'centre': client.centre.code,
+            'tariff': client.tariff.name if client.tariff_id else '—',
+            'allocated': money(client.credit_limit),
+            'balance': money(client.credit_wallet_balance),
+            'used': money(client.credit_wallet_used),
+        })
+
+    ledger = CreditWalletLedger.objects.filter(client__client_type_code='CREDIT')
+    if centre_ids is not None:
+        ledger = ledger.filter(client__centre_id__in=centre_ids)
+    if start_dt is not None:
+        ledger = ledger.filter(created_at__gte=start_dt)
+    if end_dt is not None:
+        ledger = ledger.filter(created_at__lte=end_dt)
+
+    top_ups = money(ledger.filter(entry_type='TOP_UP').aggregate(t=Sum('amount'))['t'])
+    debits = money(ledger.filter(entry_type='DEBIT').aggregate(t=Sum('amount'))['t'])
+    adjustments = money(ledger.filter(entry_type='ADJUSTMENT').aggregate(t=Sum('amount'))['t'])
+
+    return {
+        'totals': {
+            'credit_wallet_allocated': money(allocated),
+            'credit_wallet_balance': money(balance),
+            'credit_wallet_used': money(used),
+            'credit_client_count': clients.count(),
+            'credit_top_ups': top_ups,
+            'credit_debits': debits,
+            'credit_adjustments': adjustments,
+        },
+        'clients': rows[:50],
     }
 
 

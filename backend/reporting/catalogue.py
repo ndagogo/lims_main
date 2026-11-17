@@ -28,6 +28,9 @@ CATALOGUE_REPORTS = (
     ('revenue_test', 'Revenue by test'),
     ('revenue_department', 'Revenue by department'),
     ('commission', 'Referral commission accruals / reversals / payouts'),
+    ('commission_due', 'Referral commission due by doctor'),
+    ('referral_activity', 'Referral commission activity detail'),
+    ('institution_referrals', 'Institution referral performance'),
     ('hmo_statements', 'HMO & credit-client statements'),
     ('demographics', 'Patient demographics & gender'),
     ('utilisation', 'Service utilisation'),
@@ -36,7 +39,8 @@ CATALOGUE_REPORTS = (
 )
 
 
-def build_catalogue_report(user, report_key, *, period='monthly', centre_id=None, start=None, end=None):
+def build_catalogue_report(user, report_key, *, period='monthly', centre_id=None, start=None, end=None,
+                           doctor_id=None, institution_id=None, due_status=None, commission_type=None):
     period, start_dt, end_dt, label = period_window(period, start, end)
     centres, centre_ids, selected = centre_scope(user, centre_id)
     builders = {
@@ -47,6 +51,9 @@ def build_catalogue_report(user, report_key, *, period='monthly', centre_id=None
         'revenue_test': _revenue_by_test,
         'revenue_department': _revenue_by_department,
         'commission': _commission_report,
+        'commission_due': _commission_due_report,
+        'referral_activity': _referral_activity_report,
+        'institution_referrals': _institution_referrals_report,
         'hmo_statements': _hmo_statements,
         'demographics': _demographics,
         'utilisation': _utilisation,
@@ -54,7 +61,14 @@ def build_catalogue_report(user, report_key, *, period='monthly', centre_id=None
         'inventory': _inventory_report,
     }
     key = report_key if report_key in builders else 'revenue_centre'
-    title, headers, rows, meta = builders[key](centre_ids, start_dt, end_dt)
+    if key in ('commission_due', 'referral_activity', 'institution_referrals'):
+        title, headers, rows, meta = builders[key](
+            centre_ids, start_dt, end_dt,
+            doctor_id=doctor_id, institution_id=institution_id,
+            due_status=due_status, commission_type=commission_type,
+        )
+    else:
+        title, headers, rows, meta = builders[key](centre_ids, start_dt, end_dt)
     return {
         'report_key': key,
         'report_title': title,
@@ -199,6 +213,43 @@ def _commission_report(centre_ids, start_dt, end_dt):
         net = b['ACCRUAL'] + b['REVERSAL'] + b['SETTLEMENT'] + b['ADJUSTMENT']
         rows.append([b['code'], b['name'], b['ACCRUAL'], b['REVERSAL'], b['SETTLEMENT'], money(net)])
     return 'Referral commission ledger', headers, rows, {}
+
+
+def _referral_filter_payload(centre_ids, start_dt, end_dt, *, doctor_id=None, institution_id=None,
+                             due_status=None, commission_type=None):
+    return {
+        'start_dt': start_dt,
+        'end_dt': end_dt,
+        'centre_ids': centre_ids,
+        'doctor_id': doctor_id or None,
+        'institution_id': institution_id or None,
+        'due_status': due_status or None,
+        'commission_type': (commission_type or '').upper() or None,
+        'status': 'all',
+        'q': '',
+        'has_bank': '',
+        'appear_on_reports': '',
+        'marketer_id': None,
+        'invoice_status': None,
+    }
+
+
+def _commission_due_report(centre_ids, start_dt, end_dt, **kwargs):
+    from referrals.reporting import build_commission_due
+    report = build_commission_due(_referral_filter_payload(centre_ids, start_dt, end_dt, **kwargs))
+    return report['title'], report['headers'], report['rows'], report.get('meta') or {}
+
+
+def _referral_activity_report(centre_ids, start_dt, end_dt, **kwargs):
+    from referrals.reporting import build_referral_activity
+    report = build_referral_activity(_referral_filter_payload(centre_ids, start_dt, end_dt, **kwargs))
+    return report['title'], report['headers'], report['rows'], report.get('meta') or {}
+
+
+def _institution_referrals_report(centre_ids, start_dt, end_dt, **kwargs):
+    from referrals.reporting import build_institution_performance
+    report = build_institution_performance(_referral_filter_payload(centre_ids, start_dt, end_dt, **kwargs))
+    return report['title'], report['headers'], report['rows'], report.get('meta') or {}
 
 
 def _hmo_statements(centre_ids, start_dt, end_dt):

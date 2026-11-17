@@ -68,6 +68,8 @@ class ReportingEnterpriseTests(TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, 'GROSS CHARGES')
         self.assertContains(page, 'NET RECEIPTS')
+        self.assertContains(page, 'Credit wallets')
+        self.assertContains(page, 'WALLET BALANCE')
         self.assertContains(page, 'Clinical operations')
         self.assertContains(page, 'Centres')
         self.assertContains(page, 'Referral network')

@@ -50,16 +50,24 @@ def build_radiology_report_pdf(report, *, watermark_text=None):
     rule = HexColor('#d9d3c7')
     paper = HexColor('#f6f4ef')
 
+    from core.report_stationery import image_file
+
     identity = _identity_rows(report, snap)
     header_lines = _letterhead_lines(fmt, centre)
-    logo_extra = 6 * mm if (fmt.get('show_logo') and fmt.get('logo_path')) else 0
-    top_reserve = 12 * mm + logo_extra + (4 * mm * len(header_lines))
+    header_image = image_file(fmt, 'header_file')
+    footer_image = image_file(fmt, 'footer_file')
+    logo_extra = 6 * mm if (fmt.get('show_logo') and fmt.get('logo_path') and not header_image) else 0
+    if header_image:
+        top_reserve = 32 * mm
+    else:
+        top_reserve = 12 * mm + logo_extra + (4 * mm * len(header_lines))
+    bottom_extra = 16 * mm if footer_image else 0
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=A4,
         leftMargin=margin, rightMargin=margin,
-        topMargin=margin + top_reserve, bottomMargin=margin + 8 * mm,
+        topMargin=margin + top_reserve, bottomMargin=margin + 8 * mm + bottom_extra,
         title=f'{centre.code} {visit.visit_id}',
         pageCompression=0,
     )
@@ -183,13 +191,15 @@ def build_radiology_report_pdf(report, *, watermark_text=None):
         'fmt': fmt, 'centre': centre, 'font': font, 'bold': bold, 'size': size,
         'accent': accent, 'ink': ink, 'mute': mute, 'header_lines': header_lines,
         'title': _study_title(report, fmt), 'margin': margin, 'visit_id': visit.visit_id,
+        'header_image': header_image, 'footer_image': footer_image,
     }
 
     def _paint(pdf, document):
         _paint_page(pdf, document, ctx)
 
     doc.build(story, onFirstPage=_paint, onLaterPages=_paint)
-    return buffer.getvalue()
+    from core.report_stationery import apply_pdf_stationery
+    return apply_pdf_stationery(buffer.getvalue(), fmt)
 
 
 def _identity_rows(report, snap):
@@ -359,43 +369,53 @@ def _paint_page(pdf, doc, ctx):
         pdf.rect(0, height - 8, width, 8, fill=1, stroke=0)
 
     y = height - margin - 2
-    logo_path = fmt.get('logo_path') or ''
-    text_left = margin
-    if fmt.get('show_logo') and logo_path:
-        abs_logo = os.path.join(settings.MEDIA_ROOT, logo_path)
-        if os.path.isfile(abs_logo):
-            try:
-                pdf.drawImage(
-                    ImageReader(abs_logo), margin, y - 16 * 2.834, width=22 * 2.834, height=16 * 2.834,
-                    preserveAspectRatio=True, mask='auto', anchor='w',
-                )
-                text_left = margin + 26 * 2.834
-            except Exception:
-                text_left = margin
-
-    pdf.setFillColor(ctx['ink'])
-    pdf.setFont(bold, 13)
-    centre_name = fmt.get('centre_name') or ctx['centre'].name
-    pdf.drawString(text_left, y - 12, centre_name[:70])
-    pdf.setFillColor(ctx['accent'])
-    pdf.setFont(bold, 11)
-    pdf.drawRightString(width - margin, y - 12, ctx['title'][:42])
-    y -= 28
-    pdf.setFillColor(ctx['mute'])
-    pdf.setFont(font, 8)
-    for line in ctx['header_lines']:
-        pdf.drawString(text_left, y, line[:110])
-        y -= 11
+    header_image = ctx.get('header_image') or ''
+    if header_image:
+        from core.report_stationery import draw_fitted_image
+        draw_fitted_image(pdf, header_image, margin, y - 46, width - (2 * margin), 42)
+    else:
+        logo_path = fmt.get('logo_path') or ''
+        text_left = margin
+        if fmt.get('show_logo') and logo_path:
+            abs_logo = os.path.join(settings.MEDIA_ROOT, logo_path)
+            if os.path.isfile(abs_logo):
+                try:
+                    pdf.drawImage(
+                        ImageReader(abs_logo), margin, y - 16 * 2.834, width=22 * 2.834, height=16 * 2.834,
+                        preserveAspectRatio=True, mask='auto', anchor='w',
+                    )
+                    text_left = margin + 26 * 2.834
+                except Exception:
+                    text_left = margin
+        pdf.setFillColor(ctx['ink'])
+        pdf.setFont(bold, 13)
+        centre_name = fmt.get('centre_name') or ctx['centre'].name
+        pdf.drawString(text_left, y - 12, centre_name[:70])
+        pdf.setFillColor(ctx['accent'])
+        pdf.setFont(bold, 11)
+        pdf.drawRightString(width - margin, y - 12, ctx['title'][:42])
+        y -= 28
+        pdf.setFillColor(ctx['mute'])
+        pdf.setFont(font, 8)
+        for line in ctx['header_lines']:
+            pdf.drawString(text_left, y, line[:110])
+            y -= 11
     rule_y = height - doc.topMargin + 8
     pdf.setStrokeColor(ctx['accent'])
     pdf.setLineWidth(1.2)
     pdf.line(margin, rule_y, width - margin, rule_y)
 
     footer = (fmt.get('footer_text') or 'Released copies are authorised for clinical use.').strip()
+    footer_image = ctx.get('footer_image') or ''
+    footer_y = margin * 0.45
+    if footer_image:
+        from core.report_stationery import draw_fitted_image
+        draw_fitted_image(pdf, footer_image, margin, 16, width - (2 * margin), 28)
+        footer_y = 48
     pdf.setFillColor(ctx['mute'])
     pdf.setFont(font, 7.5)
-    pdf.drawString(margin, margin * 0.45, footer[:110])
-    pdf.drawRightString(width - margin, margin * 0.45, f'{ctx["visit_id"]}  ·  Page {doc.page}')
+    pdf.drawString(margin, footer_y, footer[:110])
+    pdf.drawRightString(width - margin, footer_y, f'{ctx["visit_id"]}  ·  Page {doc.page}')
     pdf.restoreState()
 
 

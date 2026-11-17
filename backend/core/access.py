@@ -126,6 +126,33 @@ def can_change_referring_doctor(user):
     return user.groups.filter(name__in=('Centre Administrator', 'Platform Administrator', 'Front Desk')).exists()
 
 
+def can_manage_referrals(user):
+    """Enterprise referral workspace: directory, commission due, visits, payouts."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if user.is_superuser or is_platform_admin(user):
+        return True
+    if is_accountant(user):
+        return True
+    if user.has_perm('referrals.approve_referral_settlement'):
+        return True
+    if user.has_perm('referrals.change_referring_doctor'):
+        return True
+    if user.has_perm('referrals.view_commissionledgerentry'):
+        return True
+    return user.groups.filter(name__in=('Centre Administrator', 'Auditor')).exists()
+
+
+def can_approve_referral_settlement(user):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if user.is_superuser or is_platform_admin(user):
+        return True
+    if user.has_perm('referrals.approve_referral_settlement'):
+        return True
+    return user.groups.filter(name__in=ACCOUNTS_ROLES).exists()
+
+
 def can_refund_payment(user):
     """Per-test cancel/refund — payment_refund or Accounts/oversight roles."""
     if not user or not getattr(user, 'is_authenticated', False):

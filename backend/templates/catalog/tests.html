@@ -31,12 +31,12 @@
     </div>
     <div class="card p-4 catalog-enter">
       <h2 class="h5">Create test</h2>
-      <form method="post" class="row g-3">
+      <form method="post" class="row g-3" id="create-test-form" data-existing-names='[{% for n in existing_test_names %}"{{ n|escapejs }}"{% if not forloop.last %},{% endif %}{% endfor %}]'>
         {% csrf_token %}
         <input type="hidden" name="action" value="create">
         <input type="hidden" name="is_active_submitted" value="1">
-        <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" name="code" required></div>
-        <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" required></div>
+        <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" value="Auto on save" readonly tabindex="-1"><div class="form-text">2 letters of name + 2 of org/centre + 5 digits. Immutable.</div></div>
+        <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" id="create-test-name" required autocomplete="off"></div>
         <div class="col-md-5"><label class="form-label">Department</label><input class="form-control" name="department" value="PATHOLOGY"></div>
         <div class="col-md-2"><label class="form-label">Dept digit</label><input class="form-control" name="department_code" value="1" maxlength="1"></div>
         <div class="col-md-5">
@@ -64,7 +64,11 @@
         <div class="col-12"><label class="form-label">Collection requirements</label><textarea class="form-control" name="collection_requirements" rows="2"></textarea></div>
         <div class="col-12"><label class="form-label">Handling instructions</label><textarea class="form-control" name="handling_instructions" rows="2"></textarea></div>
         <div class="col-md-4"><label class="form-label">Workflow</label>
-          <select class="form-select" name="default_workflow_code"><option value="">Auto</option>{% for code in workflow_codes %}<option>{{ code }}</option>{% endfor %}</select>
+          <select class="form-select" name="default_workflow_code" {% if published_workflows %}required{% endif %}>
+            <option value="">{% if published_workflows %}Select a workflow{% else %}Publish a workflow first{% endif %}</option>
+            {% for wf in published_workflows %}<option value="{{ wf.code }}">{{ wf.name }} ({{ wf.code }})</option>{% endfor %}
+          </select>
+          <div class="form-text">Published workflows only. New orders for this test follow this mapping.</div>
         </div>
         <div class="col-md-4"><label class="form-label">TAT target (min)</label><input class="form-control" name="tat_target_minutes" type="number" min="1"></div>
         <div class="col-md-4 d-flex align-items-end gap-3">
@@ -87,12 +91,12 @@
           {% include "catalog/_active_badge.html" with is_active=selected.is_active %}
         </div>
         {% include "catalog/_soft_actions.html" with pk_name="test" pk_value=selected.pk is_active=selected.is_active delete_action="delete" confirm_label=selected.code %}
-        <form method="post" class="row g-2 mt-3">
+        <form method="post" class="row g-2 mt-3" id="update-test-form" data-exclude-name="{{ selected.name|escapejs }}" data-existing-names='[{% for n in existing_test_names %}"{{ n|escapejs }}"{% if not forloop.last %},{% endif %}{% endfor %}]'>
           {% csrf_token %}
           <input type="hidden" name="action" value="update">
           <input type="hidden" name="test" value="{{ selected.pk }}">
-          <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" name="code" value="{{ selected.code }}" required></div>
-          <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ selected.name }}" required></div>
+          <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" value="{{ selected.code }}" readonly tabindex="-1"><div class="form-text">Immutable auto code.</div></div>
+          <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" id="update-test-name" value="{{ selected.name }}" required autocomplete="off"></div>
           <div class="col-md-6"><label class="form-label">Department</label><input class="form-control" name="department" value="{{ selected.department }}"></div>
           <div class="col-md-3"><label class="form-label">Dept digit</label><input class="form-control" name="department_code" value="{{ selected.department_code }}" maxlength="1"></div>
           <div class="col-md-3 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="edit-test-active" {% if selected.is_active %}checked{% endif %}><label class="form-check-label" for="edit-test-active">Active</label></div></div>
@@ -120,10 +124,11 @@
           <div class="col-12"><label class="form-label">Collection requirements</label><textarea class="form-control" name="collection_requirements" rows="2">{{ selected.collection_requirements }}</textarea></div>
           <div class="col-12"><label class="form-label">Handling instructions</label><textarea class="form-control" name="handling_instructions" rows="2">{{ selected.handling_instructions }}</textarea></div>
           <div class="col-md-4"><label class="form-label">Workflow</label>
-            <select class="form-select" name="default_workflow_code">
-              <option value="">Auto</option>
-              {% for code in workflow_codes %}<option {% if selected.default_workflow_code == code %}selected{% endif %}>{{ code }}</option>{% endfor %}
+            <select class="form-select" name="default_workflow_code" {% if published_workflows %}required{% endif %}>
+              <option value="">{% if published_workflows %}Select a workflow{% else %}Publish a workflow first{% endif %}</option>
+              {% for wf in published_workflows %}<option value="{{ wf.code }}" {% if selected.default_workflow_code == wf.code %}selected{% endif %}>{{ wf.name }} ({{ wf.code }})</option>{% endfor %}
             </select>
+            <div class="form-text">Published workflows only. New orders for this test follow this mapping.</div>
           </div>
           <div class="col-md-4"><label class="form-label">TAT target (min)</label><input class="form-control" name="tat_target_minutes" type="number" min="1" value="{{ selected.tat_target_minutes|default_if_none:'' }}"></div>
           <div class="col-md-4"><label class="form-label">Default result template</label>
@@ -385,4 +390,35 @@
     </div>
   </div>
 </div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+  var MESSAGE = 'This test already exist. You can not proceed!';
+  function normalize(value) {
+    return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+  function guard(form) {
+    if (!form) return;
+    form.addEventListener('submit', function (event) {
+      var input = form.querySelector('input[name="name"]');
+      var typed = normalize(input && input.value);
+      if (!typed) return;
+      var existing = [];
+      try { existing = JSON.parse(form.getAttribute('data-existing-names') || '[]'); } catch (err) { existing = []; }
+      var exclude = normalize(form.getAttribute('data-exclude-name') || '');
+      var clash = existing.some(function (name) {
+        var key = normalize(name);
+        return key === typed && key !== exclude;
+      });
+      if (clash) {
+        event.preventDefault();
+        alert(MESSAGE);
+      }
+    });
+  }
+  guard(document.getElementById('create-test-form'));
+  guard(document.getElementById('update-test-form'));
+})();
+</script>
 {% endblock %}

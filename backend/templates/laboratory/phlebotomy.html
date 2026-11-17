@@ -1,82 +1,111 @@
 {% extends "base.html" %}
-{% block title %}Phlebotomy | {{ org_short_name }}{% endblock %}
+{% block title %}Sample collection | {{ org_short_name }}{% endblock %}
+{% block extra_head %}
+<style>
+  .sc-desk { background: #fff; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .sc-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; padding: .85rem 1rem; border-bottom: 1px solid var(--line); background: #fbfaf7; }
+  .sc-title { font-family: Newsreader, Georgia, serif; font-size: 1.35rem; line-height: 1.1; margin: 0; }
+  .sc-centre { font-weight: 650; color: var(--sage-ink); }
+  .sc-search { display: flex; gap: .4rem; align-items: center; flex: 1 1 22rem; max-width: 40rem; }
+  .sc-search .form-control, .sc-search .form-select, .sc-dates .form-control { width: auto; height: 2rem; min-height: 2rem; font-size: .86rem; }
+  .sc-search .form-control { flex: 1 1 12rem; min-width: 10rem; }
+  .sc-search .form-select { flex: 0 1 11rem; }
+  .sc-dates .form-control { width: 9.2rem; }
+  .sc-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem; padding: .55rem .85rem; border-bottom: 1px solid var(--line); }
+  .sc-tabs { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .sc-tab { display: inline-flex; align-items: center; gap: .45rem; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 999px; padding: .28rem .7rem; font-size: .86rem; font-weight: 600; text-decoration: none; }
+  .sc-tab.active { background: var(--sage); border-color: #cfe0d4; color: var(--sage-ink); }
+  .sc-count { min-width: 1.4rem; text-align: center; border-radius: 999px; background: #e7e5e4; color: var(--ink); font-size: .75rem; padding: .05rem .4rem; }
+  .sc-tab.active .sc-count { background: var(--sage-ink); color: #fff; }
+  .sc-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+  .sc-mandatory { color: var(--danger); font-size: .78rem; font-weight: 650; }
+  .sc-dates { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+  .sc-body { padding: .85rem; }
+  .sc-identity { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .55rem .7rem; }
+  .sc-field label { display: block; font-size: .72rem; font-weight: 650; letter-spacing: .02em; color: #57534e; margin-bottom: .15rem; }
+  .sc-field .form-control, .sc-field .form-select { width: 100%; height: 2rem; min-height: 2rem; font-size: .86rem; background: #fff; }
+  .sc-field .is-readonly { background: #fafaf9; }
+  .sc-span-2 { grid-column: span 2; }
+  .sc-tests { margin-top: .9rem; }
+  .sc-tests h2 { font-size: .95rem; margin: 0 0 .4rem; }
+  .sc-grid { font-size: .8rem; min-width: 1180px; }
+  .sc-grid th { white-space: nowrap; font-size: .72rem; letter-spacing: .01em; color: #44403c; background: #fafaf9; position: sticky; top: 0; }
+  .sc-grid td { vertical-align: middle; }
+  .sc-clip { max-width: 11rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sc-queue { margin-top: .9rem; }
+  .sc-empty { padding: 1.4rem .2rem; color: var(--muted); }
+  @media (max-width: 1100px) {
+    .sc-identity { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sc-span-2 { grid-column: span 2; }
+  }
+</style>
+{% endblock %}
 {% block content %}
-<div class="hero-band dash-enter">
-  <div class="muted small mb-1">STEP 3 · SAMPLE COLLECTION</div>
-  <h1 class="h3 mb-1">Phlebotomy &amp; barcode generation</h1>
-  <p class="muted mb-0">Only fully paid (or credit-cleared) orders appear here. Each collection creates a unique sample ID and Code128 barcode.</p>
-</div>
+<section class="sc-desk">
+  <div class="sc-top">
+    <div>
+      <h1 class="sc-title">Sample collection</h1>
+      <div class="small muted">Phlebotomy and barcode generation. Only paid or credit-cleared orders are listed. Each selected test receives its own sample ID and Code128 barcode.</div>
+    </div>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      {% if desk_centre %}<span class="sc-centre">{{ desk_centre.name }}</span>{% endif %}
+      <form method="get" class="sc-search">
+        <input type="hidden" name="queue" value="{{ queue }}">
+        {% if centres|length > 1 %}
+        <select class="form-select" name="centre" aria-label="Centre">
+          <option value="">All centres</option>
+          {% for centre in centres %}
+          <option value="{{ centre.pk }}" {% if centre_filter == centre.pk|stringformat:"s" %}selected{% endif %}>{{ centre.name }}</option>
+          {% endfor %}
+        </select>
+        {% endif %}
+        <input class="form-control" name="q" value="{{ search_query }}" placeholder="Visit, UHID, patient, phone, or test" aria-label="Search collection queue">
+        <button class="btn btn-sm btn-dark" type="submit">Search</button>
+      </form>
+    </div>
+  </div>
 
-<div class="row g-3 mb-4">
-  <div class="col-sm-6 col-lg-3">
-    <div class="kpi">
-      <span class="kpi-icon" style="background:#e7f4f2;color:#0f5c56"><i class="bi bi-hourglass-split"></i></span>
-      <div>
-        <div class="kpi-label">WAITING</div>
-        <div class="kpi-value">{{ pending_count }}</div>
-      </div>
+  <div class="sc-bar">
+    <div class="sc-tabs">
+      <a class="sc-tab {% if queue == 'recollect' and not desk_view %}active{% endif %}" href="{{ recollect_href }}">Pending recollection <span class="sc-count">{{ recollect_count }}</span></a>
+      <a class="sc-tab {% if queue == 'pending' and not desk_view %}active{% endif %}" href="{{ pending_href }}">Pending <span class="sc-count">{{ pending_count }}</span></a>
+    </div>
+    <form method="get" class="sc-dates">
+      <input type="hidden" name="queue" value="{{ queue }}">
+      {% if search_query %}<input type="hidden" name="q" value="{{ search_query }}">{% endif %}
+      {% if centre_filter %}<input type="hidden" name="centre" value="{{ centre_filter }}">{% endif %}
+      <label class="small muted mb-0" for="sc-from">From</label>
+      <input id="sc-from" class="form-control" type="date" name="from" value="{{ date_from }}">
+      <label class="small muted mb-0" for="sc-to">To</label>
+      <input id="sc-to" class="form-control" type="date" name="to" value="{{ date_to }}">
+      <button class="btn btn-sm btn-outline-dark" type="submit">Go</button>
+    </form>
+    <div class="sc-actions">
+      <span class="sc-mandatory">Select a test before saving</span>
+      {% if identity and not desk_view %}
+      <button class="btn btn-sm btn-primary" type="submit" form="sc-collect"><i class="bi bi-check2"></i> Save</button>
+      {% endif %}
+      <a class="btn btn-sm btn-outline-dark" href="{{ clear_href }}">Clear</a>
+      <a class="btn btn-sm btn-outline-dark" href="{{ history_href }}" title="Collected samples, labels, and recollection of a drawn sample"><i class="bi bi-grid"></i> View</a>
     </div>
   </div>
-  <div class="col-sm-6 col-lg-3">
-    <div class="kpi">
-      <span class="kpi-icon" style="background:#eef3ff;color:#314e8c"><i class="bi bi-upc-scan"></i></span>
-      <div>
-        <div class="kpi-label">READY TO HAND OFF</div>
-        <div class="kpi-value">{{ collected_count }}</div>
-      </div>
-    </div>
-  </div>
-  <div class="col-sm-6 col-lg-3">
-    <div class="kpi">
-      <span class="kpi-icon" style="background:#f4f1ea;color:#3d3a33"><i class="bi bi-clock-history"></i></span>
-      <div>
-        <div class="kpi-label">COLLECTION HISTORY</div>
-        <div class="kpi-value">{{ history_count }}</div>
-      </div>
-    </div>
-  </div>
-</div>
 
-<div class="row g-3">
-  <div class="col-lg-7">
-    <div class="card p-4">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2 class="h5 mb-0">Waiting for collection</h2>
-        <span class="badge badge-soft">Payment confirmed</span>
+  <div class="sc-body">
+    {% if desk_view == 'history' %}
+      <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+        <div>
+          <h2 class="h5 mb-1">Collected samples</h2>
+          <p class="muted small mb-0">Print the barcode, or recollect a drawn sample. Recollection supersedes the original and issues a new sample ID.</p>
+        </div>
+        <a class="btn btn-sm btn-outline-dark" href="{{ pending_href }}">Back to collection</a>
       </div>
-      {% for order in pending_orders %}
-        <form method="post" class="border-bottom py-3">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="collect">
-          <input type="hidden" name="order" value="{{ order.pk }}">
-          <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
-            <div>
-              <div class="fw-semibold">{{ order.visit.patient.first_name }} {{ order.visit.patient.last_name }}</div>
-              <div class="small muted">{{ order.visit.visit_id }} · UHID {{ order.visit.patient.uhid }}</div>
-              <div class="small">{{ order.test.name }} {% include "includes/stat_badge.html" with stat=order.stat %} · {{ order.test.department }} · {{ order.visit.centre.code }}</div>
-            </div>
-            <div class="d-flex flex-column gap-2" style="min-width:11rem">
-              <input class="form-control form-control-sm" name="note" placeholder="Collection note (optional)">
-              <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-droplet-half"></i> Collect &amp; barcode</button>
-            </div>
-          </div>
-        </form>
-      {% empty %}
-        <p class="muted mb-0">No paid orders are waiting for collection.</p>
-      {% endfor %}
-      {% include "includes/pagination.html" with page=pending_orders %}
-    </div>
-  </div>
-  <div class="col-lg-5">
-    <div class="card p-4">
-      <h2 class="h5 mb-3">Collected — print &amp; hand off</h2>
       {% for sample in collected_samples %}
         <div class="border-bottom py-3">
           <div class="d-flex justify-content-between gap-2 align-items-start">
             <div>
               <div class="fw-semibold font-monospace">{{ sample.sample_id }}</div>
-              <div class="small muted">{{ sample.order.test.name }} {% include "includes/stat_badge.html" with stat=sample.order.stat %} · {{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }}</div>
-              <div class="small muted">{% if sample.collected_at %}{{ sample.collected_at|date:"Y-m-d H:i" }}{% endif %}</div>
+              <div class="small">{{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }} · {{ sample.order.test.name }} {% include "includes/stat_badge.html" with stat=sample.order.stat %}</div>
+              <div class="small muted">{{ sample.order.visit.visit_id }} · {{ sample.centre.code }}{% if sample.collected_at %} · {{ sample.collected_at|date:"d-M-Y H:i" }}{% endif %}</div>
             </div>
             <a class="btn btn-sm btn-outline-dark" href="{% url 'sample-label' sample.pk %}?print=1" target="_blank"><i class="bi bi-upc"></i> Label</a>
           </div>
@@ -85,94 +114,269 @@
             <input type="hidden" name="action" value="recollect">
             <input type="hidden" name="sample" value="{{ sample.pk }}">
             <div class="row g-1">
-              <div class="col-12">
-                <input class="form-control form-control-sm" name="reason" placeholder="Reason for recollection (original will be superseded)" required>
+              <div class="col-md-5">
+                <input class="form-control form-control-sm" name="reason" placeholder="Reason for recollection" required>
               </div>
-              <div class="col-6">
-                <select class="form-select form-select-sm" name="disposition" title="Disposition of original">
+              <div class="col-md-3">
+                <select class="form-select form-select-sm" name="disposition" aria-label="Disposition of original">
                   <option value="SUPERSEDED">Superseded</option>
                   <option value="UNSUITABLE">Unsuitable</option>
                   <option value="REJECTED">Rejected</option>
                 </select>
               </div>
-              <div class="col-6">
-                <input class="form-control form-control-sm" name="corrective_action" placeholder="Corrective action (optional)">
+              <div class="col-md-2">
+                <input class="form-control form-control-sm" name="corrective_action" placeholder="Corrective action">
               </div>
-              <div class="col-12">
-                <button class="btn btn-sm btn-outline-danger w-100" type="submit">Recollect &amp; supersede</button>
+              <div class="col-md-2">
+                <button class="btn btn-sm btn-outline-danger w-100" type="submit">Recollect</button>
               </div>
             </div>
           </form>
         </div>
       {% empty %}
-        <p class="muted mb-0">No collected samples waiting to leave phlebotomy.</p>
+        <p class="muted">No collected samples are waiting to leave phlebotomy.</p>
       {% endfor %}
       {% include "includes/pagination.html" with page=collected_samples %}
-    </div>
-  </div>
-</div>
 
-<div class="card p-4 mt-3">
-  <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
-    <div>
-      <h2 class="h5 mb-1">Collection history</h2>
-      <p class="muted small mb-0">Every sample collected at your centres, including those already batched, received, released, rejected, or superseded.</p>
+      <h2 class="h5 mt-4 mb-2">Collection history</h2>
+      <form method="get" class="row g-2 mb-3">
+        <input type="hidden" name="view" value="history">
+        <input type="hidden" name="queue" value="{{ queue }}">
+        <div class="col-md-5">
+          <input class="form-control form-control-sm" name="hq" value="{{ history_query }}" placeholder="Sample ID, patient, UHID, visit, or test" aria-label="Search collection history">
+        </div>
+        <div class="col-md-2"><input class="form-control form-control-sm" type="date" name="hfrom" value="{{ history_from }}" aria-label="History from"></div>
+        <div class="col-md-2"><input class="form-control form-control-sm" type="date" name="hto" value="{{ history_to }}" aria-label="History to"></div>
+        <div class="col-md-3"><button class="btn btn-sm btn-dark" type="submit">Search history</button></div>
+      </form>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr><th>Collected</th><th>Sample</th><th>Patient</th><th>Test</th><th>Collected by</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for sample in collection_history %}
+            <tr>
+              <td class="small">{% if sample.collected_at %}{{ sample.collected_at|date:"d-M-Y H:i" }}{% else %}—{% endif %}</td>
+              <td><div class="fw-semibold font-monospace">{{ sample.sample_id }}</div><div class="small muted">{{ sample.order.visit.visit_id }} · {{ sample.centre.code }}</div></td>
+              <td><div>{{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }}</div><div class="small muted">{{ sample.order.visit.patient.uhid }}</div></td>
+              <td class="small">{{ sample.order.test.name }} {% include "includes/stat_badge.html" with stat=sample.order.stat %}</td>
+              <td class="small">{{ sample.collected_by|default:"—" }}</td>
+              <td><span class="badge-soft badge rounded-pill">{{ sample.get_status_display }}</span></td>
+              <td class="text-end"><a class="btn btn-sm btn-outline-dark" href="{% url 'sample-label' sample.pk %}" target="_blank">Label</a></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" class="muted">No collected samples match this history.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=collection_history %}
+    {% elif identity %}
+      <form id="sc-collect" method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="{% if queue == 'recollect' %}recollect_selected{% else %}collect_selected{% endif %}">
+        <input type="hidden" name="visit" value="{{ identity.visit.pk }}">
+        <div class="sc-identity">
+          <div class="sc-field">
+            <label for="sc-vid">VID#</label>
+            <input id="sc-vid" class="form-control is-readonly" value="{{ identity.visit.visit_id }}" readonly>
+          </div>
+          <div class="sc-field">
+            <label for="sc-bill">Bill date</label>
+            <input id="sc-bill" class="form-control is-readonly" value="{{ identity.bill_date|date:'d-M-Y H:i' }}" readonly>
+          </div>
+          <div class="sc-field">
+            <label for="sc-uhid">UHID#</label>
+            <input id="sc-uhid" class="form-control is-readonly" value="{{ identity.patient.uhid }}" readonly>
+          </div>
+          <div class="sc-field sc-span-2">
+            <label for="sc-patient">Patient name</label>
+            <input id="sc-patient" class="form-control is-readonly" value="{{ identity.name }}" readonly>
+          </div>
+          <div class="sc-field">
+            <label for="sc-sex">Gender / age</label>
+            <input id="sc-sex" class="form-control is-readonly" value="{{ identity.gender_age|default:'—' }}" readonly>
+          </div>
+          <div class="sc-field sc-span-2">
+            <label for="sc-ref">Referred by</label>
+            <input id="sc-ref" class="form-control is-readonly" value="{{ identity.referring|default:'—' }}" readonly>
+          </div>
+          <div class="sc-field">
+            <label for="sc-mobile">Mobile#</label>
+            <input id="sc-mobile" class="form-control is-readonly" value="{{ identity.mobile|default:'—' }}" readonly>
+          </div>
+          <div class="sc-field sc-span-2">
+            <label for="sc-comments">Comments</label>
+            <input id="sc-comments" class="form-control" name="comments" value="{{ identity.visit.comments }}" maxlength="500">
+          </div>
+          <div class="sc-field">
+            <label for="sc-phleb">Phlebotomist</label>
+            <select id="sc-phleb" class="form-select" name="phlebotomist">
+              {% for person in phlebotomists %}
+              <option value="{{ person.pk }}" {% if person.pk == request.user.pk %}selected{% endif %}>{{ person }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="sc-field">
+            <label for="sc-channel">Channel type</label>
+            <input id="sc-channel" class="form-control is-readonly" value="{{ identity.channel }}" readonly>
+          </div>
+          <div class="sc-field">
+            <label for="sc-referral">Referral</label>
+            <input id="sc-referral" class="form-control is-readonly" value="{{ identity.referring|default:'—' }}" readonly>
+          </div>
+        </div>
+
+        <div class="sc-tests">
+          <h2>Test details</h2>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover sc-grid mb-0">
+              <thead>
+                <tr>
+                  <th><label class="d-flex align-items-center gap-1 mb-0"><input id="sc-all" type="checkbox" aria-label="All"> All</label></th>
+                  <th>Test name</th>
+                  <th>Service group name</th>
+                  <th>STAT</th>
+                  <th>Sample type</th>
+                  <th>Vacutainer</th>
+                  <th>PreRequisition</th>
+                  <th>Routine</th>
+                  <th>Processing centre</th>
+                  <th>Recollect reason</th>
+                  <th>History type</th>
+                  <th>BT/CT</th>
+                  <th>Mantoux</th>
+                  <th>Gross info</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in desk_rows %}
+                <tr>
+                  <td>
+                    {% if row.kind == 'sample' %}
+                    <input class="sc-row" type="checkbox" name="sample" value="{{ row.sample.pk }}" aria-label="Select {{ row.order.test.name }}">
+                    {% else %}
+                    <input class="sc-row" type="checkbox" name="order" value="{{ row.order.pk }}" aria-label="Select {{ row.order.test.name }}">
+                    {% endif %}
+                  </td>
+                  <td class="fw-semibold">{{ row.order.test.name }}</td>
+                  <td>{{ row.order.desk_group|default:"—" }}</td>
+                  <td>{% include "includes/stat_badge.html" with stat=row.order.stat %}{% if not row.order.stat %}—{% endif %}</td>
+                  <td>{{ row.order.desk_specimen|default:"—" }}</td>
+                  <td>{{ row.order.desk_vacutainer|default:"—" }}</td>
+                  <td><div class="sc-clip" title="{{ row.order.desk_prereq }}">{{ row.order.desk_prereq|default:"—" }}</div></td>
+                  <td>{{ row.order.desk_routine }}</td>
+                  <td>{{ row.order.visit.centre.name }}</td>
+                  <td>
+                    {% if row.kind == 'sample' %}
+                    <input class="form-control form-control-sm" name="reason-{{ row.sample.pk }}" value="{{ row.reason }}" placeholder="Reason" aria-label="Recollect reason for {{ row.order.test.name }}">
+                    {% else %}—{% endif %}
+                  </td>
+                  <td><div class="sc-clip" title="{{ row.order.desk_history }}">{{ row.order.desk_history|default:"—" }}</div></td>
+                  <td>{{ row.order.desk_bt|default:"—" }}</td>
+                  <td>{{ row.order.desk_mantoux|default:"—" }}</td>
+                  <td><div class="sc-clip" title="{{ row.order.desk_gross }}">{{ row.order.desk_gross|default:"—" }}</div></td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="14" class="muted">This visit has no tests in the {{ queue }} queue.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </form>
+    {% elif queue == 'recollect' %}
+      <p class="sc-empty mb-0">No samples are waiting for recollection.</p>
+    {% elif not pending_orders %}
+      <p class="sc-empty mb-0">No paid orders are waiting for collection.</p>
+    {% endif %}
+
+    {% if not desk_view and queue == 'recollect' %}
+    <div class="sc-queue">
+      <h2 class="h6 mb-2">Recollection queue</h2>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr><th>Sample</th><th>Patient</th><th>Test name</th><th>STAT</th><th>Reason</th><th>Processing centre</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for sample in recollect_samples %}
+            <tr>
+              <td class="font-monospace small">{{ sample.sample_id }}</td>
+              <td>
+                <div class="fw-semibold">{{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }}</div>
+                <div class="small muted">{{ sample.order.visit.visit_id }} · UHID {{ sample.order.visit.patient.uhid }}</div>
+              </td>
+              <td>{{ sample.order.test.name }}</td>
+              <td>{% include "includes/stat_badge.html" with stat=sample.order.stat %}</td>
+              <td class="small">{{ sample.rejection_reason|default:"—" }}</td>
+              <td class="small">{{ sample.centre.name }}</td>
+              <td class="text-end"><a class="btn btn-sm btn-outline-dark" href="?queue=recollect&amp;visit={{ sample.order.visit.pk }}{% if filter_qs %}&amp;{{ filter_qs }}{% endif %}">Open</a></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" class="muted">No samples are waiting for recollection.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=recollect_samples %}
     </div>
+    {% endif %}
+
+    {% if not desk_view and queue == 'pending' %}
+    <div class="sc-queue">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="h6 mb-0">Pending queue</h2>
+        <span class="badge badge-soft">Payment confirmed</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th>VID#</th>
+              <th>Patient</th>
+              <th>Test name</th>
+              <th>STAT</th>
+              <th>Sample type</th>
+              <th>Vacutainer</th>
+              <th>Processing centre</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for order in pending_orders %}
+            <tr>
+              <td class="font-monospace small">{{ order.visit.visit_id }}</td>
+              <td>
+                <div class="fw-semibold">{{ order.visit.patient.first_name }} {{ order.visit.patient.last_name }}</div>
+                <div class="small muted">UHID {{ order.visit.patient.uhid }}</div>
+              </td>
+              <td>{{ order.test.name }}</td>
+              <td>{% include "includes/stat_badge.html" with stat=order.stat %}</td>
+              <td class="small">{{ order.desk_specimen|default:"—" }}</td>
+              <td class="small">{{ order.desk_vacutainer|default:"—" }}</td>
+              <td class="small">{{ order.visit.centre.name }}</td>
+              <td class="text-end"><a class="btn btn-sm btn-outline-dark" href="?queue=pending&amp;visit={{ order.visit.pk }}{% if filter_qs %}&amp;{{ filter_qs }}{% endif %}">Open</a></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="8" class="muted">No paid orders are waiting for collection.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=pending_orders %}
+    </div>
+    {% endif %}
   </div>
-  <form method="get" class="row g-2 mb-3">
-    <div class="col-md-5">
-      <label class="form-label small">Search</label>
-      <input class="form-control form-control-sm" name="hq" value="{{ history_query }}" placeholder="Sample ID, patient, UHID, visit, or test">
-    </div>
-    <div class="col-md-2">
-      <label class="form-label small">From</label>
-      <input class="form-control form-control-sm" type="date" name="hfrom" value="{{ history_from }}">
-    </div>
-    <div class="col-md-2">
-      <label class="form-label small">To</label>
-      <input class="form-control form-control-sm" type="date" name="hto" value="{{ history_to }}">
-    </div>
-    <div class="col-md-3 d-flex align-items-end gap-2">
-      <button class="btn btn-sm btn-dark" type="submit">Search history</button>
-      <a class="btn btn-sm btn-outline-dark" href="{% url 'phlebotomy-workspace' %}">Clear</a>
-    </div>
-  </form>
-  <div class="table-responsive">
-    <table class="table mb-0">
-      <thead>
-        <tr>
-          <th>Collected</th>
-          <th>Sample</th>
-          <th>Patient</th>
-          <th>Test</th>
-          <th>Collected by</th>
-          <th>Status</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for sample in collection_history %}
-        <tr>
-          <td class="small">{% if sample.collected_at %}{{ sample.collected_at|date:"Y-m-d H:i" }}{% else %}—{% endif %}</td>
-          <td>
-            <div class="fw-semibold font-monospace">{{ sample.sample_id }}</div>
-            <div class="small muted">{{ sample.order.visit.visit_id }} · {{ sample.centre.code }}</div>
-          </td>
-          <td>
-            <div>{{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }}</div>
-            <div class="small muted">{{ sample.order.visit.patient.uhid }}</div>
-          </td>
-          <td class="small">{{ sample.order.test.name }} {% include "includes/stat_badge.html" with stat=sample.order.stat %}{% if sample.specimen_type %}<div class="muted">{{ sample.specimen_type }}</div>{% endif %}</td>
-          <td class="small">{{ sample.collected_by.get_username|default:"—" }}</td>
-          <td><span class="badge-soft badge rounded-pill">{{ sample.get_status_display }}</span></td>
-          <td class="text-end"><a class="btn btn-sm btn-outline-dark" href="{% url 'sample-label' sample.pk %}" target="_blank">Label</a></td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="7" class="muted">No collected samples match this history.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% include "includes/pagination.html" with page=collection_history %}
-</div>
+</section>
+<script>
+(function () {
+  var all = document.getElementById('sc-all');
+  if (!all) return;
+  all.addEventListener('change', function () {
+    document.querySelectorAll('.sc-row').forEach(function (box) { box.checked = all.checked; });
+  });
+})();
+</script>
 {% endblock %}

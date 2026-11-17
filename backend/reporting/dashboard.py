@@ -26,6 +26,7 @@ def build_management_dashboard(user, *, period='monthly', centre_id=None, start=
     return {
         **finance,
         'financial': finance['kpis'],
+        'credit_wallets': finance.get('credit_wallets') or {'totals': {}, 'clients': []},
         'clinical': clinical,
         'centres_panel': centres_panel,
         'referral': referral,

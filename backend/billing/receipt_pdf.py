@@ -75,9 +75,20 @@ def build_receipt_pdf(payment):
         pdf.drawString(48, y, phone)
         y -= 13
     y -= 10
+    from billing.pricing import visit_shows_test_prices
+    show_prices = True
+    try:
+        if visit.show_test_prices is False:
+            show_prices = False
+        else:
+            show_prices = visit_shows_test_prices(visit)
+    except Exception:
+        show_prices = bool(getattr(visit, 'show_test_prices', True))
+
     pdf.setFont('Times-Bold', 10)
     pdf.drawString(48, y, 'Description')
-    pdf.drawRightString(width - 48, y, 'Amount')
+    if show_prices:
+        pdf.drawRightString(width - 48, y, 'Amount')
     y -= 6
     pdf.line(48, y, width - 48, y)
     y -= 16
@@ -85,7 +96,8 @@ def build_receipt_pdf(payment):
     items = list(invoice.items.all())
     if not items:
         pdf.drawString(48, y, 'Payment received')
-        pdf.drawRightString(width - 48, y, _money(payment.amount))
+        if show_prices:
+            pdf.drawRightString(width - 48, y, _money(payment.amount))
         y -= 16
     for item in items:
         if y < 90:
@@ -94,18 +106,31 @@ def build_receipt_pdf(payment):
             pdf.setFont('Times-Roman', 10)
         label = item.description or 'Item'
         pdf.drawString(48, y, label[:70])
-        pdf.drawRightString(width - 48, y, _money(item.line_total))
+        if show_prices:
+            pdf.drawRightString(width - 48, y, _money(item.line_total))
+        else:
+            pdf.drawRightString(width - 48, y, '****')
         y -= 15
     y -= 6
-    pdf.line(300, y, width - 48, y)
+    if show_prices:
+        pdf.line(300, y, width - 48, y)
     y -= 18
-    lines = [
-        ('This receipt', _money(payment.amount)),
-        ('Method', payment.get_method_display()),
-        ('Invoice total', _money(invoice.total)),
-        ('Confirmed payments', _money(paid)),
-        ('Balance', _money(balance)),
-    ]
+    if show_prices:
+        lines = [
+            ('This receipt', _money(payment.amount)),
+            ('Method', payment.get_method_display()),
+            ('Invoice total', _money(invoice.total)),
+            ('Confirmed payments', _money(paid)),
+            ('Balance', _money(balance)),
+        ]
+    else:
+        lines = [
+            ('This receipt', '****'),
+            ('Method', payment.get_method_display()),
+            ('Invoice total', '****'),
+            ('Confirmed payments', '****'),
+            ('Balance', '****'),
+        ]
     for label, value in lines:
         pdf.setFont('Times-Bold' if label in ('This receipt', 'Balance') else 'Times-Roman', 10)
         pdf.drawString(300, y, label)

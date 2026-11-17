@@ -1,8 +1,18 @@
 """Turn the tests chosen at reception into one unpaid invoice."""
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from billing.models import Invoice, InvoiceItem
+from billing.pricing import (
+    CREDIT_CHANNELS,
+    debit_credit_wallet,
+    ensure_credit_wallet_covers,
+    normalize_channel,
+    resolve_tariff,
+    visit_shows_test_prices,
+)
 from laboratory.models import LabOrder, TestPrice
 from laboratory.stat_catalog import stat_for_choice
 from radiology.models import ImagingModality, ImagingOrder, ImagingPrice, RadiologyExam
@@ -31,9 +41,18 @@ def process_registration(visit, user, post):
     imaging_ids = [item_id for item_id, _stat_id in imaging_choices]
     if not lab_ids and not imaging_ids:
         raise ValidationError('Add at least one laboratory or radiology test, then save.')
-    tariff_id = (post.get('tariff') or '').strip()
-    if not tariff_id:
-        raise ValidationError('Select the tariff that prices these tests.')
+
+    posted_tariff = (post.get('tariff') or '').strip() or None
+    tariff = resolve_tariff(
+        centre=visit.centre,
+        channel_code=visit.referral_source,
+        client=visit.client,
+        fallback_tariff=posted_tariff,
+    )
+    tariff_id = tariff.pk
+    visit.resolved_tariff = tariff
+    visit.show_test_prices = visit_shows_test_prices(visit)
+    visit.save(update_fields=['resolved_tariff', 'show_test_prices', 'updated_at'])
 
     with transaction.atomic():
         lab_prices = {
@@ -48,12 +67,38 @@ def process_registration(visit, user, post):
                 tariff_id=tariff_id, tariff__is_active=True, procedure_id__in=imaging_ids, procedure__is_active=True,
             )
         }
-        if len(lab_prices) != len(lab_ids) or len(imaging_prices) != len(imaging_ids):
-            raise ValidationError('Every selected test must have a price on the chosen tariff.')
+        missing = []
+        for test_id, _stat in lab_choices:
+            if test_id not in lab_prices:
+                missing.append(test_id)
+        for procedure_id, _stat in imaging_choices:
+            if procedure_id not in imaging_prices:
+                missing.append(procedure_id)
+        if missing:
+            raise ValidationError(
+                'You can not proceed , contact admin to setup the price. Thanks'
+            )
+
+        subtotal = Decimal('0.00')
+        for test_id, _stat in lab_choices:
+            subtotal += lab_prices[test_id].price
+        for procedure_id, _stat in imaging_choices:
+            subtotal += imaging_prices[procedure_id].price
+
+        channel = normalize_channel(visit.referral_source)
+        use_credit_wallet = channel in CREDIT_CHANNELS and visit.client_id and visit.client.client_type_code == 'CREDIT'
+        if use_credit_wallet:
+            ensure_credit_wallet_covers(client=visit.client, amount=subtotal)
+
         patient = visit.patient
+        if use_credit_wallet:
+            payer_name = visit.client_name or (visit.client.name if visit.client else '') or 'Credit client'
+        else:
+            payer_name = f'{patient.first_name} {patient.last_name}'.strip()
+
         invoice = Invoice.objects.create(
             visit=visit,
-            payer_name=f'{patient.first_name} {patient.last_name}'.strip(),
+            payer_name=payer_name,
             created_by=user,
             status='UNPAID',
         )
@@ -92,6 +137,17 @@ def process_registration(visit, user, post):
         visit.status = 'PROCESSED'
         visit.save(update_fields=['status', 'updated_at'])
         invoice.refresh_from_db()
+
+        if use_credit_wallet:
+            debit_credit_wallet(
+                client=visit.client,
+                amount=invoice.total,
+                visit=visit,
+                invoice=invoice,
+                actor=user,
+                note=f'Registration debit for {visit.visit_id}',
+            )
+
         from communications.inbox import announce, record_corporate_invoice
         announce(lambda: record_corporate_invoice(invoice))
     return invoice

@@ -143,9 +143,12 @@ def patient_values(post):
 
 
 def apply_visit_details(visit, post):
-    channel = _clean(post.get('referral_source'), 30) or 'SELF'
-    if channel not in dict(CHANNEL_CHOICES):
-        channel = 'SELF'
+    from billing.pricing import (
+        channel_needs_client, client_type_for_channel, effective_show_test_prices,
+        normalize_channel, resolve_tariff,
+    )
+
+    channel = normalize_channel(_clean(post.get('referral_source'), 30) or 'SELF')
     heard = _clean(post.get('how_heard'), 20)
     visit.referral_source = channel
     visit.clinical_history = _clean(post.get('clinical_history'), 2000)
@@ -154,10 +157,26 @@ def apply_visit_details(visit, post):
     visit.reference_1 = _clean(post.get('reference_1'), 40)
     visit.reference_2 = _clean(post.get('reference_2'), 40)
     visit.how_heard = heard if heard in dict(HOW_HEARD_CHOICES) else ''
-    if channel in ('CORPORATE', 'HMO'):
-        client = OrganisationClient.objects.filter(pk=post.get('client') or None, centre=visit.centre, kind=channel, is_active=True).first()
+    if channel_needs_client(channel):
+        type_code = client_type_for_channel(channel)
+        client_qs = OrganisationClient.objects.filter(
+            pk=post.get('client') or None, centre=visit.centre, is_active=True,
+        )
+        if type_code:
+            client = client_qs.filter(client_type_code=type_code).first()
+            if client is None and channel in ('CORPORATE', 'HMO'):
+                # Legacy kind-based clients until fully migrated.
+                client = OrganisationClient.objects.filter(
+                    pk=post.get('client') or None, centre=visit.centre, kind=channel, is_active=True,
+                ).first()
+        else:
+            client = client_qs.first()
         if client is None:
-            label = 'an HMO' if channel == 'HMO' else 'a corporate client'
+            label = 'a credit client' if channel == 'CREDIT_CLIENT' else 'an on-payment client'
+            if channel == 'HMO':
+                label = 'an HMO'
+            elif channel == 'CORPORATE':
+                label = 'a corporate client'
             raise ValidationError(f'Select {label} for this centre.')
         visit.client = client
         visit.client_name = client.name
@@ -166,6 +185,13 @@ def apply_visit_details(visit, post):
         visit.client = None
         visit.client_name = ''
         visit.client_employee_number = ''
+    posted_tariff = _clean(post.get('tariff'), 40) or None
+    visit.resolved_tariff = resolve_tariff(
+        centre=visit.centre, channel_code=channel, client=visit.client, fallback_tariff=posted_tariff,
+    )
+    visit.show_test_prices = effective_show_test_prices(
+        centre=visit.centre, channel_code=channel, client=visit.client,
+    )
     visit.save()
     if channel == 'DOCTOR':
         _attach_referral(visit, post)

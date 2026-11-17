@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Tariff master | {{ org_short_name }}{% endblock %}
+{% block content %}
+<div class="mb-4 d-flex flex-wrap justify-content-between align-items-end gap-2">
+  <div>
+    <div class="muted small"><a class="text-decoration-none muted" href="{% url 'catalog-hub' %}">Catalog</a> · TARIFF MASTER</div>
+    <h1 class="h3 mb-1">Tariff master</h1>
+    <p class="muted mb-0">Create, approve, clone, and manage tariffs. Prices live here — not on test creation.</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-dark btn-sm" href="{% url 'enterprise-tariff-upload' %}">Upload tariff data</a>
+    <a class="btn btn-primary btn-sm" href="?tab=create">Create new tariff</a>
+  </div>
+</div>
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item"><a class="nav-link {% if tab == 'list' %}active{% endif %}" href="?tab=list">Tariff list</a></li>
+  <li class="nav-item"><a class="nav-link {% if tab == 'create' %}active{% endif %}" href="?tab=create">Create new tariff</a></li>
+  <li class="nav-item"><a class="nav-link {% if tab == 'clone' %}active{% endif %}" href="?tab=clone">Copy from existing</a></li>
+  <li class="nav-item"><a class="nav-link {% if tab == 'draft' %}active{% endif %}" href="?tab=list&status=draft">Not approved</a></li>
+</ul>
+
+{% if tab == 'create' %}
+<div class="card p-4" style="max-width:40rem">
+  <h2 class="h5">Create new tariff</h2>
+  <form method="post" class="row g-3">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create">
+    <div class="col-12"><label class="form-label">Tariff name</label><input class="form-control" name="name" required placeholder="DIDN_MAIN"></div>
+    <div class="col-md-6">
+      <label class="form-label">Centre (optional)</label>
+      <select class="form-select" name="centre"><option value="">Organisation-wide</option>{% for centre in centres %}<option value="{{ centre.pk }}">{{ centre.code }}</option>{% endfor %}</select>
+    </div>
+    <div class="col-md-3"><label class="form-label">Effective from</label><input class="form-control" type="date" name="effective_from" value="{{ today }}"></div>
+    <div class="col-md-3"><label class="form-label">Effective to</label><input class="form-control" type="date" name="effective_to"></div>
+    <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_outsource_enabled" id="out"><label class="form-check-label" for="out">Outsource enabled</label></div></div>
+    <div class="col-12"><button class="btn btn-primary" type="submit">Create tariff</button></div>
+  </form>
+</div>
+{% elif tab == 'clone' %}
+<div class="card p-4" style="max-width:40rem">
+  <h2 class="h5">Copy from existing tariff</h2>
+  <form method="post" class="row g-3">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="clone">
+    <div class="col-12">
+      <label class="form-label">Copy from</label>
+      <select class="form-select" name="source_tariff" required>
+        <option value="">Choose tariff</option>
+        {% for tariff in tariffs %}<option value="{{ tariff.pk }}">{{ tariff.code }} — {{ tariff.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-12"><label class="form-label">New tariff name</label><input class="form-control" name="name" required></div>
+    <div class="col-md-6"><label class="form-label">Effective from</label><input class="form-control" type="date" name="effective_from" value="{{ today }}"></div>
+    <div class="col-md-6"><label class="form-label">Effective to</label><input class="form-control" type="date" name="effective_to"></div>
+    <div class="col-12"><button class="btn btn-primary" type="submit">Clone tariff</button></div>
+  </form>
+</div>
+{% else %}
+<div class="card p-4">
+  <form method="get" class="row g-2 mb-3">
+    <input type="hidden" name="tab" value="list">
+    <div class="col-md-5"><input class="form-control" name="q" value="{{ query }}" placeholder="Search tariff name or code"></div>
+    <div class="col-md-4">
+      <select class="form-select" name="status">
+        <option value="all" {% if status == 'all' %}selected{% endif %}>All statuses</option>
+        <option value="active" {% if status == 'active' %}selected{% endif %}>Active</option>
+        <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive</option>
+        <option value="draft" {% if status == 'draft' %}selected{% endif %}>Not approved</option>
+        <option value="approval" {% if status == 'approval' %}selected{% endif %}>Approved</option>
+      </select>
+    </div>
+    <div class="col-md-3"><button class="btn btn-outline-dark w-100" type="submit">Filter</button></div>
+  </form>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Tariff code</th><th>Name</th><th>Lab / Imaging</th><th>Effective</th><th>Status</th><th>Version</th><th>Manage</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for tariff in directory %}
+        <tr>
+          <td class="fw-semibold">{{ tariff.code }}</td>
+          <td>
+            <a class="text-decoration-none" href="{% url 'enterprise-tariff-editor' tariff.pk %}?mode=edit">{{ tariff.name }}</a>
+            <div class="small muted">{{ tariff.created_by|default:"—" }} · {{ tariff.created_at|date:"d M Y" }}</div>
+          </td>
+          <td class="small">{{ tariff.lab_price_count }} / {{ tariff.imaging_price_count }}</td>
+          <td class="small">{{ tariff.effective_from|date:"d-M-Y"|default:"—" }} → {{ tariff.effective_to|date:"d-M-Y"|default:"—" }}</td>
+          <td><span class="badge badge-soft">{{ tariff.get_status_display }}</span></td>
+          <td>{{ tariff.version }}</td>
+          <td class="text-end text-nowrap">
+            <a class="btn btn-sm btn-outline-dark" href="{% url 'enterprise-tariff-editor' tariff.pk %}?mode=edit">Modify</a>
+            {% if tariff.status != 'APPROVAL' %}
+            <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="approve"><input type="hidden" name="tariff" value="{{ tariff.pk }}"><button class="btn btn-sm btn-outline-success" type="submit">Approve</button></form>
+            {% endif %}
+            {% if tariff.is_active %}
+            <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="deactivate"><input type="hidden" name="tariff" value="{{ tariff.pk }}"><button class="btn btn-sm btn-outline-warning" type="submit">Inactive</button></form>
+            {% else %}
+            <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="activate"><input type="hidden" name="tariff" value="{{ tariff.pk }}"><button class="btn btn-sm btn-outline-success" type="submit">Active</button></form>
+            {% endif %}
+            <form method="post" class="d-inline" onsubmit="return confirm('Hey! This action is dangerous! Do you insist?');">{% csrf_token %}<input type="hidden" name="action" value="request_delete"><input type="hidden" name="tariff" value="{{ tariff.pk }}"><button class="btn btn-sm btn-outline-danger" type="submit">Delete</button></form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center muted py-4">No tariffs found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=directory %}
+</div>
+{% endif %}
+{% endblock %}

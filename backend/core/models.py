@@ -134,6 +134,14 @@ class CentreReportFormat(TimeStampedModel):
     margin_mm = models.PositiveSmallIntegerField(default=18)
     show_authenticator_signature = models.BooleanField(default=True)
     signature_label = models.CharField(max_length=80, default='Authenticated by')
+    header_file = models.FileField(
+        upload_to='centre-letterhead/%Y/%m/', blank=True,
+        help_text='Centre header artwork (PNG, JPG, or a one-page PDF) printed at the top of results.',
+    )
+    footer_file = models.FileField(
+        upload_to='centre-letterhead/%Y/%m/', blank=True,
+        help_text='Centre footer artwork (PNG, JPG, or a one-page PDF) printed at the bottom of results.',
+    )
     watermark_text = models.CharField(
         max_length=80,
         blank=True,
@@ -143,6 +151,14 @@ class CentreReportFormat(TimeStampedModel):
 
     def __str__(self):
         return f'Report format · {self.centre.code}'
+
+    @property
+    def header_is_pdf(self):
+        return (self.header_file.name or '').lower().endswith('.pdf')
+
+    @property
+    def footer_is_pdf(self):
+        return (self.footer_file.name or '').lower().endswith('.pdf')
 
 class UserCentreAccess(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

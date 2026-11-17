@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Client types | {{ org_short_name }}{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="muted small"><a class="text-decoration-none muted" href="{% url 'catalog-hub' %}">Catalog</a> · CLIENT TYPES</div>
+  <h1 class="h3 mb-1">Client types</h1>
+  <p class="muted mb-0">Start with Credit, On Payment, and Default. Add more types as needed.</p>
+</div>
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card p-4">
+      <table class="table align-middle">
+        <thead><tr><th>Code</th><th>Name</th><th>Default price display</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {% for row in types %}
+          <tr>
+            <td class="fw-semibold">{{ row.code }}</td>
+            <td>{{ row.name }}{% if row.is_system %} <span class="badge badge-soft">System</span>{% endif %}</td>
+            <td>{% if row.show_test_prices_default %}ON{% else %}OFF{% endif %}</td>
+            <td>{% if row.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-danger-soft">Inactive</span>{% endif %}</td>
+            <td class="text-end">
+              <form method="post" class="row g-1 justify-content-end">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="update">
+                <input type="hidden" name="client_type" value="{{ row.pk }}">
+                {% if not row.is_system %}<div class="col-auto"><input class="form-control form-control-sm" name="code" value="{{ row.code }}"></div>{% endif %}
+                <div class="col-auto"><input class="form-control form-control-sm" name="name" value="{{ row.name }}"></div>
+                <div class="col-auto form-check mt-1"><input class="form-check-input" type="checkbox" name="show_test_prices_default" {% if row.show_test_prices_default %}checked{% endif %}><label class="form-check-label small">Prices</label></div>
+                <div class="col-auto form-check mt-1"><input class="form-check-input" type="checkbox" name="is_active" {% if row.is_active %}checked{% endif %}><label class="form-check-label small">Active</label></div>
+                <div class="col-auto"><button class="btn btn-sm btn-outline-dark" type="submit">Save</button></div>
+              </form>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="text-center muted py-4">No client types yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card p-4">
+      <h2 class="h5">Create client type</h2>
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create">
+        <div class="col-md-5"><label class="form-label">Code</label><input class="form-control" name="code" required placeholder="CREDIT"></div>
+        <div class="col-md-7"><label class="form-label">Name</label><input class="form-control" name="name" required></div>
+        <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="show_test_prices_default" id="show-prices" checked><label class="form-check-label" for="show-prices">Test price display ON by default</label></div></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create type</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -102,6 +102,43 @@
 </section>
 
 <section class="mb-4">
+  <h2 class="h5">Credit wallets — allocations and usage</h2>
+  <p class="muted small">Balances are a live snapshot for active credit clients. Top-ups and debits follow the selected period.</p>
+  <div class="row g-3">
+    <div class="col-6 col-xl-3"><div class="card p-3"><div class="kpi-label">CREDIT CLIENTS</div><div class="h4 mb-0">{{ financial.credit_client_count|default:0 }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="card p-3"><div class="kpi-label">ALLOCATED</div><div class="h4 mb-0">₦{{ financial.credit_wallet_allocated|default:0|floatformat:2 }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="card p-3"><div class="kpi-label">WALLET BALANCE</div><div class="h4 mb-0">₦{{ financial.credit_wallet_balance|default:0|floatformat:2 }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="card p-3"><div class="kpi-label">USED</div><div class="h4 mb-0">₦{{ financial.credit_wallet_used|default:0|floatformat:2 }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="card p-3"><div class="kpi-label">TOP-UPS (PERIOD)</div><div class="h4 mb-0">₦{{ financial.credit_top_ups|default:0|floatformat:2 }}</div></div></div>
+    <div class="col-6 col-xl-3"><div class="card p-3"><div class="kpi-label">DEBITS (PERIOD)</div><div class="h4 mb-0">₦{{ financial.credit_debits|default:0|floatformat:2 }}</div></div></div>
+  </div>
+  {% if credit_wallets.clients %}
+  <div class="card p-3 mt-3">
+    <div class="fw-semibold mb-2">Credit clients</div>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead><tr><th>Client</th><th>Centre</th><th>Tariff</th><th class="text-end">Allocated</th><th class="text-end">Balance</th><th class="text-end">Used</th></tr></thead>
+        <tbody>
+          {% for row in credit_wallets.clients %}
+          <tr>
+            <td>{{ row.name }} <span class="small muted">{{ row.code }}</span></td>
+            <td>{{ row.centre }}</td>
+            <td class="small">{{ row.tariff }}</td>
+            <td class="text-end">₦{{ row.allocated|floatformat:2 }}</td>
+            <td class="text-end">₦{{ row.balance|floatformat:2 }}</td>
+            <td class="text-end">₦{{ row.used|floatformat:2 }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <p class="muted small mt-3 mb-0">No active credit clients in scope yet.</p>
+  {% endif %}
+</section>
+
+<section class="mb-4">
   <h2 class="h5">Clinical operations — workload and turnaround</h2>
   <div class="row g-3">
     <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">PENDING TESTS</div><div class="h4 mb-0">{{ clinical.pending_tests }}</div></div></div>
@@ -161,7 +198,10 @@
 </section>
 
 <section class="mb-4">
-  <h2 class="h5">Referral network — physicians and partners</h2>
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h2 class="h5 mb-0">Referral network — physicians and partners</h2>
+    {% if can_manage_referrals %}<a class="open-link" href="{% url 'enterprise-referrals' %}?period={{ period }}&centre={{ centre_id }}">Open referral business</a>{% endif %}
+  </div>
   <div class="row g-3 mb-3">
     <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">REFERRAL VISITS</div><div class="h4 mb-0">{{ referral.referral_visits }}</div></div></div>
     <div class="col-6 col-md-3"><div class="card p-3"><div class="kpi-label">ACCRUALS</div><div class="h4 mb-0">₦{{ referral.accruals|floatformat:2 }}</div></div></div>

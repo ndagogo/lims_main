@@ -2,6 +2,7 @@ import uuid
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
+from django.db.models.functions import Lower
 from django.utils import timezone
 from core.models import TimeStampedModel, Centre, SequenceCounter
 from patients.models import Visit
@@ -72,7 +73,7 @@ class StatType(TimeStampedModel):
 
 
 class Test(TimeStampedModel):
-    code = models.CharField(max_length=30, unique=True)
+    code = models.CharField(max_length=30, unique=True, editable=False)
     name = models.CharField(max_length=160)
     department = models.CharField(max_length=80, default='PATHOLOGY')
     department_code = models.CharField(max_length=1, default='1')
@@ -112,31 +113,137 @@ class Test(TimeStampedModel):
         related_name='default_for_tests',
     )
     is_active = models.BooleanField(default=True)
+    code_locked = models.BooleanField(
+        default=True,
+        help_text='When true the auto-assigned test code cannot be changed.',
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(Lower('name'), name='uniq_test_name_ci'),
+        ]
 
     def clean(self):
+        from laboratory.test_names import DUPLICATE_TEST_NAME_MESSAGE, normalize_test_name, test_name_taken
+        self.name = normalize_test_name(self.name)
         if not self.service_group_id:
             raise ValidationError({'service_group': 'Each test must be mapped to a service group.'})
         if self.default_template_id and self.default_template.test_id != self.pk:
             raise ValidationError({'default_template': 'Default template must belong to this test.'})
+        if self.name and test_name_taken(self.name, exclude_pk=self.pk):
+            raise ValidationError({'name': DUPLICATE_TEST_NAME_MESSAGE})
 
     def save(self, *args, **kwargs):
+        from laboratory.test_names import assert_test_name_available, normalize_test_name
         if not self.service_group_id:
             raise ValidationError({'service_group': 'Each test must be mapped to a service group.'})
+        self.name = normalize_test_name(self.name)
+        assert_test_name_available(self.name, exclude_pk=self.pk)
         self.service_group_code = self.service_group.code
+        if self.pk:
+            previous = type(self).objects.filter(pk=self.pk).only('code', 'code_locked').first()
+            if previous and previous.code_locked and previous.code and self.code != previous.code:
+                raise ValidationError({'code': 'Test codes are immutable once assigned.'})
+        if not self.code:
+            from laboratory.test_codes import allocate_test_code
+            self.code = allocate_test_code(self.name)
+            self.code_locked = True
         super().save(*args, **kwargs)
 
     def __str__(self): return f'{self.code} — {self.name}'
 
 class Tariff(TimeStampedModel):
+    STATUS_CHOICES = [
+        ('DRAFT', 'Not approved'),
+        ('APPROVAL', 'Approved'),
+        ('INACTIVE', 'Inactive'),
+    ]
     name = models.CharField(max_length=100, unique=True)
+    code = models.CharField(max_length=40, unique=True, blank=True, default='')
+    centre = models.ForeignKey(
+        Centre, null=True, blank=True, on_delete=models.PROTECT, related_name='tariffs',
+    )
+    effective_from = models.DateField(null=True, blank=True)
+    effective_to = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
+    version = models.PositiveIntegerField(default=1)
+    is_outsource_enabled = models.BooleanField(default=False)
+    copied_from = models.ForeignKey(
+        'self', null=True, blank=True, on_delete=models.SET_NULL, related_name='copies',
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='tariffs_created',
+    )
+    modified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='tariffs_modified',
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='tariffs_approved',
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    deletion_requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='tariff_deletions_requested',
+    )
+    deletion_confirmed_username = models.CharField(max_length=150, blank=True, default='')
+    deletion_agreement_accepted = models.BooleanField(default=False)
+
+    class Meta:
+        permissions = [
+            ('upload_tariff', 'Can upload tariff data from CSV/Excel'),
+            ('clone_tariff', 'Can clone an existing tariff'),
+            ('approve_tariff', 'Can approve a tariff'),
+            ('delete_tariff_confirmed', 'Can confirm dangerous tariff deletion'),
+        ]
+
+    def __str__(self):
+        return f'{self.code or self.name}'
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            from laboratory.tariff_codes import allocate_tariff_code
+            self.code = allocate_tariff_code(centre=self.centre)
+        if self.status == 'INACTIVE':
+            self.is_active = False
+        elif self.status == 'APPROVAL':
+            self.is_active = True
+        super().save(*args, **kwargs)
 
 class TestPrice(TimeStampedModel):
     tariff = models.ForeignKey(Tariff, on_delete=models.PROTECT)
     test = models.ForeignKey(Test, on_delete=models.PROTECT)
     price = models.DecimalField(max_digits=12, decimal_places=2)
     outsource_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    percentage = models.DecimalField(
+        max_digits=7, decimal_places=2, default=0,
+        help_text='Discount or markup percentage applied when configuring this tariff line.',
+    )
     class Meta: unique_together=[('tariff','test')]
+
+
+class TariffActivity(TimeStampedModel):
+    """Full history of tariff create / modify / clone / upload / delete actions."""
+    ACTIONS = [
+        ('CREATED', 'Created'),
+        ('UPDATED', 'Updated'),
+        ('CLONED', 'Cloned'),
+        ('PRICES_SAVED', 'Prices saved'),
+        ('UPLOADED', 'Uploaded'),
+        ('APPROVED', 'Approved'),
+        ('ACTIVATED', 'Activated'),
+        ('DEACTIVATED', 'Deactivated'),
+        ('DELETE_REQUESTED', 'Delete requested'),
+        ('DELETED', 'Deleted'),
+    ]
+    tariff = models.ForeignKey(Tariff, null=True, blank=True, on_delete=models.SET_NULL, related_name='activities')
+    tariff_code = models.CharField(max_length=40, blank=True, default='')
+    tariff_name = models.CharField(max_length=100, blank=True, default='')
+    action = models.CharField(max_length=30, choices=ACTIONS)
+    detail = models.JSONField(default=dict, blank=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        ordering = ['-created_at']
 
 class LabOrder(TimeStampedModel):
     STATUS_CHOICES=[('ORDERED','Ordered'),('COLLECTION_PENDING','Collection pending'),('IN_PROGRESS','In progress'),('COMPLETED','Completed'),('CANCELLED','Cancelled')]

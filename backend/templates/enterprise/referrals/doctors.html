@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Referral doctors | {{ org_short_name }}{% endblock %}
+{% block content %}
+{% with page_title="Doctor directory" page_subtitle="Advanced search across referring physicians, commission presets, and bank details." %}
+{% include "enterprise/referrals/_nav.html" %}
+{% endwith %}
+
+<form method="get" class="card p-3 mb-3">
+  <input type="hidden" name="period" value="{{ filters.period }}">
+  <input type="hidden" name="centre" value="{{ filters.centre_id }}">
+  <input type="hidden" name="start" value="{{ filters.start_date }}">
+  <input type="hidden" name="end" value="{{ filters.end_date }}">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-3"><label class="form-label small mb-0">Search</label><input class="form-control form-control-sm" name="q" value="{{ filters.q }}" placeholder="Code, name, phone, facility"></div>
+    <div class="col-md-2"><label class="form-label small mb-0">Status</label>
+      <select class="form-select form-select-sm" name="status">
+        <option value="all" {% if filters.status == 'all' %}selected{% endif %}>All</option>
+        <option value="active" {% if filters.status == 'active' %}selected{% endif %}>Active</option>
+        <option value="inactive" {% if filters.status == 'inactive' %}selected{% endif %}>Inactive</option>
+      </select>
+    </div>
+    <div class="col-md-2"><label class="form-label small mb-0">Commission</label>
+      <select class="form-select form-select-sm" name="commission_type">
+        <option value="">Any</option>
+        <option value="PERCENT" {% if filters.commission_type == 'PERCENT' %}selected{% endif %}>Percentage</option>
+        <option value="FIXED" {% if filters.commission_type == 'FIXED' %}selected{% endif %}>Fixed</option>
+      </select>
+    </div>
+    <div class="col-md-2"><label class="form-label small mb-0">Bank details</label>
+      <select class="form-select form-select-sm" name="has_bank">
+        <option value="">Any</option>
+        <option value="yes" {% if filters.has_bank == 'yes' %}selected{% endif %}>Has bank</option>
+        <option value="no" {% if filters.has_bank == 'no' %}selected{% endif %}>Missing bank</option>
+      </select>
+    </div>
+    <div class="col-md-2"><label class="form-label small mb-0">On reports</label>
+      <select class="form-select form-select-sm" name="appear_on_reports">
+        <option value="">Any</option>
+        <option value="yes" {% if filters.appear_on_reports == 'yes' %}selected{% endif %}>Appear</option>
+        <option value="no" {% if filters.appear_on_reports == 'no' %}selected{% endif %}>Hidden</option>
+      </select>
+    </div>
+    <div class="col-md-3"><label class="form-label small mb-0">Marketer</label>
+      <select class="form-select form-select-sm" name="marketer">
+        <option value="">Any</option>
+        {% for row in marketer_choices %}
+        <option value="{{ row.onboarded_by_id }}" {% if filters.marketer_id == row.onboarded_by_id|stringformat:'s' %}selected{% endif %}>{{ row.onboarded_by__first_name }} {{ row.onboarded_by__last_name }} ({{ row.onboarded_by__username }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" type="submit">Filter</button></div>
+  </div>
+</form>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-sm btn-outline-dark" href="{% url 'enterprise-referrals-export' %}?{{ export_query }}&kind=doctors&format=csv">CSV</a>
+  <a class="btn btn-sm btn-outline-dark" href="{% url 'enterprise-referrals-export' %}?{{ export_query }}&kind=doctors&format=xlsx">Excel</a>
+  <a class="btn btn-sm btn-outline-dark" href="{% url 'enterprise-referrals-export' %}?{{ export_query }}&kind=doctors&format=pdf">PDF</a>
+</div>
+
+<div class="card p-4">
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Doctor</th><th>Facility</th><th>Commission</th><th>Outstanding</th><th>Bank</th><th>Status</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ row.doctor.doctor_code }}</div>
+            <div class="small">{{ row.doctor.title }} {{ row.doctor.first_name }} {{ row.doctor.last_name }}</div>
+            <div class="small muted">{{ row.doctor.centre.code }}{% if row.doctor.onboarded_by %} · {{ row.doctor.onboarded_by.username }}{% endif %}</div>
+          </td>
+          <td class="small">{{ row.doctor.facility_name|default:"—" }}</td>
+          <td>{{ row.preset }}</td>
+          <td class="fw-semibold">₦{{ row.balance }}</td>
+          <td class="small">{% if row.doctor.account_number %}{{ row.doctor.bank_name }} · {{ row.doctor.account_number }}{% else %}—{% endif %}</td>
+          <td>{% if row.doctor.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-warn">Inactive</span>{% endif %}</td>
+          <td class="text-end"><a class="open-link" href="{% url 'catalog-doctors' %}?doctor={{ row.doctor.pk }}">Edit</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center muted py-4">No doctors match these filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=directory %}
+</div>
+{% endblock %}

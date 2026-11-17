@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Channels | {{ org_short_name }}{% endblock %}
+{% block content %}
+<div class="mb-4 d-flex flex-wrap justify-content-between align-items-end gap-2">
+  <div>
+    <div class="muted small"><a class="text-decoration-none muted" href="{% url 'catalog-hub' %}">Catalog</a> · CHANNELS</div>
+    <h1 class="h3 mb-1">Registration channels</h1>
+    <p class="muted mb-0">Map Self and Permanent Doctors to a centre tariff. Credit / On Payment clients use each organisation’s own tariff. Channel price-display OFF forces all clients under it OFF.</p>
+  </div>
+  <form method="get" class="d-flex gap-2">
+    <select class="form-select" name="centre" onchange="this.form.submit()">
+      <option value="">All centres</option>
+      {% for centre in centres %}<option value="{{ centre.pk }}" {% if centre_id == centre.pk|stringformat:"s" %}selected{% endif %}>{{ centre.code }}</option>{% endfor %}
+    </select>
+  </form>
+</div>
+<div class="card p-0 overflow-hidden">
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>Centre</th><th>Channel</th><th>Mapped tariff</th><th>Test price display</th><th>Active</th><th></th></tr></thead>
+      <tbody>
+        {% for channel in channels %}
+        <tr>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save">
+            <input type="hidden" name="channel" value="{{ channel.pk }}">
+            <td class="fw-semibold">{{ channel.centre.code }}</td>
+            <td>{{ channel.get_code_display }}</td>
+            <td style="min-width:14rem">
+              <select class="form-select form-select-sm" name="tariff">
+                <option value="">—</option>
+                {% for tariff in tariffs %}<option value="{{ tariff.pk }}" {% if channel.tariff_id == tariff.pk %}selected{% endif %}>{{ tariff.name }}</option>{% endfor %}
+              </select>
+              {% if channel.code == 'CREDIT_CLIENT' or channel.code == 'ON_PAYMENT_CLIENT' %}
+              <div class="form-text">Organisation tariff wins for B2B.</div>
+              {% endif %}
+            </td>
+            <td><div class="form-check"><input class="form-check-input" type="checkbox" name="show_test_prices" {% if channel.show_test_prices %}checked{% endif %}><label class="form-check-label">ON</label></div></td>
+            <td><div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" {% if channel.is_active %}checked{% endif %}><label class="form-check-label">Active</label></div></td>
+            <td class="text-end"><button class="btn btn-sm btn-outline-dark" type="submit">Save</button></td>
+          </form>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center muted py-4">No channels configured.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

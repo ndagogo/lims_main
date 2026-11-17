@@ -194,7 +194,7 @@ class StaffWorkspaceTests(TestCase):
         role, _created = Group.objects.get_or_create(name='Front Desk')
         screen = Client()
         screen.force_login(admin)
-        self.assertContains(screen.get('/'), 'Laboratory sample pipeline')
+        self.assertContains(screen.get('/'), 'Centres in scope')
         suspended = screen.post('/users/', {'action': 'suspend', 'user': str(staff.pk)})
         self.assertEqual(suspended.status_code, 302)
         staff.refresh_from_db()
@@ -338,8 +338,9 @@ class StaffWorkspaceTests(TestCase):
         self.assertEqual(accounts.get('/laboratory/').status_code, 403)
         lab = person('lab.only', 'Laboratory Scientist')
         self.assertEqual(lab.get('/laboratory/').status_code, 200)
-        self.assertContains(lab.get('/'), 'Laboratory sample pipeline')
+        self.assertContains(lab.get('/'), 'OPEN SAMPLES')
         self.assertNotContains(lab.get('/'), 'Imaging worklist')
+        self.assertNotContains(lab.get('/'), 'Recent activity')
         self.assertEqual(lab.get('/radiology/').status_code, 403)
         self.assertEqual(lab.get('/accounts/').status_code, 403)
         self.assertEqual(lab.get('/phlebotomy/').status_code, 403)
@@ -376,6 +377,7 @@ class StaffWorkspaceTests(TestCase):
         page = screen.get('/patients/register/')
         self.assertContains(page, 'Request type')
         self.assertContains(page, 'Search tests')
+        self.assertContains(page, 'Search laboratory or radiology')
         self.assertNotContains(page, 'Tick every laboratory')
         self.assertContains(page, 'Referral institutions')
         self.assertContains(page, 'Search doctor by name')
@@ -586,11 +588,10 @@ class StaffWorkspaceTests(TestCase):
         hub = screen.get('/catalog/')
         self.assertEqual(hub.status_code, 200)
         self.assertContains(hub, 'Catalog & pricing')
-        self.assertContains(hub, 'Lab and imaging prices by tariff')
+        self.assertContains(hub, 'Create, clone, upload, and price tariffs')
         home = screen.get('/')
         self.assertContains(home, 'Open catalog')
         self.assertContains(home, 'Catalog setup')
-        self.assertContains(home, 'Catalog & pricing')
         created_tariff = screen.post('/catalog/tariffs/', {'action': 'create', 'name': 'Walk-in 2026', 'is_active': 'on', 'is_active_submitted': '1'})
         self.assertEqual(created_tariff.status_code, 302)
         tariff = Tariff.objects.get(name='Walk-in 2026')
@@ -600,12 +601,14 @@ class StaffWorkspaceTests(TestCase):
         self.assertContains(detail, 'Laboratory prices')
         group = ServiceGroup.objects.create(name='Haematology', code='1', is_active=True)
         created_test = screen.post('/catalog/tests/', {
-            'action': 'create', 'code': 'FBC', 'name': 'Full blood count', 'department': 'HAEMATOLOGY',
+            'action': 'create', 'name': 'Full blood count', 'department': 'HAEMATOLOGY',
             'department_code': '1', 'service_group': str(group.pk), 'specimen': 'EDTA',
             'is_active': 'on', 'is_active_submitted': '1',
         })
         self.assertEqual(created_test.status_code, 302)
-        test = Test.objects.get(code='FBC')
+        test = Test.objects.get(name='Full blood count')
+        self.assertTrue(test.code)
+        self.assertTrue(test.code_locked)
         self.assertEqual(test.service_group_id, group.pk)
         missing_group = screen.post('/catalog/tests/', {
             'action': 'create', 'code': 'ESR', 'name': 'ESR', 'department': 'HAEMATOLOGY',
@@ -618,17 +621,12 @@ class StaffWorkspaceTests(TestCase):
         })
         self.assertEqual(duplicate_group.status_code, 302)
         self.assertEqual(ServiceGroup.objects.filter(name__iexact='haematology').count(), 1)
-        missing_group = screen.post('/catalog/tests/', {
-            'action': 'create', 'code': 'ESR', 'name': 'ESR', 'department': 'HAEMATOLOGY',
-            'department_code': '1', 'specimen': 'Citrate', 'is_active': 'on', 'is_active_submitted': '1',
-        })
-        self.assertEqual(missing_group.status_code, 302)
-        self.assertFalse(Test.objects.filter(code='ESR').exists())
-        duplicate_group = screen.post('/catalog/service-groups/', {
-            'action': 'create', 'name': 'haematology', 'code': '9', 'is_active': 'on', 'is_active_submitted': '1',
-        })
-        self.assertEqual(duplicate_group.status_code, 302)
-        self.assertEqual(ServiceGroup.objects.filter(name__iexact='haematology').count(), 1)
+        duplicate_test = screen.post('/catalog/tests/', {
+            'action': 'create', 'name': 'FULL BLOOD COUNT', 'department': 'HAEMATOLOGY',
+            'department_code': '1', 'service_group': str(group.pk), 'is_active': 'on', 'is_active_submitted': '1',
+        }, follow=True)
+        self.assertContains(duplicate_test, 'This test already exist. You can not proceed!')
+        self.assertEqual(Test.objects.filter(name__iexact='Full blood count').count(), 1)
         deactivated = screen.post('/catalog/tests/', {'action': 'deactivate', 'test': str(test.pk)})
         self.assertEqual(deactivated.status_code, 302)
         test.refresh_from_db()

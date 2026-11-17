@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Enterprise referrals | {{ org_short_name }}{% endblock %}
+{% block content %}
+{% with page_title="Referring doctors" page_subtitle="Track commissions, referral visits, and payouts for business owners." %}
+{% include "enterprise/referrals/_nav.html" %}
+{% endwith %}
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-xl-2"><div class="kpi"><div class="kpi-label">Active doctors</div><div class="kpi-value">{{ kpis.active_doctors }}</div></div></div>
+  <div class="col-6 col-xl-2"><div class="kpi"><div class="kpi-label">Period visits</div><div class="kpi-value">{{ kpis.period_visits }}</div></div></div>
+  <div class="col-6 col-xl-2"><div class="kpi"><div class="kpi-label">Period net</div><div class="kpi-value">₦{{ kpis.period_net }}</div></div></div>
+  <div class="col-6 col-xl-2"><div class="kpi"><div class="kpi-label">Outstanding due</div><div class="kpi-value">₦{{ kpis.outstanding }}</div></div></div>
+  <div class="col-6 col-xl-2"><div class="kpi"><div class="kpi-label">Pending payouts</div><div class="kpi-value">{{ kpis.pending_payouts }}</div><div class="muted small">₦{{ kpis.pending_liability }}</div></div></div>
+  <div class="col-6 col-xl-2"><div class="kpi"><div class="kpi-label">Ledger lines</div><div class="kpi-value">{{ kpis.ledger_lines }}</div></div></div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card p-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h5 mb-0">Doctors with amount due</h2>
+        <a class="open-link" href="{% url 'enterprise-referrals-commission' %}?{{ export_query }}&due_status=due">Open report</a>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr><th>Doctor</th><th>Period net</th><th>Outstanding</th><th>Visits</th></tr></thead>
+          <tbody>
+            {% for row in top_due %}
+            <tr>
+              <td>
+                <div class="fw-semibold">{{ row.doctor.doctor_code }}</div>
+                <div class="small muted">{{ row.doctor.first_name }} {{ row.doctor.last_name }}</div>
+              </td>
+              <td>₦{{ row.period_net }}</td>
+              <td class="fw-semibold">₦{{ row.balance }}</td>
+              <td>{{ row.visits }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="muted text-center py-3">No outstanding balances in this filter.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card p-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h5 mb-0">Pending payout requests</h2>
+        <a class="open-link" href="{% url 'enterprise-referrals-payouts' %}?{{ export_query }}">Payout desk</a>
+      </div>
+      {% for row in pending_withdrawals %}
+      <div class="d-flex justify-content-between border-bottom py-2">
+        <div>
+          <div class="fw-semibold">{{ row.doctor.doctor_code }}</div>
+          <div class="small muted">{{ row.doctor.centre.code }} · {{ row.requested_at|date:"d M Y" }}</div>
+        </div>
+        <div class="fw-semibold">₦{{ row.amount }}</div>
+      </div>
+      {% empty %}
+      <p class="muted mb-0">No open withdrawal requests.</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

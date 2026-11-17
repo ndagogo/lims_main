@@ -1,0 +1,70 @@
+<div class="mb-4 d-flex flex-wrap justify-content-between align-items-end gap-2">
+  <div>
+    <div class="muted small"><a class="text-decoration-none muted" href="{% url 'enterprise-referrals' %}">Enterprise referrals</a>{% if section != 'hub' %} · {{ section|upper }}{% endif %}</div>
+    <h1 class="h3 mb-1">{{ page_title }}</h1>
+    <p class="muted mb-0">{{ page_subtitle }}</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-sm {% if section == 'hub' %}btn-dark{% else %}btn-outline-dark{% endif %}" href="{% url 'enterprise-referrals' %}?{{ export_query }}">Hub</a>
+    <a class="btn btn-sm {% if section == 'doctors' %}btn-dark{% else %}btn-outline-dark{% endif %}" href="{% url 'enterprise-referrals-doctors' %}?{{ export_query }}">Doctors</a>
+    <a class="btn btn-sm {% if section == 'commission' %}btn-dark{% else %}btn-outline-dark{% endif %}" href="{% url 'enterprise-referrals-commission' %}?{{ export_query }}">Commission due</a>
+    <a class="btn btn-sm {% if section == 'visits' %}btn-dark{% else %}btn-outline-dark{% endif %}" href="{% url 'enterprise-referrals-visits' %}?{{ export_query }}">Visits</a>
+    <a class="btn btn-sm {% if section == 'payouts' %}btn-dark{% else %}btn-outline-dark{% endif %}" href="{% url 'enterprise-referrals-payouts' %}?{{ export_query }}">Payouts</a>
+    {% if is_platform_admin %}<a class="btn btn-sm btn-outline-dark" href="{% url 'catalog-doctors' %}">Catalog edit</a>{% endif %}
+  </div>
+</div>
+<form method="get" class="card p-3 mb-4">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-2">
+      <label class="form-label small mb-0">Period</label>
+      <select class="form-select form-select-sm" name="period">
+        {% for value, label in period_choices %}
+        <option value="{{ value }}" {% if filters.period == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small mb-0">Centre</label>
+      <select class="form-select form-select-sm" name="centre">
+        <option value="">All centres</option>
+        {% for centre in filters.centres %}
+        <option value="{{ centre.pk }}" {% if filters.centre_id == centre.pk|stringformat:'s' %}selected{% endif %}>{{ centre.code }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small mb-0">Start</label>
+      <input class="form-control form-control-sm" type="date" name="start" value="{{ filters.start_date }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small mb-0">End</label>
+      <input class="form-control form-control-sm" type="date" name="end" value="{{ filters.end_date }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small mb-0">Doctor</label>
+      <select class="form-select form-select-sm" name="doctor">
+        <option value="">All doctors</option>
+        {% for doctor in doctor_choices %}
+        <option value="{{ doctor.pk }}" {% if filters.doctor_id == doctor.pk|stringformat:'s' %}selected{% endif %}>{{ doctor.doctor_code }} — {{ doctor.last_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small mb-0">Institution</label>
+      <select class="form-select form-select-sm" name="institution">
+        <option value="">All institutions</option>
+        {% for row in institution_choices %}
+        <option value="{{ row.pk }}" {% if filters.institution_id == row.pk|stringformat:'s' %}selected{% endif %}>{{ row.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% block extra_filters %}{% endblock %}
+    <div class="col-md-3">
+      <label class="form-label small mb-0">Search</label>
+      <input class="form-control form-control-sm" name="q" value="{{ filters.q }}" placeholder="Code, name, visit, invoice">
+    </div>
+    <div class="col-md-2">
+      <button class="btn btn-sm btn-primary w-100" type="submit">Apply filters</button>
+    </div>
+  </div>
+</form>

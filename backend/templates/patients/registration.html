@@ -243,6 +243,60 @@ function fillDoctorSelect(form) {
   }
 }
 
+function syncResolvedTariff(form) {
+  const centre = form.querySelector('.centre-select');
+  const channel = form.querySelector('.channel-select');
+  const client = form.querySelector('.client-select');
+  const tariff = form.querySelector('.tariff-select');
+  const hint = form.querySelector('.tariff-hint');
+  const walletHint = form.querySelector('.client-wallet-hint');
+  if (!tariff) return;
+  const centreId = centre ? centre.value : '';
+  const channelValue = channel ? channel.value : 'SELF';
+  let tariffId = '';
+  let tariffName = '';
+  let showPrices = true;
+  if (client && client.value) {
+    const row = (channelCatalog.clients || []).find((item) => item.id === client.value);
+    if (row) {
+      tariffId = row.tariff || '';
+      tariffName = row.tariff_name || '';
+      showPrices = !!row.show_test_prices;
+      if (walletHint) {
+        if (row.client_type_code === 'CREDIT') {
+          walletHint.classList.remove('d-none');
+          walletHint.textContent = 'Credit wallet balance: ₦' + Number(row.wallet_balance || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 });
+        } else {
+          walletHint.classList.add('d-none');
+          walletHint.textContent = '';
+        }
+      }
+    }
+  } else if (centreId) {
+    const row = (channelCatalog.channels || []).find((item) => item.centre === centreId && item.code === channelValue);
+    if (row) {
+      tariffId = row.tariff || '';
+      tariffName = row.tariff_name || '';
+      showPrices = !!row.show_test_prices;
+    }
+    if (walletHint) {
+      walletHint.classList.add('d-none');
+      walletHint.textContent = '';
+    }
+  }
+  const previous = tariff.value;
+  tariff.value = tariffId;
+  if (hint) {
+    if (!centreId) hint.textContent = 'Choose centre and channel to load the mapped tariff.';
+    else if (!tariffId) hint.textContent = 'No tariff mapped for this channel/client. Contact admin to set up prices.';
+    else hint.textContent = 'Billing tariff: ' + (tariffName || tariffId) + (showPrices ? ' · prices shown on receipt' : ' · prices hidden on receipt');
+  }
+  if (previous !== tariffId) {
+    const picker = form.querySelector('.test-picker');
+    if (picker && picker._repriceAdded) picker._repriceAdded();
+  }
+}
+
 function syncRegistration(form) {
   const centre = form.querySelector('.centre-select');
   const channel = form.querySelector('.channel-select');
@@ -252,15 +306,32 @@ function syncRegistration(form) {
   const clientBox = form.querySelector('.when-client');
   const channelValue = channel ? channel.value : 'SELF';
   const centreId = centre ? centre.value : '';
+  const needsClient = channelValue === 'CREDIT_CLIENT' || channelValue === 'ON_PAYMENT_CLIENT' || channelValue === 'CORPORATE' || channelValue === 'HMO';
   if (doctorBox) doctorBox.classList.toggle('d-none', channelValue !== 'DOCTOR');
-  if (clientBox) clientBox.classList.toggle('d-none', channelValue !== 'CORPORATE' && channelValue !== 'HMO');
+  if (clientBox) clientBox.classList.toggle('d-none', !needsClient);
   fillDoctorSelect(form);
   if (client) {
-    const rows = centreId ? channelCatalog.clients.filter((row) => row.centre === centreId && row.kind === channelValue) : [];
-    const label = channelValue === 'HMO' ? 'Choose an HMO' : 'Choose a corporate client';
+    let rows = [];
+    if (centreId && needsClient) {
+      rows = channelCatalog.clients.filter((row) => {
+        if (row.centre !== centreId) return false;
+        if (channelValue === 'CREDIT_CLIENT') return row.client_type_code === 'CREDIT';
+        if (channelValue === 'ON_PAYMENT_CLIENT') return row.client_type_code === 'ON_PAYMENT';
+        if (channelValue === 'CORPORATE' || channelValue === 'HMO') return row.kind === channelValue || row.client_type_code === (channelValue === 'CORPORATE' ? 'CREDIT' : 'ON_PAYMENT');
+        return false;
+      });
+    }
+    const label = channelValue === 'CREDIT_CLIENT' ? 'Choose a credit client'
+      : channelValue === 'ON_PAYMENT_CLIENT' ? 'Choose an on-payment client'
+      : channelValue === 'HMO' ? 'Choose an HMO' : 'Choose a corporate client';
     fillSelect(client, rows, centreId ? label : 'Choose the centre first');
-    if (clientLabel) clientLabel.textContent = channelValue === 'HMO' ? 'HMO' : 'Corporate client';
+    if (clientLabel) {
+      clientLabel.textContent = channelValue === 'CREDIT_CLIENT' ? 'Credit client'
+        : channelValue === 'ON_PAYMENT_CLIENT' ? 'On payment client'
+        : channelValue === 'HMO' ? 'HMO' : 'Corporate client';
+    }
   }
+  syncResolvedTariff(form);
   const dob = form.querySelector('.dob-input');
   if (!dob) return;
   const years = form.querySelector('.age-years');
@@ -433,6 +504,10 @@ function initTestPicker(picker) {
     }));
   }
 
+  function kindLabel(requestKind) {
+    return requestKind === 'laboratory' ? 'Laboratory' : 'Radiology';
+  }
+
   function refreshResults() {
     results.replaceChildren();
     const placeholder = document.createElement('option');
@@ -443,15 +518,22 @@ function initTestPicker(picker) {
       return;
     }
     const query = search.value.trim().toLowerCase();
+    const preferred = kind.value;
     const taken = takenKeys();
     const rows = testCatalog.filter((row) => {
-      if (row.tariff !== tariff.value || row.kind !== kind.value) return false;
+      if (row.tariff !== tariff.value) return false;
+      if (row.kind !== 'laboratory' && row.kind !== 'radiology') return false;
       if (taken.has(fieldName(row.kind) + ':' + row.id)) return false;
       if (!query) return true;
       return row.name.toLowerCase().includes(query) || row.code.toLowerCase().includes(query);
+    }).sort((a, b) => {
+      const aPref = a.kind === preferred ? 0 : 1;
+      const bPref = b.kind === preferred ? 0 : 1;
+      if (aPref !== bPref) return aPref - bPref;
+      return String(a.name).localeCompare(String(b.name));
     }).slice(0, 40);
     if (!rows.length) {
-      placeholder.textContent = query ? 'No matching tests' : 'No tests are priced on this tariff';
+      placeholder.textContent = query ? 'No matching laboratory or radiology tests' : 'No tests are priced on this tariff';
       results.appendChild(placeholder);
       return;
     }
@@ -461,7 +543,8 @@ function initTestPicker(picker) {
       option.dataset.price = row.price;
       option.dataset.code = row.code;
       option.dataset.name = row.name;
-      option.textContent = row.code + ' — ' + row.name + ' — ' + formatNaira(row.price);
+      option.dataset.kind = row.kind;
+      option.textContent = row.code + ' — ' + row.name + ' — ' + kindLabel(row.kind) + ' — ' + formatNaira(row.price);
       results.appendChild(option);
     });
   }
@@ -473,12 +556,13 @@ function initTestPicker(picker) {
   function addSelected() {
     const option = results.selectedOptions[0];
     if (!option || !option.value) return;
-    const requestKind = kind.value;
+    const requestKind = option.dataset.kind || kind.value;
+    if (kind.value !== requestKind) kind.value = requestKind;
     const item = document.createElement('li');
     item.className = 'list-group-item d-flex justify-content-between align-items-center gap-2';
     const label = document.createElement('span');
     label.className = 'test-label';
-    label.textContent = option.dataset.code + ' — ' + option.dataset.name + ' — ' + (requestKind === 'laboratory' ? 'Laboratory' : 'Radiology') + ' — ' + formatNaira(option.dataset.price);
+    label.textContent = option.dataset.code + ' — ' + option.dataset.name + ' — ' + kindLabel(requestKind) + ' — ' + formatNaira(option.dataset.price);
     const statSelect = document.createElement('select');
     statSelect.className = 'form-select form-select-sm test-stat';
     statSelect.style.maxWidth = '10rem';
@@ -529,12 +613,13 @@ function initTestPicker(picker) {
         note.textContent = 'Tests that are not priced on this tariff were removed.';
         return;
       }
-      item.querySelector('.test-label').textContent = row.code + ' — ' + row.name + ' — ' + (requestKind === 'laboratory' ? 'Laboratory' : 'Radiology') + ' — ' + formatNaira(row.price);
+      item.querySelector('.test-label').textContent = row.code + ' — ' + row.name + ' — ' + kindLabel(requestKind) + ' — ' + formatNaira(row.price);
     });
     showEmpty();
     refreshResults();
   }
 
+  picker._repriceAdded = repriceAdded;
   tariff.addEventListener('change', repriceAdded);
   kind.addEventListener('change', refreshResults);
   search.addEventListener('input', refreshResults);

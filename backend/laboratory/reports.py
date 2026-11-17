@@ -38,41 +38,52 @@ def build_result_pdf(result):
         pdf.drawCentredString(0, 0, watermark)
         pdf.restoreState()
 
-    if layout == 'MODERN':
-        pdf.setFillColorRGB(*_hex_rgb(fmt.get('accent_color') or '#0f766e'))
-        pdf.rect(0, height - 18, width, 18, fill=1, stroke=0)
+    from core.report_stationery import draw_fitted_image, image_file
 
-    logo_drawn = False
-    logo_path = fmt.get('logo_path') or ''
-    if fmt.get('show_logo') and logo_path:
-        abs_logo = os.path.join(settings.MEDIA_ROOT, logo_path)
-        if os.path.isfile(abs_logo):
-            try:
-                pdf.drawImage(ImageReader(abs_logo), margin, y - 42, width=90, height=42, preserveAspectRatio=True, mask='auto')
-                logo_drawn = True
-            except Exception:
-                logo_drawn = False
-
-    text_x = margin + (100 if logo_drawn else 0)
-    pdf.setFillColorRGB(*_hex_rgb(fmt.get('primary_color') or '#102033'))
-    centre_name = fmt.get('centre_name') or sample.centre.name
     bold = _bold_font(font)
-    if layout == 'CLASSIC':
-        pdf.setFont(bold, 14)
-        pdf.drawCentredString(width / 2, y, centre_name)
-        y -= 16
-        pdf.setFont(font, size)
+    header_image = image_file(fmt, 'header_file')
+    if header_image and draw_fitted_image(pdf, header_image, margin, y - 64, width - (2 * margin), 64):
+        y -= 72
+        pdf.setFillColorRGB(*_hex_rgb(fmt.get('primary_color') or '#102033'))
+        pdf.setFont(bold, 12)
         pdf.drawCentredString(width / 2, y, title)
-        y -= 14
+        y -= 16
     else:
-        pdf.setFont(bold, 13)
-        pdf.drawString(text_x, y, centre_name)
-        y -= 14
-        pdf.setFont(font, size)
-        pdf.drawString(text_x, y, title)
-        y -= 12
+        header_image = ''
+        if layout == 'MODERN':
+            pdf.setFillColorRGB(*_hex_rgb(fmt.get('accent_color') or '#0f766e'))
+            pdf.rect(0, height - 18, width, 18, fill=1, stroke=0)
 
-    if fmt.get('header_text'):
+        logo_drawn = False
+        logo_path = fmt.get('logo_path') or ''
+        if fmt.get('show_logo') and logo_path:
+            abs_logo = os.path.join(settings.MEDIA_ROOT, logo_path)
+            if os.path.isfile(abs_logo):
+                try:
+                    pdf.drawImage(ImageReader(abs_logo), margin, y - 42, width=90, height=42, preserveAspectRatio=True, mask='auto')
+                    logo_drawn = True
+                except Exception:
+                    logo_drawn = False
+
+        text_x = margin + (100 if logo_drawn else 0)
+        pdf.setFillColorRGB(*_hex_rgb(fmt.get('primary_color') or '#102033'))
+        centre_name = fmt.get('centre_name') or sample.centre.name
+        if layout == 'CLASSIC':
+            pdf.setFont(bold, 14)
+            pdf.drawCentredString(width / 2, y, centre_name)
+            y -= 16
+            pdf.setFont(font, size)
+            pdf.drawCentredString(width / 2, y, title)
+            y -= 14
+        else:
+            pdf.setFont(bold, 13)
+            pdf.drawString(text_x, y, centre_name)
+            y -= 14
+            pdf.setFont(font, size)
+            pdf.drawString(text_x, y, title)
+            y -= 12
+
+    if fmt.get('header_text') and not header_image:
         pdf.setFont(font, max(8, size - 1))
         for chunk in _wrap(fmt['header_text'], 95):
             pdf.drawString(margin, y, chunk)
@@ -186,10 +197,15 @@ def build_result_pdf(result):
             pdf.drawString(margin, y, f"Reg. No: {auth['license_number']}"[:90])
 
     footer = (fmt.get('footer_text') or '').strip() or 'Released copies are the copies authorised for clinical use. Analyzer import never releases a result.'
+    footer_image = image_file(fmt, 'footer_file')
+    text_y = 28
+    if footer_image and draw_fitted_image(pdf, footer_image, margin, 22, width - (2 * margin), 36):
+        text_y = 62
     pdf.setFont(font, 8)
-    pdf.drawString(margin, 28, footer[:120])
+    pdf.drawString(margin, text_y, footer[:120])
     pdf.save()
-    return buffer.getvalue()
+    from core.report_stationery import apply_pdf_stationery
+    return apply_pdf_stationery(buffer.getvalue(), fmt)
 
 
 def _bold_font(font):

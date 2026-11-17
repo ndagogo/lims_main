@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Upload tariff data | {{ org_short_name }}{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="muted small"><a class="text-decoration-none muted" href="{% url 'enterprise-tariffs' %}">Tariff master</a> · UPLOAD</div>
+  <h1 class="h3 mb-1">Tariff data</h1>
+  <p class="muted mb-0">Create a tariff first, download a template from an existing tariff, update the sheet, then upload. Required headers: {{ headers|join:", " }}.</p>
+</div>
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card p-4">
+      <h2 class="h5">Download tariff data</h2>
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="download">
+        <div class="col-12">
+          <label class="form-label">Existing tariff</label>
+          <select class="form-select" name="tariff" required>
+            <option value="">Choose tariff</option>
+            {% for tariff in tariffs %}<option value="{{ tariff.pk }}">{{ tariff.code }} — {{ tariff.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Format</label>
+          <select class="form-select" name="format">
+            <option value="xlsx">Excel (.xlsx)</option>
+            <option value="csv">CSV</option>
+          </select>
+        </div>
+        <div class="col-12"><button class="btn btn-outline-dark" type="submit">Download</button></div>
+      </form>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-4">
+      <h2 class="h5">Upload new tariff data</h2>
+      <form method="post" enctype="multipart/form-data" class="row g-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="upload">
+        <div class="col-12">
+          <label class="form-label">Target tariff</label>
+          <select class="form-select" name="tariff" required>
+            <option value="">Choose tariff created for this upload</option>
+            {% for tariff in tariffs %}<option value="{{ tariff.pk }}">{{ tariff.code }} — {{ tariff.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Template headers</label>
+          <input class="form-control" value="{{ headers|join:',' }}" readonly>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Select file</label>
+          <input class="form-control" type="file" name="tariff_file" accept=".csv,.xlsx,.xlsm" required>
+        </div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Upload</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

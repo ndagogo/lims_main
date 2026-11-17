@@ -22,6 +22,26 @@ from core.views import (
     catalog_tests, catalog_service_groups, catalog_doctors, catalog_imaging, catalog_centres,
     catalog_clients,
 )
+from core.enterprise_clients import (
+    clients_master as enterprise_clients_master,
+    client_types_page as enterprise_client_types,
+    channels_page as enterprise_channels,
+)
+from core.enterprise_tariffs import (
+    tariff_master as enterprise_tariff_master,
+    tariff_editor as enterprise_tariff_editor,
+    tariff_upload as enterprise_tariff_upload,
+    tariff_delete_confirm as enterprise_tariff_delete,
+)
+from core.enterprise_referrals import (
+    referrals_hub as enterprise_referrals_hub,
+    referrals_doctors as enterprise_referrals_doctors,
+    referrals_commission as enterprise_referrals_commission,
+    referrals_visits as enterprise_referrals_visits,
+    referrals_payouts as enterprise_referrals_payouts,
+    referrals_export as enterprise_referrals_export,
+)
+from core.enterprise_bulk_upload import bulk_upload_hub as enterprise_bulk_upload
 from core.platform_views import (
     platform_analyzers, platform_analyzer_mappings, platform_analyzer_messages, platform_audit,
     platform_bill_amendments, platform_gateways, platform_hub, platform_inventory_skus,
@@ -30,7 +50,7 @@ from core.platform_views import (
     platform_qc_materials, platform_qc_runs, platform_radiology_accept,
     platform_radiology_template_builder, platform_radiology_templates, platform_refunds,
     platform_result_template_builder, platform_result_templates, platform_sample_codes,
-    platform_tat_rules, platform_workflows,
+    platform_tat_rules, platform_workflow_guide, platform_workflows,
 )
 from patients.api import PatientViewSet, VisitViewSet
 from laboratory.api import (
@@ -91,9 +111,24 @@ urlpatterns=[
     path('catalog/imaging/', catalog_imaging, name='catalog-imaging'),
     path('catalog/centres/', catalog_centres, name='catalog-centres'),
     path('catalog/clients/', catalog_clients, name='catalog-clients'),
+    path('enterprise/clients/', enterprise_clients_master, name='enterprise-clients'),
+    path('enterprise/client-types/', enterprise_client_types, name='enterprise-client-types'),
+    path('enterprise/channels/', enterprise_channels, name='enterprise-channels'),
+    path('enterprise/tariffs/', enterprise_tariff_master, name='enterprise-tariffs'),
+    path('enterprise/tariffs/upload/', enterprise_tariff_upload, name='enterprise-tariff-upload'),
+    path('enterprise/tariffs/<int:pk>/', enterprise_tariff_editor, name='enterprise-tariff-editor'),
+    path('enterprise/tariffs/<int:pk>/delete/', enterprise_tariff_delete, name='enterprise-tariff-delete'),
+    path('enterprise/referrals/', enterprise_referrals_hub, name='enterprise-referrals'),
+    path('enterprise/referrals/doctors/', enterprise_referrals_doctors, name='enterprise-referrals-doctors'),
+    path('enterprise/referrals/commission/', enterprise_referrals_commission, name='enterprise-referrals-commission'),
+    path('enterprise/referrals/visits/', enterprise_referrals_visits, name='enterprise-referrals-visits'),
+    path('enterprise/referrals/payouts/', enterprise_referrals_payouts, name='enterprise-referrals-payouts'),
+    path('enterprise/referrals/export/', enterprise_referrals_export, name='enterprise-referrals-export'),
+    path('enterprise/bulk-upload/', enterprise_bulk_upload, name='enterprise-bulk-upload'),
     path('platform/', platform_hub, name='platform-hub'),
     path('platform/organization/', platform_organization, name='platform-organization'),
     path('platform/audit/', platform_audit, name='platform-audit'),
+    path('platform/workflows/guide.pdf', platform_workflow_guide, name='platform-workflow-guide'),
     path('platform/workflows/', platform_workflows, name='platform-workflows'),
     path('platform/qc-materials/', platform_qc_materials, name='platform-qc-materials'),
     path('platform/qc-runs/', platform_qc_runs, name='platform-qc-runs'),

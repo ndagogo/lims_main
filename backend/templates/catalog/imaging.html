@@ -25,7 +25,7 @@
                   <a class="fw-semibold text-decoration-none" href="?procedure={{ procedure.pk }}&q={{ query|urlencode }}&status={{ status }}&centre={{ centre_id }}&per={{ procedures.paginator.per_page }}&ppage={{ procedures.number }}&mpage={{ modalities.number }}">{{ procedure.code }}</a>
                   <div class="small muted">{{ procedure.name }}</div>
                 </td>
-                <td class="small">{{ procedure.modality_type }}</td>
+                <td class="small">{{ procedure.modality_type }}{% if procedure.default_workflow_code %}<div class="muted">{{ procedure.default_workflow_code }}</div>{% endif %}</td>
                 <td>{{ procedure.price_count }}</td>
                 <td>{% if procedure.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-danger-soft">Inactive</span>{% endif %}</td>
               </tr>
@@ -51,6 +51,14 @@
             {% for value, label in modality_types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
           </select>
         </div>
+        <div class="col-md-8">
+          <label class="form-label">Workflow</label>
+          <select class="form-select" name="default_workflow_code" {% if published_workflows %}required{% endif %}>
+            <option value="">{% if published_workflows %}Select a workflow{% else %}Publish a workflow first{% endif %}</option>
+            {% for wf in published_workflows %}<option value="{{ wf.code }}">{{ wf.name }} ({{ wf.code }})</option>{% endfor %}
+          </select>
+          <div class="form-text">Each investigation is mapped to one published workflow.</div>
+        </div>
         <div class="col-md-4 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="proc-active" checked><label class="form-check-label" for="proc-active">Active</label></div></div>
         <div class="col-12"><button class="btn btn-primary" type="submit">Create procedure</button></div>
       </form>
@@ -75,6 +83,13 @@
             <label class="form-label">Modality type</label>
             <select class="form-select" name="modality_type" required>
               {% for value, label in modality_types %}<option value="{{ value }}" {% if selected_procedure.modality_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-8">
+            <label class="form-label">Workflow</label>
+            <select class="form-select" name="default_workflow_code" {% if published_workflows %}required{% endif %}>
+              <option value="">{% if published_workflows %}Select a workflow{% else %}Publish a workflow first{% endif %}</option>
+              {% for wf in published_workflows %}<option value="{{ wf.code }}" {% if selected_procedure.default_workflow_code == wf.code %}selected{% endif %}>{{ wf.name }} ({{ wf.code }})</option>{% endfor %}
             </select>
           </div>
           <div class="col-md-4 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="edit-proc-active" {% if selected_procedure.is_active %}checked{% endif %}><label class="form-check-label" for="edit-proc-active">Active</label></div></div>

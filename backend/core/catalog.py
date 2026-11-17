@@ -57,6 +57,16 @@ def _text(post, name, default=''):
     return (post.get(name) or default).strip()
 
 
+def _published_workflows():
+    from workflows.services import published_workflows
+    return published_workflows()
+
+
+def _posted_workflow_code(request):
+    from workflows.services import require_published_workflow
+    return require_published_workflow(request.POST.get('default_workflow_code'))
+
+
 def _optional_pk(request, name):
     raw = (request.GET.get(name) or '').strip()
     return int(raw) if raw.isdigit() else None
@@ -97,6 +107,7 @@ def _try_delete(request, obj, redirect_name, label):
 # --- Hub -----------------------------------------------------------------
 
 def build_hub_context(request):
+    from patients.models import ClientType, RegistrationChannel
     counts = {
         'tariffs': Tariff.objects.count(),
         'tests': Test.objects.count(),
@@ -106,15 +117,23 @@ def build_hub_context(request):
         'modalities': ImagingModality.objects.count(),
         'centres': Centre.objects.count(),
         'clients': OrganisationClient.objects.count(),
+        'channels': RegistrationChannel.objects.count(),
+        'client_types': ClientType.objects.count(),
     }
     entities = (
-        ('Tariffs & prices', 'catalog-tariffs', 'tariffs', 'bi-tags', 'Lab and imaging prices by tariff'),
-        ('Laboratory tests', 'catalog-tests', 'tests', 'bi-droplet', 'Codes, departments, and parameters'),
+        ('Bulk upload', 'enterprise-bulk-upload', 'tests', 'bi-cloud-upload', 'CSV/Excel templates for tests, doctors, clients, tariffs'),
+        ('Tariff master', 'enterprise-tariffs', 'tariffs', 'bi-tags', 'Create, clone, upload, and price tariffs'),
+        ('Clients master', 'enterprise-clients', 'clients', 'bi-briefcase', 'Credit / on-payment clients, wallets, receipts'),
+        ('Channels', 'enterprise-channels', 'channels', 'bi-signpost-2', 'Self, doctors, credit & on-payment channel tariffs'),
+        ('Client types', 'enterprise-client-types', 'client_types', 'bi-diagram-2', 'Credit, On Payment, Default, and custom types'),
+        ('Laboratory tests', 'catalog-tests', 'tests', 'bi-droplet', 'Auto codes, departments, and parameters'),
         ('Service groups', 'catalog-service-groups', 'service_groups', 'bi-diagram-3', 'Sample ID group digits'),
-        ('Referral doctors', 'catalog-doctors', 'doctors', 'bi-person-badge', 'Doctors and institutions'),
+        ('Referral business', 'enterprise-referrals', 'doctors', 'bi-people', 'Commission due, visits, payouts, and exports'),
+        ('Referral doctors', 'catalog-doctors', 'doctors', 'bi-person-badge', 'Doctor master data and institutions'),
         ('Imaging', 'catalog-imaging', 'procedures', 'bi-radioactive', 'Procedures and centre modalities'),
         ('Centres', 'catalog-centres', 'centres', 'bi-building', 'Sites and sample digits'),
-        ('Organisation clients', 'catalog-clients', 'clients', 'bi-briefcase', 'HMO and corporate accounts'),
+        ('Legacy tariff list', 'catalog-tariffs', 'tariffs', 'bi-list-ul', 'Simple tariff list (legacy)'),
+        ('Legacy clients', 'catalog-clients', 'clients', 'bi-folder', 'Simple organisation client list (legacy)'),
     )
     return {
         'counts': counts,
@@ -349,7 +368,8 @@ def build_tests_context(request):
             ResultTemplate.objects.filter(test=selected, is_active=True).order_by('name', '-version')
             if selected else ResultTemplate.objects.none()
         ),
-        'workflow_codes': ['NORMAL', 'MICROBIOLOGY', 'CYTOLOGY', 'HISTOLOGY'],
+        'published_workflows': _published_workflows(),
+        'existing_test_names': list(Test.objects.values_list('name', flat=True)),
     }
 
 
@@ -405,10 +425,11 @@ def handle_tests_post(request):
 
 
 def _save_test(request, test):
-    code = _text(request.POST, 'code').upper()
-    name = _text(request.POST, 'name')
-    if not code or not name:
-        raise ValidationError('Test code and name are required.')
+    from laboratory.test_names import assert_test_name_available
+    name = assert_test_name_available(
+        _text(request.POST, 'name'),
+        exclude_pk=test.pk if test else None,
+    )
     department = _text(request.POST, 'department') or 'PATHOLOGY'
     department_code = _text(request.POST, 'department_code') or '1'
     if len(department_code) != 1 or not department_code.isdigit():
@@ -427,7 +448,7 @@ def _save_test(request, test):
     specimen_type, containers = _posted_collection_types(
         request, previous_specimen_id=previous_specimen_id, previous_container_ids=previous_container_ids,
     )
-    default_workflow_code = _text(request.POST, 'default_workflow_code').upper()
+    default_workflow_code = _posted_workflow_code(request)
     tat_raw = _text(request.POST, 'tat_target_minutes')
     try:
         tat_target_minutes = int(tat_raw) if tat_raw else None
@@ -444,10 +465,8 @@ def _save_test(request, test):
             default_template = ResultTemplate.objects.filter(pk=request.POST.get('default_template'), test_id=test.pk).first()
     is_active = _checked(request.POST, 'is_active') if request.POST.get('is_active_submitted') or test else True
     if test is None:
-        if Test.objects.filter(code__iexact=code).exists():
-            raise ValidationError('A test with that code already exists.')
         test = Test(
-            code=code, name=name, department=department, department_code=department_code,
+            name=name, department=department, department_code=department_code,
             service_group=group, specimen_type=specimen_type, collection_requirements=collection_requirements,
             sample_volume=sample_volume, handling_instructions=handling_instructions,
             default_workflow_code=default_workflow_code, tat_target_minutes=tat_target_minutes,
@@ -456,12 +475,11 @@ def _save_test(request, test):
         test.save()
         test.container_types.set(containers)
         sync_test_collection_labels(test)
-        _audit(request, 'TEST_CREATED', test, {'code': test.code, 'name': test.name})
-        messages.success(request, f'Test {test.code} was created.')
+        from workflows.services import bind_catalog_workflow
+        bind_catalog_workflow(default_workflow_code, test=test)
+        _audit(request, 'TEST_CREATED', test, {'code': test.code, 'name': test.name, 'workflow': test.default_workflow_code})
+        messages.success(request, f'Test {test.code} was created. Code is auto-assigned and locked.')
     else:
-        if Test.objects.filter(code__iexact=code).exclude(pk=test.pk).exists():
-            raise ValidationError('A test with that code already exists.')
-        test.code = code
         test.name = name
         test.department = department
         test.department_code = department_code
@@ -485,7 +503,9 @@ def _save_test(request, test):
         test.save()
         test.container_types.set(containers)
         sync_test_collection_labels(test)
-        _audit(request, 'TEST_UPDATED', test, {'code': test.code, 'name': test.name, 'is_active': test.is_active})
+        from workflows.services import bind_catalog_workflow
+        bind_catalog_workflow(default_workflow_code, test=test)
+        _audit(request, 'TEST_UPDATED', test, {'code': test.code, 'name': test.name, 'is_active': test.is_active, 'workflow': test.default_workflow_code})
         messages.success(request, f'Test {test.code} was saved.')
     return redirect(f'/catalog/tests/?test={test.pk}')
 
@@ -1043,6 +1063,7 @@ def build_imaging_context(request):
         'selected_modality': selected_modality,
         'centres': Centre.objects.filter(is_active=True).order_by('name'),
         'modality_types': ImagingModality.MODALITY_TYPES,
+        'published_workflows': _published_workflows(),
     }
 
 
@@ -1093,12 +1114,18 @@ def _save_procedure(request, procedure):
     if modality_type not in dict(ImagingModality.MODALITY_TYPES):
         raise ValidationError('Choose a valid modality type.')
     is_active = _checked(request.POST, 'is_active') if procedure or request.POST.get('is_active_submitted') else True
+    workflow_code = _posted_workflow_code(request)
     if procedure is None:
         if ImagingProcedure.objects.filter(code__iexact=code).exists():
             raise ValidationError('A procedure with that code already exists.')
-        procedure = ImagingProcedure(code=code, name=name, modality_type=modality_type, is_active=is_active)
+        procedure = ImagingProcedure(
+            code=code, name=name, modality_type=modality_type, is_active=is_active,
+            default_workflow_code=workflow_code,
+        )
         procedure.save()
-        _audit(request, 'IMAGING_PROCEDURE_CREATED', procedure, {'code': procedure.code})
+        from workflows.services import bind_catalog_workflow
+        bind_catalog_workflow(workflow_code, procedure=procedure)
+        _audit(request, 'IMAGING_PROCEDURE_CREATED', procedure, {'code': procedure.code, 'workflow': procedure.default_workflow_code})
         messages.success(request, f'Procedure {procedure.code} was created.')
     else:
         if ImagingProcedure.objects.filter(code__iexact=code).exclude(pk=procedure.pk).exists():
@@ -1107,8 +1134,11 @@ def _save_procedure(request, procedure):
         procedure.name = name
         procedure.modality_type = modality_type
         procedure.is_active = _checked(request.POST, 'is_active')
+        procedure.default_workflow_code = workflow_code
         procedure.save()
-        _audit(request, 'IMAGING_PROCEDURE_UPDATED', procedure, {'code': procedure.code})
+        from workflows.services import bind_catalog_workflow
+        bind_catalog_workflow(workflow_code, procedure=procedure)
+        _audit(request, 'IMAGING_PROCEDURE_UPDATED', procedure, {'code': procedure.code, 'workflow': procedure.default_workflow_code})
         messages.success(request, f'Procedure {procedure.code} was saved.')
     return redirect(f'/catalog/imaging/?procedure={procedure.pk}')
 
@@ -1312,8 +1342,24 @@ def _save_report_format(request, centre):
         raise ValidationError('Accent colour must be a #RRGGBB value.')
     fmt.title_lab = _text(request.POST, 'title_lab') or 'Laboratory Report'
     fmt.title_radiology = _text(request.POST, 'title_radiology') or 'Radiology Report'
+    from core.uploads import validate_upload
+
     fmt.header_text = _text(request.POST, 'header_text')
     fmt.footer_text = _text(request.POST, 'footer_text')
+    header_upload = request.FILES.get('header_file')
+    footer_upload = request.FILES.get('footer_file')
+    if header_upload:
+        validate_upload(header_upload, kinds=('jpeg', 'png', 'pdf'), max_bytes=4 * 1024 * 1024)
+        fmt.header_file = header_upload
+    elif _checked(request.POST, 'clear_header_file') and fmt.header_file:
+        fmt.header_file.delete(save=False)
+        fmt.header_file = None
+    if footer_upload:
+        validate_upload(footer_upload, kinds=('jpeg', 'png', 'pdf'), max_bytes=4 * 1024 * 1024)
+        fmt.footer_file = footer_upload
+    elif _checked(request.POST, 'clear_footer_file') and fmt.footer_file:
+        fmt.footer_file.delete(save=False)
+        fmt.footer_file = None
     fmt.show_logo = _checked(request.POST, 'show_logo')
     fmt.show_centre_address = _checked(request.POST, 'show_centre_address')
     fmt.show_centre_contact = _checked(request.POST, 'show_centre_contact')

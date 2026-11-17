@@ -126,7 +126,11 @@ if os.getenv("AWS_STORAGE_BUCKET_NAME", "").strip():
         },
     }
 MEDIA_URL = "/media/"
-MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", str(BASE_DIR / "media"))).resolve()
+# Keep a relative MEDIA_ROOT (./media) beside this project, not beside whatever folder started the process.
+_media_root = Path(os.getenv("MEDIA_ROOT", "media").strip() or "media")
+if not _media_root.is_absolute():
+    _media_root = BASE_DIR / _media_root
+MEDIA_ROOT = _media_root.resolve()
 # Serve logos, avatars, and signatures from disk when object storage is not configured.
 # Defaults on outside DEBUG so Railway can show uploads. Mount a volume at MEDIA_ROOT
 # or files disappear on the next deploy.

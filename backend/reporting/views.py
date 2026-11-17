@@ -72,6 +72,10 @@ def report_catalogue(request):
         centre_id=request.GET.get('centre') or None,
         start=request.GET.get('start'),
         end=request.GET.get('end'),
+        doctor_id=request.GET.get('doctor') or None,
+        institution_id=request.GET.get('institution') or None,
+        due_status=request.GET.get('due_status') or None,
+        commission_type=request.GET.get('commission_type') or None,
     )
     return render(request, 'reporting/catalogue.html', context)
 
@@ -143,6 +147,10 @@ def report_export(request):
         report_key = request.GET.get('report') or 'revenue_centre'
         report = build_catalogue_report(
             request.user, report_key, period=period, centre_id=centre_id, start=start, end=end,
+            doctor_id=request.GET.get('doctor') or None,
+            institution_id=request.GET.get('institution') or None,
+            due_status=request.GET.get('due_status') or None,
+            commission_type=request.GET.get('commission_type') or None,
         )
         headers, rows = report['headers'], report['rows']
         title = report['report_title']

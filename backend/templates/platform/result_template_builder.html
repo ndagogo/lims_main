@@ -8,6 +8,87 @@
   <span class="badge {% if template.status == 'PUBLISHED' %}badge-soft{% elif template.status == 'DRAFT' %}badge-warn{% else %}badge-danger-soft{% endif %} align-self-center">{{ template.status }} · v{{ template.version }}</span>
 </div>
 
+<div class="card p-4 mb-4" id="preview">
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
+    <div>
+      <h2 class="h5 mb-1">Report preview</h2>
+      <p class="small muted mb-0">This is how the published layout prints. Header and footer artwork come from the centre. The signature is the person who performs final authentication, frozen on that copy.</p>
+    </div>
+    <form method="get" class="d-flex align-items-center gap-2">
+      <label class="form-label mb-0 small" for="preview-centre">Centre letterhead</label>
+      <select class="form-select form-select-sm" id="preview-centre" name="centre" onchange="this.form.submit()">
+        {% for centre in centres %}
+          <option value="{{ centre.pk }}" {% if preview_centre and preview_centre.pk == centre.pk %}selected{% endif %}>{{ centre.code }} — {{ centre.name }}</option>
+        {% empty %}
+          <option value="">No active centre</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+  <div style="background:#f6f4ef;border:1px solid #e7e2d9;border-radius:12px;padding:1.25rem;">
+    <div style="background:#fff;border:1px solid #e7e2d9;border-radius:8px;padding:1.25rem 1.4rem;max-width:760px;margin:0 auto;">
+      {% if preview_format and preview_format.header_file %}
+        {% if preview_format.header_is_pdf %}
+          <iframe title="Centre header" src="{{ preview_format.header_file.url }}" style="width:100%;height:140px;border:0;"></iframe>
+        {% else %}
+          <img src="{{ preview_format.header_file.url }}" alt="Centre header" style="display:block;max-width:100%;max-height:88px;margin:0 auto 8px;">
+        {% endif %}
+      {% elif preview_centre %}
+        <div style="text-align:center;font-weight:700;">{{ preview_centre.name }}</div>
+        {% if preview_format and preview_format.header_text %}<div class="small muted text-center">{{ preview_format.header_text }}</div>{% endif %}
+      {% else %}
+        <div class="small muted text-center">No centre letterhead yet. Upload a header under Catalog → Centres.</div>
+      {% endif %}
+      <div style="text-align:center;margin:6px 0 12px;font-size:.95rem;">{{ preview_format.title_lab|default:"Laboratory Report" }}</div>
+      {% if template.report_header %}<p class="small mb-2">{{ template.report_header }}</p>{% endif %}
+      <div class="small muted mb-2">Patient · UHID · Visit · Sample · {{ template.test.name }}</div>
+      <table class="table table-sm mb-3">
+        <thead><tr><th>Parameter</th><th>Value</th><th>Flag</th><th>Range</th></tr></thead>
+        <tbody>
+          {% for field in fields %}
+            {% if field.include_in_report %}
+            <tr>
+              <td>{{ field.parameter.name }}{% if field.parameter.unit %} <span class="muted">({{ field.parameter.unit }})</span>{% endif %}{% if field.section_label %}<div class="muted">{{ field.section_label }}</div>{% endif %}</td>
+              <td class="muted">sample</td>
+              <td class="muted">—</td>
+              <td class="muted">{% if field.show_reference_range %}{{ field.parameter.reference_range|default:"age / sex range" }}{% else %}hidden{% endif %}</td>
+            </tr>
+            {% endif %}
+          {% empty %}
+            <tr><td colspan="4" class="muted">Add parameters to see them in the preview.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if template.instructions %}<p class="small muted">{{ template.instructions }}</p>{% endif %}
+      {% if not preview_format or preview_format.show_authenticator_signature %}
+      <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid #e7e2d9;">
+        <div class="small muted">{{ preview_format.signature_label|default:"Authenticated by" }}</div>
+        {% if request.user.signature %}
+          <img src="{{ request.user.signature.url }}" alt="Your signature" style="max-height:48px;max-width:160px;">
+          <div class="small muted">Example using your signature. The released copy uses the final authenticator, not the person previewing the template.</div>
+        {% else %}
+          <div style="height:42px;width:160px;border:1px dashed #cfc8bc;border-radius:6px;margin:6px 0;"></div>
+          <div class="small muted">The authenticator's signature image is placed here. Upload it under Account → Signature.</div>
+        {% endif %}
+        <div class="fw-semibold">Name of authenticating user</div>
+        <div class="small">Title · qualifications · registration number</div>
+      </div>
+      {% endif %}
+      {% if preview_format and preview_format.footer_file %}
+        <div class="mt-3">
+          {% if preview_format.footer_is_pdf %}
+            <iframe title="Centre footer" src="{{ preview_format.footer_file.url }}" style="width:100%;height:100px;border:0;"></iframe>
+          {% else %}
+            <img src="{{ preview_format.footer_file.url }}" alt="Centre footer" style="display:block;max-width:100%;max-height:64px;margin:0 auto;">
+          {% endif %}
+        </div>
+      {% endif %}
+      {% if template.report_footer %}<p class="small muted mt-2 mb-0">{{ template.report_footer }}</p>{% endif %}
+      {% if preview_format and preview_format.footer_text %}<p class="small muted mt-1 mb-0">{{ preview_format.footer_text }}</p>{% endif %}
+    </div>
+  </div>
+</div>
+
 <div class="row g-4">
   <div class="col-lg-4">
     <div class="card p-4 mb-3">

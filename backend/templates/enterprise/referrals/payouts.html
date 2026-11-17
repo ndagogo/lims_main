@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Referral payouts | {{ org_short_name }}{% endblock %}
+{% block content %}
+{% with page_title="Payout desk" page_subtitle="Review, approve, and settle referring-doctor withdrawal requests. New accruals remain on a 7-day hold before they are withdrawable." %}
+{% include "enterprise/referrals/_nav.html" %}
+{% endwith %}
+
+<form method="get" class="card p-3 mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-2"><label class="form-label small mb-0">Centre</label>
+      <select class="form-select form-select-sm" name="centre"><option value="">All</option>{% for centre in filters.centres %}<option value="{{ centre.pk }}" {% if filters.centre_id == centre.pk|stringformat:'s' %}selected{% endif %}>{{ centre.code }}</option>{% endfor %}</select>
+    </div>
+    <div class="col-md-2"><label class="form-label small mb-0">Doctor</label>
+      <select class="form-select form-select-sm" name="doctor"><option value="">All</option>{% for doctor in doctor_choices %}<option value="{{ doctor.pk }}" {% if filters.doctor_id == doctor.pk|stringformat:'s' %}selected{% endif %}>{{ doctor.doctor_code }}</option>{% endfor %}</select>
+    </div>
+    <div class="col-md-2"><label class="form-label small mb-0">Status</label>
+      <select class="form-select form-select-sm" name="payout_status">
+        <option value="REQUESTED" {% if payout_status == 'REQUESTED' %}selected{% endif %}>Requested</option>
+        <option value="APPROVED" {% if payout_status == 'APPROVED' %}selected{% endif %}>Approved</option>
+        <option value="REJECTED" {% if payout_status == 'REJECTED' %}selected{% endif %}>Rejected</option>
+        <option value="SETTLED" {% if payout_status == 'SETTLED' %}selected{% endif %}>Settled</option>
+        <option value="ALL" {% if payout_status == 'ALL' %}selected{% endif %}>All</option>
+      </select>
+    </div>
+    <div class="col-md-3"><label class="form-label small mb-0">Search</label><input class="form-control form-control-sm" name="q" value="{{ filters.q }}" placeholder="Doctor code or name"></div>
+    <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" type="submit">Filter</button></div>
+  </div>
+</form>
+
+{% if not can_settle %}
+<div class="alert alert-warning">You can view payouts. Approving or settling requires the referral settlement privilege or an Accounts role.</div>
+{% endif %}
+
+<div class="card p-4">
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Requested</th><th>Doctor</th><th>Amount</th><th>Ledger balance</th><th>Status</th><th>Bank</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="small">{{ row.withdrawal.requested_at|date:"d M Y H:i" }}</td>
+          <td>
+            <div class="fw-semibold">{{ row.withdrawal.doctor.doctor_code }}</div>
+            <div class="small muted">{{ row.withdrawal.doctor.first_name }} {{ row.withdrawal.doctor.last_name }} · {{ row.withdrawal.doctor.centre.code }}</div>
+          </td>
+          <td class="fw-semibold">₦{{ row.withdrawal.amount }}</td>
+          <td>₦{{ row.balance }}</td>
+          <td><span class="badge badge-soft">{{ row.withdrawal.get_status_display }}</span></td>
+          <td class="small">{% if row.withdrawal.doctor.account_number %}{{ row.withdrawal.doctor.bank_name }} · {{ row.withdrawal.doctor.account_number }}{% else %}—{% endif %}</td>
+          <td style="min-width:16rem">
+            {% if can_settle and row.withdrawal.status == 'REQUESTED' %}
+            <form method="post" class="d-flex flex-wrap gap-1 mb-1">
+              {% csrf_token %}
+              <input type="hidden" name="withdrawal" value="{{ row.withdrawal.pk }}">
+              <input class="form-control form-control-sm" name="review_note" placeholder="Note">
+              <button class="btn btn-sm btn-primary" name="action" value="approve" type="submit">Approve</button>
+              <button class="btn btn-sm btn-outline-danger" name="action" value="reject" type="submit">Reject</button>
+            </form>
+            {% elif can_settle and row.withdrawal.status == 'APPROVED' %}
+            <form method="post" enctype="multipart/form-data" class="d-grid gap-1">
+              {% csrf_token %}
+              <input type="hidden" name="withdrawal" value="{{ row.withdrawal.pk }}">
+              <input class="form-control form-control-sm" type="file" name="proof_of_payment" {% if not row.withdrawal.proof_of_payment %}required{% endif %}>
+              {% if row.withdrawal.proof_of_payment %}
+              <a class="small" href="{% url 'settlement-proof-download' row.withdrawal.pk %}">Current proof</a>
+              {% endif %}
+              <button class="btn btn-sm btn-dark" name="action" value="settle" type="submit">Mark settled</button>
+            </form>
+            {% elif row.withdrawal.status == 'SETTLED' and row.withdrawal.proof_of_payment %}
+            <a class="open-link" href="{% url 'settlement-proof-download' row.withdrawal.pk %}">Proof</a>
+            {% else %}
+            <span class="muted small">{{ row.withdrawal.review_note|default:"—" }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center muted py-4">No payout requests in this filter.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page=directory %}
+</div>
+{% endblock %}

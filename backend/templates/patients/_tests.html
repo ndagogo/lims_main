@@ -1,24 +1,17 @@
 <div class="col-12 test-picker">
-  <h3 class="h6 mb-1">Tests for this visit</h3>
-  <p class="muted">Choose the tariff, then the request type. Search the catalogue and add each test. Each test has its own stat, such as Normal, Critical, or Urgent. Pathology, phlebotomy, and radiology see the visit only after the paypoint completes payment.</p>
+  <input type="hidden" name="tariff" class="tariff-select" value="">
+  <div class="tariff-hint d-none" aria-hidden="true"></div>
   <div class="row g-3 align-items-end">
     <div class="col-md-4">
-      <label class="form-label">Tariff</label>
-      <select name="tariff" class="form-select tariff-select" required>
-        <option value="">Choose a tariff</option>
-        {% for tariff in tariffs %}<option value="{{ tariff.pk }}">{{ tariff.name }}</option>{% endfor %}
-      </select>
-    </div>
-    <div class="col-md-4">
       <label class="form-label">Request type</label>
-      <select class="form-select request-type">
+      <select class="form-select request-type" title="Does not limit search — puts this catalogue first in the match list">
         <option value="laboratory">Laboratory</option>
         <option value="radiology">Radiology</option>
       </select>
     </div>
     <div class="col-md-8">
       <label class="form-label">Search tests</label>
-      <input class="form-control test-search" placeholder="Type a name or code, for example CBC or chest" autocomplete="off">
+      <input class="form-control test-search" placeholder="Search laboratory or radiology — e.g. CBC, chest, X-ray" autocomplete="off">
     </div>
     <div class="col-md-8">
       <label class="form-label">Matching tests</label>

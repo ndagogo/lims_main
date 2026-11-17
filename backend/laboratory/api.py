@@ -22,6 +22,20 @@ def require(user, centre, capability='can_edit'):
 def request_meta(request):
     from core.access import client_browser, client_ip
     return client_ip(request), client_browser(request)
+def assigned_collector(request, centre):
+    """Phlebotomist named on the desk, when that person can see the centre."""
+    raw = str(request.data.get('collected_by') or '').strip()
+    if not raw or raw == str(request.user.pk):
+        return request.user
+    from django.contrib.auth import get_user_model
+    candidate = get_user_model().objects.filter(pk=raw, is_active=True).first()
+    if candidate is None:
+        return request.user
+    if candidate.is_superuser or candidate.centre_access.filter(centre=centre, can_view=True).exists():
+        return candidate
+    return request.user
+
+
 def activity(sample,request,action,to_status=None,note=''):
     ip,browser=request_meta(request)
     SampleActivity.objects.create(sample=sample,action=action,from_status=sample.status,to_status=to_status or sample.status,note=note,performed_by=request.user,ip_address=ip,browser=browser)
@@ -115,10 +129,11 @@ class LabOrderViewSet(viewsets.ModelViewSet):
         centre=order.visit.centre
         if not hasattr(centre,'sample_code_config'): raise ValidationError('Configure a numeric sample code for this centre before collection.')
         ip,browser=request_meta(request)
+        collector = assigned_collector(request, centre)
         with transaction.atomic():
-            enforce_workflow(order, 'collect', user=request.user, payload={'collector': request.user.get_username()})
+            enforce_workflow(order, 'collect', user=request.user, payload={'collector': collector.get_username()})
             sample=Sample(
-                order=order, centre=centre, collected_by=request.user, collected_at=timezone.now(),
+                order=order, centre=centre, collected_by=collector, collected_at=timezone.now(),
                 collector_ip=ip, collector_browser=browser, status='COLLECTED',
                 specimen_type=(order.test.specimen or '')[:80],
             )
@@ -143,10 +158,11 @@ class SampleViewSet(viewsets.ReadOnlyModelViewSet):
         if disposition not in ('SUPERSEDED', 'REJECTED', 'UNSUITABLE'):
             disposition = 'SUPERSEDED'
         ip,browser=request_meta(request)
+        collector = assigned_collector(request, old.centre)
         with transaction.atomic():
             new=Sample(
                 order=old.order, centre=old.centre, recollection_of=old,
-                collected_by=request.user, collected_at=timezone.now(),
+                collected_by=collector, collected_at=timezone.now(),
                 collector_ip=ip, collector_browser=browser, status='COLLECTED',
                 specimen_type=(old.specimen_type or old.order.test.specimen or '')[:80],
             )

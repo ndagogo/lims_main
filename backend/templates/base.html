@@ -500,8 +500,11 @@
   {% if can_modify_patient_data %}
     <a class="{% if request.path == '/patients/demographics/' %}active{% endif %}" href="{% url 'patient-demographics' %}"><i class="bi bi-person-gear"></i>Demographics</a>
   {% endif %}
+  {% if can_manage_referrals %}
+    <a class="{% if '/enterprise/referrals/' in request.path %}active{% endif %}" href="{% url 'enterprise-referrals' %}"><i class="bi bi-people"></i>Referral business</a>
+  {% endif %}
   {% if can_change_referring_doctor %}
-    <a class="{% if request.path == '/patients/referrals/remap/' %}active{% endif %}" href="{% url 'referring-doctor-remap' %}"><i class="bi bi-arrow-left-right"></i>Referrals</a>
+    <a class="{% if request.path == '/patients/referrals/remap/' %}active{% endif %}" href="{% url 'referring-doctor-remap' %}"><i class="bi bi-arrow-left-right"></i>Remap doctor</a>
   {% endif %}
   {% if is_accountant or can_refund_payment or can_edit_bill %}
     <div class="mobile-section">Finance</div>
@@ -522,6 +525,7 @@
     {% endif %}
     {% if is_platform_admin %}
       <a class="{% if request.path == '/reporting/catalogue/' %}active{% endif %}" href="{% url 'report-catalogue' %}"><i class="bi bi-journal-text"></i>Report catalogue</a>
+      <a class="{% if '/enterprise/bulk-upload/' in request.path %}active{% endif %}" href="{% url 'enterprise-bulk-upload' %}"><i class="bi bi-cloud-upload"></i>Bulk upload</a>
     {% endif %}
   {% endif %}
   <div class="mobile-section">Account</div>
@@ -558,8 +562,11 @@
       {% if can_modify_patient_data %}
         <a class="{% if request.path == '/patients/demographics/' %}active{% endif %}" href="{% url 'patient-demographics' %}">Demographics</a>
       {% endif %}
+      {% if can_manage_referrals %}
+        <a class="{% if '/enterprise/referrals/' in request.path %}active{% endif %}" href="{% url 'enterprise-referrals' %}">Referral business</a>
+      {% endif %}
       {% if can_change_referring_doctor %}
-        <a class="{% if request.path == '/patients/referrals/remap/' %}active{% endif %}" href="{% url 'referring-doctor-remap' %}">Referrals</a>
+        <a class="{% if request.path == '/patients/referrals/remap/' %}active{% endif %}" href="{% url 'referring-doctor-remap' %}">Remap doctor</a>
       {% endif %}
       {% if can_access_platform_controls or is_platform_admin or request.user.is_superuser %}
         <div class="nav-label">Settings</div>
@@ -568,6 +575,7 @@
         {% endif %}
         {% if is_platform_admin %}
           <a class="{% if request.path == '/reporting/catalogue/' %}active{% endif %}" href="{% url 'report-catalogue' %}">Report catalogue</a>
+          <a class="{% if '/enterprise/bulk-upload/' in request.path %}active{% endif %}" href="{% url 'enterprise-bulk-upload' %}">Bulk upload</a>
         {% endif %}
       {% endif %}
       <div class="nav-label">Account</div>
@@ -676,5 +684,6 @@
 })();
 </script>
 {% endif %}
+{% block extra_js %}{% endblock %}
 </body>
 </html>

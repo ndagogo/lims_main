@@ -45,6 +45,17 @@ def platform_workflows(request):
 
 
 @login_required
+def platform_workflow_guide(request):
+    from django.http import HttpResponse
+    from workflows.guide import build_workflow_guide_pdf
+    require_platform_controls(request)
+    payload = build_workflow_guide_pdf()
+    response = HttpResponse(payload, content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename="HFDN-Workflow-Guide.pdf"'
+    return response
+
+
+@login_required
 def platform_qc_materials(request):
     return _screen(request, template='platform/qc_materials.html', builder=build_qc_materials_context, handler=handle_qc_materials_post)
 

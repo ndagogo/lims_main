@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Referral visits | {{ org_short_name }}{% endblock %}
+{% block content %}
+{% with page_title="Attributed visits" page_subtitle="Search referral attributions by doctor, institution, invoice status, and period." %}
+{% include "enterprise/referrals/_nav.html" %}
+{% endwith %}
+
+<form method="get" class="card p-3 mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-2"><label class="form-label small mb-0">Period</label>
+      <select class="form-select form-select-sm" name="period">{% for value, label in period_choices %}<option value="{{ value }}" {% if filters.period == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    </div>
+    <div class="col-md-2"><label class="form-label small mb-0">Centre</label>
+      <select class="form-select form-select-sm" name="centre"><option value="">All</option>{% for centre in filters.centres %}<option value="{{ centre.pk }}" {% if filters.centre_id == centre.pk|stringformat:'s' %}selected{% endif %}>{{ centre.code }}</option>{% endfor %}</select>
+    </div>
+    <div class="col-md-2"><label class="form-label small mb-0">Start</label><input class="form-control form-control-sm" type="date" name="start" value="{{ filters.start_date }}"></div>
+    <div class="col-md-2"><label class="form-label small mb-0">End</label><input class="form-control form-control-sm" type="date" name="end" value="{{ filters.end_date }}"></div>
+    <div class="col-md-2"><label class="form-label small mb-0">Doctor</label>
+      <select class="form-select form-select-sm" name="doctor"><option value="">All</option>{% for doctor in doctor_choices %}<option value="{{ doctor.pk }}" {% if filters.doctor_id == doctor.pk|stringformat:'s' %}selected{% endif %}>{{ doctor.doctor_code }}</option>{% endfor %}</select>
+    </div>
+    <div class="col-md-2"><label class="form-label small mb-0">Institution</label>
+      <select class="form-select form-select-sm" name="institution"><option value="">All</option>{% for row in institution_choices %}<option value="{{ row.pk }}" {% if filters.institution_id == row.pk|stringformat:'s' %}selected{% endif %}>{{ row.name }}</option>{% endfor %}</select>
+    </div>
+    <div class="col-md-2"><label class="form-label small mb-0">Invoice status</label>
+      <select class="form-select form-select-sm" name="invoice_status">
+        <option value="">Any</option>
+        {% for value, label in invoice_status_choices %}
+        <option value="{{ value }}" {% if filters.invoice_status == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3"><label class="form-label small mb-0">Search</label><input class="form-control form-control-sm" name="q" value="{{ filters.q }}" placeholder="Visit, invoice, doctor"></div>
+    <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" type="submit">Apply</button></div>
+  </div>
+</form>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-sm btn-outline-dark" href="{% url 'enterprise-referrals-export' %}?{{ export_query }}&kind=visits&format=csv">CSV</a>
+  <a class="btn btn-sm btn-outline-dark" href="{% url 'enterprise-referrals-export' %}?{{ export_query }}&kind=visits&format=xlsx">Excel</a>
+  <a class="btn btn-sm btn-outline-dark" href="{% url 'enterprise-referrals-export' %}?{{ export_query }}&kind=visits&format=pdf">PDF</a>
+</div>
+
+<div class="card p-4">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead><tr>{% for h in report.headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for row in report.rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% empty %}
+        <tr><td colspan="{{ report.headers|length }}" class="muted text-center py-4">No attributed visits in this filter.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

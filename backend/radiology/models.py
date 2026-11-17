@@ -332,6 +332,10 @@ class ImagingProcedure(TimeStampedModel):
     code = models.CharField(max_length=30, unique=True)
     name = models.CharField(max_length=160)
     modality_type = models.CharField(max_length=10, choices=ImagingModality.MODALITY_TYPES)
+    default_workflow_code = models.CharField(
+        max_length=40, blank=True, default='',
+        help_text='Published workflow mapped to this investigation.',
+    )
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -345,6 +349,11 @@ class ImagingPrice(TimeStampedModel):
     tariff = models.ForeignKey('laboratory.Tariff', on_delete=models.PROTECT)
     procedure = models.ForeignKey(ImagingProcedure, on_delete=models.PROTECT, related_name='prices')
     price = models.DecimalField(max_digits=12, decimal_places=2)
+    outsource_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    percentage = models.DecimalField(
+        max_digits=7, decimal_places=2, default=0,
+        help_text='Discount or markup percentage applied when configuring this tariff line.',
+    )
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['tariff', 'procedure'], name='uniq_imaging_price')]

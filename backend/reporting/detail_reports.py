@@ -23,6 +23,7 @@ DETAIL_LIMIT = 2000
 MANAGEMENT_SECTIONS = (
     ('financial', 'Financial — revenue and collections'),
     ('collections', 'Collections by method'),
+    ('credit_wallets', 'Credit wallets — balances and ledger'),
     ('clinical', 'Clinical operations — workload and turnaround'),
     ('centres', 'Centres — performance'),
     ('referral', 'Referral network — physicians and partners'),
@@ -33,6 +34,7 @@ SECTION_KEYS = {key for key, _label in MANAGEMENT_SECTIONS}
 SHEET_TITLES = {
     'financial': 'Financial revenue',
     'collections': 'Collections by method',
+    'credit_wallets': 'Credit wallets',
     'clinical': 'Clinical operations',
     'centres': 'Centre performance',
     'referral': 'Referral network',
@@ -205,6 +207,65 @@ def _collections(centre_ids, start_dt, end_dt):
         headers,
         rows,
         'Confirmed payments received in the period, one row per receipt.',
+        truncated,
+    )
+
+
+@_register('credit_wallets')
+def _credit_wallets(centre_ids, start_dt, end_dt):
+    from patients.models import CreditWalletLedger, OrganisationClient
+
+    headers = [
+        'Date', 'Centre', 'Client', 'Client code', 'Entry', 'Amount', 'Balance after',
+        'Visit', 'Invoice', 'Reference', 'By', 'Note',
+    ]
+    ledger = CreditWalletLedger.objects.filter(
+        client__client_type_code='CREDIT',
+        created_at__gte=start_dt,
+        created_at__lte=end_dt,
+    ).select_related('client__centre', 'created_by', 'visit', 'invoice')
+    if centre_ids is not None:
+        ledger = ledger.filter(client__centre_id__in=centre_ids)
+    entries, truncated = _limited(ledger.order_by('created_at'))
+    rows = [[
+        _when(entry.created_at),
+        entry.client.centre.code,
+        entry.client.name,
+        entry.client.code,
+        entry.get_entry_type_display(),
+        money(entry.amount),
+        money(entry.balance_after),
+        entry.visit.visit_id if entry.visit_id else '',
+        entry.invoice.invoice_number if entry.invoice_id else '',
+        entry.reference,
+        _person(entry.created_by),
+        entry.note,
+    ] for entry in entries]
+
+    # Append a closing snapshot of current balances for active credit clients.
+    clients = OrganisationClient.objects.filter(is_active=True, client_type_code='CREDIT')
+    if centre_ids is not None:
+        clients = clients.filter(centre_id__in=centre_ids)
+    for client in clients.order_by('name')[:200]:
+        rows.append([
+            '',
+            client.centre.code,
+            client.name,
+            client.code,
+            'Balance snapshot',
+            money(client.credit_wallet_balance),
+            money(client.credit_wallet_balance),
+            '',
+            '',
+            f'Used {money(client.credit_wallet_used)} / Allocated {money(client.credit_limit)}',
+            '',
+            'Current wallet balance',
+        ])
+    return (
+        'Credit wallets — balances and ledger',
+        headers,
+        rows,
+        'Wallet top-ups and debits in the period, plus a current balance snapshot per credit client.',
         truncated,
     )
 

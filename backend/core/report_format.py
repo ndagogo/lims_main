@@ -45,6 +45,8 @@ def format_snapshot(centre) -> dict:
         'title_radiology': fmt.title_radiology,
         'header_text': fmt.header_text,
         'footer_text': fmt.footer_text,
+        'header_file': fmt.header_file.name if fmt.header_file else '',
+        'footer_file': fmt.footer_file.name if fmt.footer_file else '',
         'show_logo': fmt.show_logo,
         'layout_style': fmt.layout_style,
         'font_family': fmt.font_family,

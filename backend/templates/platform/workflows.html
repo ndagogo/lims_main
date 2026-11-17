@@ -12,6 +12,7 @@
     {% else %}
     <button class="btn btn-primary" type="button" disabled title="Open a draft version to save step order">Save workflow</button>
     {% endif %}
+    <a class="btn btn-outline-dark" href="{% url 'platform-workflow-guide' %}">Download guide (PDF)</a>
   </div>
 
   <div class="wf-filters mb-3">
@@ -247,14 +248,14 @@
     </div>
 
     <div>
-      <h3 class="h6">Assign workflow to test / service group</h3>
+      <h3 class="h6">Assign workflow to a test, investigation, or service group</h3>
       <div class="table-responsive mb-3">
         <table class="table table-sm align-middle">
           <thead><tr><th>Target</th><th>Priority</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {% for a in assignments %}
             <tr>
-              <td>{% if a.test %}Test {{ a.test.code }} — {{ a.test.name }}{% elif a.service_group %}Group {{ a.service_group.name }}{% else %}—{% endif %}</td>
+              <td>{% if a.test %}Test {{ a.test.code }} — {{ a.test.name }}{% elif a.procedure %}Investigation {{ a.procedure.code }} — {{ a.procedure.name }}{% elif a.service_group %}Group {{ a.service_group.name }}{% else %}—{% endif %}</td>
               <td>{{ a.priority }}</td>
               <td>{% if a.is_active %}Active{% else %}Off{% endif %}</td>
               <td class="text-nowrap">
@@ -271,8 +272,9 @@
         <input type="hidden" name="action" value="add_assignment">
         <input type="hidden" name="workflow" value="{{ selected.pk }}">
         <input type="hidden" name="workflow_code" value="{{ selected.code }}">
-        <div class="col-md-4"><select name="test" class="form-select form-select-sm"><option value="">Test (preferred)</option>{% for t in tests %}<option value="{{ t.pk }}">{{ t.code }} — {{ t.name }}</option>{% endfor %}</select></div>
-        <div class="col-md-4"><select name="service_group" class="form-select form-select-sm"><option value="">Or service group</option>{% for g in service_groups %}<option value="{{ g.pk }}">{{ g.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-3"><select name="test" class="form-select form-select-sm"><option value="">Laboratory test</option>{% for t in tests %}<option value="{{ t.pk }}">{{ t.code }} — {{ t.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-3"><select name="procedure" class="form-select form-select-sm"><option value="">Radiology investigation</option>{% for p in procedures %}<option value="{{ p.pk }}">{{ p.code }} — {{ p.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-3"><select name="service_group" class="form-select form-select-sm"><option value="">Or service group</option>{% for g in service_groups %}<option value="{{ g.pk }}">{{ g.name }}</option>{% endfor %}</select></div>
         <div class="col-md-2"><input name="priority" type="number" class="form-control form-control-sm" value="100"></div>
         <div class="col-md-2"><button class="btn btn-sm btn-dark w-100" type="submit">Assign</button></div>
       </form>
