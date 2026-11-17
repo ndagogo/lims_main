@@ -1,3 +1,10 @@
+"""Case-insensitive unique Test.name — Postgres-safe for production.
+
+PostgreSQL raises ObjectInUse / "pending trigger events" when the same
+transaction both UPDATEs/DELETEs rows on laboratory_test and then CREATE
+INDEXes that table. Keep this migration non-atomic so the data cleanup
+commits before the unique constraint is added.
+"""
 from django.db import migrations, models
 from django.db.models.functions import Lower
 
@@ -17,6 +24,13 @@ def dedupe_tests(apps, schema_editor):
     def normalize(name):
         return re.sub(r'\s+', ' ', (name or '').strip())
 
+    # Normalize whitespace first so case-insensitive groups match app rules.
+    for test in Test.objects.all().iterator():
+        cleaned = normalize(test.name)
+        if cleaned and cleaned != test.name:
+            test.name = cleaned
+            test.save(update_fields=['name'])
+
     groups = (
         Test.objects.annotate(name_key=LowerFn('name'))
         .values('name_key')
@@ -27,7 +41,6 @@ def dedupe_tests(apps, schema_editor):
         twins = list(Test.objects.filter(name__iexact=row['name_key']).order_by('pk'))
         if len(twins) < 2:
             continue
-        # Prefer active + older id as stable keeper when historical models lack annotations.
         keeper = sorted(twins, key=lambda t: (0 if t.is_active else 1, t.pk))[0]
         for dup in twins:
             if dup.pk == keeper.pk:
@@ -50,10 +63,6 @@ def dedupe_tests(apps, schema_editor):
             TatRule.objects.filter(test_id=dup.pk).update(test_id=keeper.pk)
             Test.objects.filter(default_template__test_id=dup.pk).update(default_template=None)
             dup.delete()
-        cleaned = normalize(keeper.name)
-        if cleaned and cleaned != keeper.name:
-            keeper.name = cleaned
-            keeper.save(update_fields=['name'])
 
 
 def noop_reverse(apps, schema_editor):
@@ -61,6 +70,9 @@ def noop_reverse(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # Required on PostgreSQL: data mutations + CREATE INDEX cannot share one txn.
+    atomic = False
+
     dependencies = [
         ('laboratory', '0014_backfill_tariff_codes'),
     ]
