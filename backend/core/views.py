@@ -987,14 +987,20 @@ def accounts_bill_edit(request):
 @login_required
 def payment_receipt(request, pk):
     require_workspace(request.user, 'accounts')
+    from billing.pricing import receipt_shows_line_prices
     payment = receipt_payment(request.user, pk)
-    return render(request, 'billing/receipt.html', {'payment': payment, 'invoice': payment.invoice})
+    return render(request, 'billing/receipt.html', {
+        'payment': payment,
+        'invoice': payment.invoice,
+        'show_test_prices': receipt_shows_line_prices(payment.invoice.visit),
+    })
 
 
 @login_required
 def invoice_reprint(request, pk):
     """Printable invoice sheet for users with reprint_invoice privilege."""
     require_workspace(request.user, 'accounts')
+    from billing.pricing import receipt_shows_line_prices
     from billing.workspace import invoice_for_reprint
     from core.audit import record_audit
     invoice = invoice_for_reprint(request.user, pk)
@@ -1016,7 +1022,10 @@ def invoice_reprint(request, pk):
         },
         category='BILLING',
     )
-    return render(request, 'billing/invoice_print.html', {'invoice': invoice})
+    return render(request, 'billing/invoice_print.html', {
+        'invoice': invoice,
+        'show_test_prices': receipt_shows_line_prices(visit),
+    })
 
 
 def _lab_flash(request, handler, redirect_name, *, stage_param='stage'):

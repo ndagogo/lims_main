@@ -86,18 +86,22 @@
       </div>
       <table class="table">
         <thead>
-          <tr><th>Description</th><th class="text-end">Qty</th><th class="text-end">Price</th><th class="text-end">Amount</th></tr>
+          <tr>
+            <th>Description</th>
+            {% if show_test_prices %}<th class="text-end">Price</th><th class="text-end">Amount</th>{% endif %}
+          </tr>
         </thead>
         <tbody>
           {% for item in invoice.items.all %}
             <tr>
               <td>{{ item.description }}</td>
-              <td class="text-end">{{ item.quantity }}</td>
-              <td class="text-end">₦{{ item.unit_price|floatformat:2 }}</td>
-              <td class="text-end">₦{{ item.line_total|floatformat:2 }}</td>
+              {% if show_test_prices %}
+                <td class="text-end">₦{{ item.unit_price|floatformat:2 }}</td>
+                <td class="text-end">₦{{ item.line_total|floatformat:2 }}</td>
+              {% endif %}
             </tr>
           {% empty %}
-            <tr><td colspan="4" class="muted">No line items on this invoice.</td></tr>
+            <tr><td colspan="{% if show_test_prices %}3{% else %}1{% endif %}" class="muted">No line items on this invoice.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -112,7 +116,10 @@
           <div class="d-flex justify-content-between fw-semibold border-top pt-2 mt-2"><span>Balance</span><span>₦{{ invoice.balance|floatformat:2 }}</span></div>
         </div>
       </div>
-      <p class="muted small mt-4 mb-0">This is a reprint of the invoice for visit {{ invoice.visit.visit_id }}. Keep it with the patient record.</p>
+      {% if invoice.visit.centre.receipt_footer %}
+        <p class="small mt-4 mb-2" style="white-space:pre-line">{{ invoice.visit.centre.receipt_footer }}</p>
+      {% endif %}
+      <p class="muted small mt-3 mb-0">This is a reprint of the invoice for visit {{ invoice.visit.visit_id }}. Keep it with the patient record.</p>
     </article>
   </div>
 </body>

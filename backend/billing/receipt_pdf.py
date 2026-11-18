@@ -79,15 +79,8 @@ def build_receipt_pdf(payment):
         pdf.drawString(48, y, phone)
         y -= 13
     y -= 10
-    from billing.pricing import visit_shows_test_prices
-    show_prices = True
-    try:
-        if visit.show_test_prices is False:
-            show_prices = False
-        else:
-            show_prices = visit_shows_test_prices(visit)
-    except Exception:
-        show_prices = bool(getattr(visit, 'show_test_prices', False))
+    from billing.pricing import receipt_shows_line_prices
+    show_prices = receipt_shows_line_prices(visit)
 
     pdf.setFont('Times-Bold', 10)
     pdf.drawString(48, y, 'Description')
@@ -130,12 +123,6 @@ def build_receipt_pdf(payment):
         pdf.setFont('Times-Bold' if label in ('Total amount paid', 'Invoice total', 'Balance') else 'Times-Roman', 10)
         pdf.drawString(300, y, label)
         pdf.drawRightString(width - 48, y, value)
-        y -= 14
-    if payment.centre_bank_id:
-        bank_label = payment.centre_bank.display_label()
-        pdf.setFont('Times-Roman', 10)
-        pdf.drawString(300, y, 'Bank')
-        pdf.drawRightString(width - 48, y, bank_label[:42])
         y -= 14
     y -= 16
     footer = (getattr(centre, 'receipt_footer', '') or '').strip()

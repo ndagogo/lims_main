@@ -92,6 +92,23 @@ def visit_shows_test_prices(visit) -> bool:
     )
 
 
+def receipt_shows_line_prices(visit) -> bool:
+    """
+    Whether receipt/invoice printouts may show per-test prices.
+
+    Prefer the registration snapshot on the visit so reprints match the original
+    print. Fall back to the live channel/client rule when the snapshot is missing.
+    """
+    if visit is None:
+        return False
+    if hasattr(visit, 'show_test_prices') and visit.show_test_prices is not None:
+        return bool(visit.show_test_prices)
+    try:
+        return visit_shows_test_prices(visit)
+    except Exception:
+        return False
+
+
 def ensure_credit_wallet_covers(*, client: OrganisationClient, amount: Decimal):
     if client is None or client.client_type_code != 'CREDIT':
         return
