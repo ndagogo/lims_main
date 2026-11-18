@@ -78,13 +78,14 @@
   {% else %}
     <div class="row g-4">
       <div class="col-lg-6">
+        {% if selected_due.can_collect %}
         <form method="post">
           {% csrf_token %}
           <h3 class="h6">Record payment</h3>
           <input type="hidden" name="action" value="pay">
           <input type="hidden" name="invoice" value="{{ selected_due.pk }}">
           <label class="form-label">Amount</label>
-          <input name="amount" class="form-control mb-2" value="{{ selected_due.balance_input }}" required>
+          <input name="amount" class="form-control mb-2" value="{{ selected_due.balance_input }}" required min="0.01" step="0.01">
           <label class="form-label">Method of payment</label>
           <select name="method" id="pay-method" class="form-select mb-2">{% for method in payment_methods %}<option>{{ method }}</option>{% endfor %}</select>
           <div id="pay-bank-wrap" class="mb-2" hidden>
@@ -119,6 +120,9 @@
           }
         })();
         </script>
+        {% else %}
+        <div class="alert alert-success py-2 mb-0">No outstanding balance on this invoice (net paid ₦{{ selected_due.amount_paid|floatformat:2 }}).</div>
+        {% endif %}
       </div>
       <div class="col-lg-6">
         <form method="post">

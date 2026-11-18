@@ -40,9 +40,16 @@ def handle_accounts_post(request):
         })
         return _finish(status, body, 'Test added at the tariff price.')
     if action == 'pay':
+        raw_amount = (request.POST.get('amount') or '').strip()
+        try:
+            amount = Decimal(raw_amount)
+        except Exception:
+            return False, 'Enter a valid payment amount greater than zero.'
+        if amount <= 0:
+            return False, 'Payment amount must be greater than zero. This invoice may already be settled.'
         payload = {
             'invoice': request.POST.get('invoice'),
-            'amount': request.POST.get('amount'),
+            'amount': str(amount),
             'method': request.POST.get('method') or 'CASH',
             'reference': request.POST.get('reference', ''),
         }
@@ -80,11 +87,16 @@ def handle_accounts_post(request):
 
 
 def _decorate(rows):
+    from billing.adjustments import invoice_balance, invoice_net_paid
+
     for invoice in rows:
-        paid = sum((payment.amount for payment in invoice.payments.all() if payment.status == 'CONFIRMED'), Decimal('0'))
+        # Net of confirmed payments minus completed refunds (matches Postgres ledger).
+        paid = invoice_net_paid(invoice)
+        balance = invoice_balance(invoice)
         invoice.amount_paid = paid
-        invoice.balance = (invoice.total or Decimal('0')) - paid
-        invoice.balance_input = f'{invoice.balance:.2f}'
+        invoice.balance = balance
+        invoice.balance_input = f'{max(balance, Decimal("0.00")):.2f}'
+        invoice.can_collect = balance > 0 and (invoice.total or Decimal('0')) > 0
         pending = None
         for request_row in invoice.discount_requests.all():
             if request_row.status == 'PENDING':
@@ -120,7 +132,9 @@ def build_accounts_context(request):
     user = request.user
     access = UserCentreAccess.objects.filter(user=user, centre__is_active=True, can_view=True)
     centre_ids = access.values_list('centre_id', flat=True)
-    invoices = Invoice.objects.select_related('visit__patient', 'visit__centre').prefetch_related('items__test', 'items__imaging_order__procedure', 'payments', 'discount_requests').order_by('-created_at')
+    invoices = Invoice.objects.select_related('visit__patient', 'visit__centre').prefetch_related(
+        'items__test', 'items__imaging_order__procedure', 'payments', 'refunds', 'discount_requests',
+    ).order_by('-created_at')
     payments = Payment.objects.select_related('invoice__visit__patient', 'invoice__visit__centre').order_by('-created_at')
     discounts = DiscountRequest.objects.select_related('invoice__visit__patient', 'invoice__visit__centre', 'invoice').order_by('-created_at')
     visits = Visit.objects.select_related('patient', 'centre').order_by('-created_at')
@@ -130,7 +144,7 @@ def build_accounts_context(request):
         discounts = discounts.filter(invoice__visit__centre_id__in=centre_ids)
         visits = visits.filter(centre_id__in=centre_ids)
     query = (request.GET.get('q') or '').strip()
-    open_invoices = invoices.filter(status__in=['UNPAID', 'PART_PAID'])
+    open_invoices = invoices.filter(status__in=['UNPAID', 'PART_PAID'], total__gt=0)
     if query:
         open_invoices = open_invoices.filter(
             Q(visit__patient__first_name__icontains=query)

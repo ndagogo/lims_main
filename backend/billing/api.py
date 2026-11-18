@@ -105,10 +105,15 @@ class PaymentViewSet(viewsets.ModelViewSet):
     serializer_class=PaymentSerializer; permission_classes=[IsAuthenticated,HasCentreAccess]; http_method_names=['get','post','head','options']
     def get_queryset(self): return centre_qs(Payment.objects.select_related('invoice__visit__centre'),self.request.user,'invoice__visit')
     def perform_create(self, serializer):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
         require_workspace(self.request.user, 'accounts')
         invoice=serializer.validated_data['invoice']; centre=invoice.visit.centre
         if not self.request.user.is_superuser and not UserCentreAccess.objects.filter(user=self.request.user,centre=centre,can_edit=True).exists(): raise PermissionDenied('Billing permission required.')
-        payment = serializer.save(received_by=self.request.user)
+        try:
+            payment = serializer.save(received_by=self.request.user)
+        except DjangoValidationError as exc:
+            raise ValidationError(getattr(exc, 'messages', None) or [str(exc)]) from exc
         visit = invoice.visit
         record_audit(
             request=self.request, actor=self.request.user, action='PAYMENT_RECORDED',
