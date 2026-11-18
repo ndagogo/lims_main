@@ -36,6 +36,29 @@ def assigned_collector(request, centre):
     return request.user
 
 
+def resolve_processing_centre(request, fallback_centre):
+    """
+    Centre that will receive the sample for batch receiving and later lab work.
+    Defaults to the registration / previous sample centre when not supplied.
+    """
+    from core.models import Centre
+    from laboratory.models import SampleCodeConfig
+
+    raw = str(request.data.get('processing_centre') or request.data.get('centre') or '').strip()
+    centre = fallback_centre
+    if raw:
+        centre = Centre.objects.filter(pk=raw, is_active=True).select_related('sample_code_config').first()
+        if centre is None:
+            raise ValidationError({'processing_centre': 'Select an active processing centre.'})
+    if not SampleCodeConfig.objects.filter(centre=centre, is_active=True).exists():
+        raise ValidationError({
+            'processing_centre': (
+                f'Configure a sample digit for {centre.code} before using it as a processing centre.'
+            ),
+        })
+    return centre
+
+
 def activity(sample,request,action,to_status=None,note=''):
     ip,browser=request_meta(request)
     SampleActivity.objects.create(sample=sample,action=action,from_status=sample.status,to_status=to_status or sample.status,note=note,performed_by=request.user,ip_address=ip,browser=browser)
@@ -126,10 +149,9 @@ class LabOrderViewSet(viewsets.ModelViewSet):
         require_workspace(request.user, 'phlebotomy', 'laboratory')
         order=self.get_object(); require(request.user,order.visit.centre,'can_edit'); assert_paid(order)
         if order.status=='CANCELLED': raise ValidationError('Cancelled orders cannot be collected.')
-        centre=order.visit.centre
-        if not hasattr(centre,'sample_code_config'): raise ValidationError('Configure a numeric sample code for this centre before collection.')
+        centre = resolve_processing_centre(request, order.visit.centre)
         ip,browser=request_meta(request)
-        collector = assigned_collector(request, centre)
+        collector = assigned_collector(request, order.visit.centre)
         with transaction.atomic():
             enforce_workflow(order, 'collect', user=request.user, payload={'collector': collector.get_username()})
             sample=Sample(
@@ -139,7 +161,11 @@ class LabOrderViewSet(viewsets.ModelViewSet):
             )
             sample.save()
             order.status='IN_PROGRESS'; order.save(update_fields=['status','updated_at'])
-            activity(sample,request,'COLLECTED','COLLECTED',request.data.get('note',''))
+            note = (request.data.get('note') or '').strip()
+            if centre.pk != order.visit.centre_id:
+                routed = f'Processing centre {centre.code}'
+                note = f'{note} ({routed})'.strip() if note else routed
+            activity(sample,request,'COLLECTED','COLLECTED',note)
         return Response(SampleSerializer(sample,context={'request':request}).data,status=status.HTTP_201_CREATED)
 class SampleViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class=SampleSerializer; permission_classes=[IsAuthenticated]; search_fields=['sample_id','order__visit__visit_id','order__visit__patient__phone_number']; filterset_fields=['status','centre','order__test']
@@ -148,7 +174,9 @@ class SampleViewSet(viewsets.ReadOnlyModelViewSet):
     def recollect(self,request,pk=None):
         """Create a new collected sample and supersede (or leave rejected) the original."""
         require_workspace(request.user, 'phlebotomy', 'laboratory')
-        old=self.get_object(); require(request.user,old.centre,'can_edit')
+        old=self.get_object()
+        # Recollection is authorised at the registration centre; processing centre may differ.
+        require(request.user, old.order.visit.centre, 'can_edit')
         if old.status in ('RELEASED', 'CANCELLED', 'SUPERSEDED'):
             raise ValidationError('Released, cancelled, or already superseded samples cannot be recollected.')
         assert_paid(old.order)
@@ -158,10 +186,11 @@ class SampleViewSet(viewsets.ReadOnlyModelViewSet):
         if disposition not in ('SUPERSEDED', 'REJECTED', 'UNSUITABLE'):
             disposition = 'SUPERSEDED'
         ip,browser=request_meta(request)
-        collector = assigned_collector(request, old.centre)
+        centre = resolve_processing_centre(request, old.centre)
+        collector = assigned_collector(request, old.order.visit.centre)
         with transaction.atomic():
             new=Sample(
-                order=old.order, centre=old.centre, recollection_of=old,
+                order=old.order, centre=centre, recollection_of=old,
                 collected_by=collector, collected_at=timezone.now(),
                 collector_ip=ip, collector_browser=browser, status='COLLECTED',
                 specimen_type=(old.specimen_type or old.order.test.specimen or '')[:80],
@@ -483,6 +512,19 @@ class SampleBatchViewSet(viewsets.ModelViewSet):
                 if item.sample.status == 'BATCHED':
                     activity(item.sample, request, 'DISPATCHED', 'BATCHED', batch.batch_code)
         return Response(SampleBatchSerializer(batch).data)
+    @action(detail=True, methods=['get'], url_path='report')
+    def report(self, request, pk=None):
+        """Printable batch report PDF (Reg/Proc centres, samples, services)."""
+        require_workspace(request.user, 'laboratory')
+        batch = self.get_object()
+        require(request.user, batch.centre, 'can_view')
+        from django.http import HttpResponse
+        from .batch_report import build_batch_report_pdf
+        payload = build_batch_report_pdf(batch)
+        response = HttpResponse(payload, content_type='application/pdf')
+        safe_code = ''.join(ch if ch.isalnum() or ch in '-_' else '_' for ch in (batch.batch_code or 'batch'))
+        response['Content-Disposition'] = f'inline; filename="batch-report-{safe_code}.pdf"'
+        return response
     @action(detail=True,methods=['post'])
     def receive(self,request,pk=None):
         """Receive a dispatched batch.

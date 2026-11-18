@@ -1029,20 +1029,22 @@ def invoice_reprint(request, pk):
 
 
 def _lab_flash(request, handler, redirect_name, *, stage_param='stage'):
-    """Flash success/error; after collect/recollect, open the barcode label."""
+    """Flash success/error; after collect/recollect open label; after dispatch open batch report."""
     result = handler(request)
-    sample_pk = None
+    follow = None
     if isinstance(result, tuple) and len(result) == 3:
-        ok, text, sample_pk = result
+        ok, text, follow = result
     else:
         ok, text = result
     if ok:
         messages.success(request, text)
     else:
         messages.error(request, text)
-    if ok and sample_pk:
+    if ok and follow is not None:
         from django.urls import reverse
-        return redirect(f"{reverse('sample-label', kwargs={'pk': sample_pk})}?print=1")
+        if isinstance(follow, str) and follow:
+            return redirect(follow)
+        return redirect(f"{reverse('sample-label', kwargs={'pk': follow})}?print=1")
     stage = (request.POST.get(stage_param) or request.GET.get(stage_param) or '').strip()
     if stage and redirect_name == 'laboratory-workspace':
         from django.urls import reverse
@@ -1061,6 +1063,27 @@ def laboratory_workspace(request):
     if request.method == 'POST':
         return _lab_flash(request, handle_laboratory_post, 'laboratory-workspace')
     return render(request, 'laboratory/workspace.html', build_laboratory_context(request))
+
+
+@login_required
+def batch_report(request, pk):
+    """Staff printable batch report PDF (same payload as /api/sample-batches/<id>/report/)."""
+    require_workspace(request.user, 'laboratory')
+    from django.http import HttpResponse
+    from laboratory.batch_report import build_batch_report_pdf
+    from laboratory.models import SampleBatch
+    qs = SampleBatch.objects.select_related('centre').all()
+    if not request.user.is_superuser:
+        qs = qs.filter(
+            centre__user_access__user=request.user,
+            centre__user_access__can_view=True,
+        ).distinct()
+    batch = get_object_or_404(qs, pk=pk)
+    payload = build_batch_report_pdf(batch)
+    response = HttpResponse(payload, content_type='application/pdf')
+    safe_code = ''.join(ch if ch.isalnum() or ch in '-_' else '_' for ch in (batch.batch_code or 'batch'))
+    response['Content-Disposition'] = f'inline; filename="batch-report-{safe_code}.pdf"'
+    return response
 
 
 @login_required

@@ -51,7 +51,12 @@
       <div class="small muted">Scan or enter sample IDs for a dispatched batch, then accept, mark missing, or reject before saving.</div>
     </div>
     <div class="d-flex flex-wrap align-items-center gap-2">
-      {% if selected_batch %}<span class="br-centre">{{ selected_batch.centre.name }} · {{ selected_batch.department }}</span>{% endif %}
+      {% if selected_batch %}
+      <span class="br-centre">{{ selected_batch.centre.name }} · {{ selected_batch.department }}</span>
+      {% if selected_batch.status != 'OPEN' %}
+      <a class="btn btn-sm btn-outline-dark" href="{% url 'batch-report' selected_batch.pk %}" target="_blank" rel="noopener">Batch report</a>
+      {% endif %}
+      {% endif %}
       <form method="get" class="d-flex flex-wrap gap-2 align-items-center">
         <input type="hidden" name="stage" value="receive">
         {% if date_from %}<input type="hidden" name="from" value="{{ date_from }}">{% endif %}
@@ -253,6 +258,9 @@
               <td class="small muted">{% if batch.dispatched_at %}{{ batch.dispatched_at|date:'d-M-Y H:i' }}{% else %}—{% endif %}</td>
               <td class="text-end">
                 <a class="btn btn-sm btn-outline-dark" href="?stage=receive&amp;batch={{ batch.pk }}{% if filter_qs %}&amp;{{ filter_qs }}{% endif %}">Open</a>
+                {% if batch.status != 'OPEN' %}
+                <a class="btn btn-sm btn-outline-dark" href="{% url 'batch-report' batch.pk %}" target="_blank" rel="noopener">Report</a>
+                {% endif %}
                 {% if batch.status == 'OPEN' %}
                 <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="dispatch"><input type="hidden" name="stage" value="receive"><input type="hidden" name="batch" value="{{ batch.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Dispatch</button></form>
                 {% endif %}

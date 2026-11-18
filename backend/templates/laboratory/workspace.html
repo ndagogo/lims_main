@@ -82,6 +82,9 @@
             <div class="fw-semibold">{{ batch.batch_code }}</div>
             <div class="small muted">{{ batch.department }} · {{ batch.get_status_display }} · {{ batch.items.count }} sample(s)</div>
           </div>
+          {% if batch.status != 'OPEN' %}
+            <a class="btn btn-sm btn-outline-dark" href="{% url 'batch-report' batch.pk %}" target="_blank" rel="noopener">Report</a>
+          {% endif %}
           {% if batch.status == 'OPEN' %}
             <form method="post">{% csrf_token %}<input type="hidden" name="action" value="dispatch"><input type="hidden" name="stage" value="batch"><input type="hidden" name="batch" value="{{ batch.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Dispatch</button></form>
           {% endif %}

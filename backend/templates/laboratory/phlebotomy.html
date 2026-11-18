@@ -226,6 +226,17 @@
             <label for="sc-referral">Referral</label>
             <input id="sc-referral" class="form-control is-readonly" value="{{ identity.referring|default:'—' }}" readonly>
           </div>
+          <div class="sc-field sc-span-2">
+            <label for="sc-processing">Default processing centre</label>
+            <select id="sc-processing" class="form-select" name="processing_centre">
+              {% for centre in processing_centres %}
+              <option value="{{ centre.pk }}" {% if centre.pk == identity.visit.centre_id %}selected{% endif %}>{{ centre.name }} ({{ centre.code }})</option>
+              {% empty %}
+              <option value="">No centres with a sample digit configured</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Samples go to this centre for batch receiving and processing. Override per test below if needed.</div>
+          </div>
         </div>
 
         <div class="sc-tests">
@@ -267,7 +278,21 @@
                   <td>{{ row.order.desk_vacutainer|default:"—" }}</td>
                   <td><div class="sc-clip" title="{{ row.order.desk_prereq }}">{{ row.order.desk_prereq|default:"—" }}</div></td>
                   <td>{{ row.order.desk_routine }}</td>
-                  <td>{{ row.order.visit.centre.name }}</td>
+                  <td>
+                    {% if row.kind == 'sample' %}
+                    <select class="form-select form-select-sm" name="processing_centre-{{ row.sample.pk }}" aria-label="Processing centre for {{ row.order.test.name }}">
+                      {% for centre in processing_centres %}
+                      <option value="{{ centre.pk }}" {% if centre.pk == row.sample.centre_id %}selected{% endif %}>{{ centre.name }}</option>
+                      {% endfor %}
+                    </select>
+                    {% else %}
+                    <select class="form-select form-select-sm" name="processing_centre-{{ row.order.pk }}" aria-label="Processing centre for {{ row.order.test.name }}">
+                      {% for centre in processing_centres %}
+                      <option value="{{ centre.pk }}" {% if centre.pk == row.order.visit.centre_id %}selected{% endif %}>{{ centre.name }}</option>
+                      {% endfor %}
+                    </select>
+                    {% endif %}
+                  </td>
                   <td>
                     {% if row.kind == 'sample' %}
                     <input class="form-control form-control-sm" name="reason-{{ row.sample.pk }}" value="{{ row.reason }}" placeholder="Reason" aria-label="Recollect reason for {{ row.order.test.name }}">
@@ -311,7 +336,7 @@
               <td>{{ sample.order.test.name }}</td>
               <td>{% include "includes/stat_badge.html" with stat=sample.order.stat %}</td>
               <td class="small">{{ sample.rejection_reason|default:"—" }}</td>
-              <td class="small">{{ sample.centre.name }}</td>
+              <td class="small">{{ sample.centre.name }} <span class="muted">(processing)</span></td>
               <td class="text-end"><a class="btn btn-sm btn-outline-dark" href="?queue=recollect&amp;visit={{ sample.order.visit.pk }}{% if filter_qs %}&amp;{{ filter_qs }}{% endif %}">Open</a></td>
             </tr>
             {% empty %}
@@ -356,7 +381,7 @@
               <td>{% include "includes/stat_badge.html" with stat=order.stat %}</td>
               <td class="small">{{ order.desk_specimen|default:"—" }}</td>
               <td class="small">{{ order.desk_vacutainer|default:"—" }}</td>
-              <td class="small">{{ order.visit.centre.name }}</td>
+              <td class="small">{{ order.visit.centre.name }} <span class="muted">(registration)</span></td>
               <td class="text-end"><a class="btn btn-sm btn-outline-dark" href="?queue=pending&amp;visit={{ order.visit.pk }}{% if filter_qs %}&amp;{{ filter_qs }}{% endif %}">Open</a></td>
             </tr>
             {% empty %}
@@ -373,10 +398,19 @@
 <script>
 (function () {
   var all = document.getElementById('sc-all');
-  if (!all) return;
-  all.addEventListener('change', function () {
-    document.querySelectorAll('.sc-row').forEach(function (box) { box.checked = all.checked; });
-  });
+  if (all) {
+    all.addEventListener('change', function () {
+      document.querySelectorAll('.sc-row').forEach(function (box) { box.checked = all.checked; });
+    });
+  }
+  var processing = document.getElementById('sc-processing');
+  if (processing) {
+    processing.addEventListener('change', function () {
+      document.querySelectorAll('select[name^="processing_centre-"]').forEach(function (sel) {
+        sel.value = processing.value;
+      });
+    });
+  }
 })();
 </script>
 {% endblock %}

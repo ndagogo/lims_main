@@ -147,11 +147,13 @@ def _remove_bill_item(user, invoice_item_id, reason):
     if not reason:
         raise ValidationError('A reason is required.')
     with transaction.atomic():
+        # Lock without select_related — Postgres forbids FOR UPDATE on nullable OUTER JOINs.
+        locked = InvoiceItem.objects.select_for_update().filter(pk=invoice_item_id).first()
+        if locked is None:
+            raise ValidationError('Invoice line not found.')
         item = InvoiceItem.objects.select_related(
             'invoice__visit__centre', 'test', 'lab_order', 'imaging_order',
-        ).select_for_update().filter(pk=invoice_item_id).first()
-        if item is None:
-            raise ValidationError('Invoice line not found.')
+        ).get(pk=locked.pk)
         invoice = Invoice.objects.select_for_update().get(pk=item.invoice_id)
         if invoice.status == 'CANCELLED':
             raise ValidationError('Cannot edit a cancelled invoice.')

@@ -125,7 +125,12 @@ def handle_laboratory_post(request):
             'centre': post.get('centre'), 'department': post.get('department'), 'sample_ids': post.getlist('sample_ids'),
         }), 'Batch created.')
     if action == 'dispatch':
-        return _finish(*call_action(SampleBatchViewSet, 'dispatch_batch', user, post.get('batch'), {}), 'Batch dispatched.')
+        status, body = call_action(SampleBatchViewSet, 'dispatch_batch', user, post.get('batch'), {})
+        if 200 <= status < 300 and isinstance(body, dict) and body.get('id'):
+            from django.urls import reverse
+            report_url = reverse('batch-report', kwargs={'pk': body['id']})
+            return True, 'Batch dispatched. Opening printable batch report.', report_url
+        return _finish(status, body, 'Batch dispatched.')
     if action == 'receive_desk':
         return _receive_desk_save(request)
     if action == 'receive':
@@ -193,6 +198,7 @@ def _collect_selected(request):
         return False, 'Select at least one test to collect.'
     note = (request.POST.get('comments') or request.POST.get('note') or '').strip()
     collector = (request.POST.get('phlebotomist') or '').strip()
+    default_centre = (request.POST.get('processing_centre') or '').strip()
     collected = []
     errors = []
     last_pk = None
@@ -200,6 +206,9 @@ def _collect_selected(request):
         payload = {'note': note}
         if collector:
             payload['collected_by'] = collector
+        centre = (request.POST.get(f'processing_centre-{order_id}') or default_centre).strip()
+        if centre:
+            payload['processing_centre'] = centre
         status, body = call_action(LabOrderViewSet, 'collect', request.user, order_id, payload)
         if 200 <= status < 300:
             collected.append((body or {}).get('sample_id') or '')
@@ -239,6 +248,13 @@ def _recollect_selected(request):
         }
         if collector:
             payload['collected_by'] = collector
+        centre = (
+            request.POST.get(f'processing_centre-{sample_id}')
+            or request.POST.get('processing_centre')
+            or ''
+        ).strip()
+        if centre:
+            payload['processing_centre'] = centre
         status, body = call_action(SampleViewSet, 'recollect', request.user, sample_id, payload)
         if 200 <= status < 300:
             collected.append((body or {}).get('sample_id') or '')
@@ -313,12 +329,21 @@ def build_phlebotomy_context(request):
         ),
         'lab_order_id', 'order_id',
     )
+    # All active business centres with a sample digit can be processing destinations.
+    processing_centres = list(
+        Centre.objects.filter(is_active=True, sample_code_config__is_active=True)
+        .select_related('sample_code_config')
+        .order_by('name')
+    )
     if user.is_superuser:
         centres = list(Centre.objects.filter(is_active=True).order_by('name'))
     else:
         centre_ids = list(user.centre_access.filter(can_view=True, centre__is_active=True).values_list('centre_id', flat=True))
         orders = orders.filter(visit__centre_id__in=centre_ids)
-        samples = samples.filter(centre_id__in=centre_ids)
+        # Keep recollection / history visible from the registration centre as well as the processing centre.
+        samples = samples.filter(
+            Q(centre_id__in=centre_ids) | Q(order__visit__centre_id__in=centre_ids)
+        ).distinct()
         centres = list(Centre.objects.filter(pk__in=centre_ids, is_active=True).order_by('name'))
     if centre_filter:
         orders = orders.filter(visit__centre_id=centre_filter)
@@ -397,6 +422,7 @@ def build_phlebotomy_context(request):
         'date_to': date_to,
         'centre_filter': centre_filter,
         'centres': centres,
+        'processing_centres': processing_centres,
         'desk_centre': desk_centre,
         'filter_qs': filter_qs,
         'pending_href': '?' + urlencode({**filters, 'queue': 'pending'}),

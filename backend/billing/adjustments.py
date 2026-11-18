@@ -70,11 +70,14 @@ def cancel_or_refund_item(*, user, invoice_item_id, mode, reason):
         raise ValidationError('Choose Cancel only or Cancel and refund.')
 
     with transaction.atomic():
+        # Lock the line alone first — PostgreSQL rejects FOR UPDATE on nullable OUTER JOINs
+        # from select_related(lab_order / imaging_order / test).
+        locked = InvoiceItem.objects.select_for_update().filter(pk=invoice_item_id).first()
+        if locked is None:
+            raise ValidationError('Invoice line not found.')
         item = InvoiceItem.objects.select_related(
             'invoice__visit__patient', 'invoice__visit__centre', 'test', 'lab_order', 'imaging_order',
-        ).select_for_update().filter(pk=invoice_item_id).first()
-        if item is None:
-            raise ValidationError('Invoice line not found.')
+        ).get(pk=locked.pk)
         invoice = Invoice.objects.select_for_update().get(pk=item.invoice_id)
         if invoice.status == 'CANCELLED':
             raise ValidationError('Cannot adjust a cancelled invoice.')
@@ -181,11 +184,12 @@ def replace_invoice_item(*, user, invoice_item_id, replacement_kind, replacement
         raise ValidationError('Select the replacement test and tariff.')
 
     with transaction.atomic():
+        locked = InvoiceItem.objects.select_for_update().filter(pk=invoice_item_id).first()
+        if locked is None:
+            raise ValidationError('Invoice line not found.')
         item = InvoiceItem.objects.select_related(
             'invoice__visit__patient', 'invoice__visit__centre', 'test', 'lab_order', 'imaging_order',
-        ).select_for_update().filter(pk=invoice_item_id).first()
-        if item is None:
-            raise ValidationError('Invoice line not found.')
+        ).get(pk=locked.pk)
         invoice = Invoice.objects.select_for_update().get(pk=item.invoice_id)
         if invoice.status == 'CANCELLED':
             raise ValidationError('Cannot edit a cancelled invoice.')
