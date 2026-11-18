@@ -1037,7 +1037,12 @@ def _lab_flash(request, handler, redirect_name, *, stage_param='stage'):
     stage = (request.POST.get(stage_param) or request.GET.get(stage_param) or '').strip()
     if stage and redirect_name == 'laboratory-workspace':
         from django.urls import reverse
-        return redirect(f"{reverse(redirect_name)}?stage={stage}")
+        from urllib.parse import urlencode
+        params = {'stage': stage}
+        batch = (request.POST.get('batch') or request.GET.get('batch') or '').strip()
+        if batch and stage == 'receive':
+            params['batch'] = batch
+        return redirect(f"{reverse(redirect_name)}?{urlencode(params)}")
     return redirect(redirect_name)
 
 

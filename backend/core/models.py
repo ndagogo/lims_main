@@ -87,10 +87,15 @@ class Centre(TimeStampedModel):
     code = models.CharField(max_length=8, unique=True)
     name = models.CharField(max_length=120)
     address = models.TextField(blank=True)
-    phone = models.CharField(max_length=30, blank=True)
+    phone = models.CharField(max_length=30, blank=True, help_text='Legacy primary phone; prefer CentrePhone rows.')
     email = models.EmailField(blank=True)
     logo = models.ImageField(upload_to='centre-logos/%Y/%m/', blank=True, null=True)
     timezone = models.CharField(max_length=64, default='Africa/Lagos')
+    receipt_footer = models.TextField(
+        blank=True,
+        default='',
+        help_text='Notes printed at the bottom of payment receipts for this centre.',
+    )
     is_active = models.BooleanField(default=True)
     class Meta:
         ordering = ['name']
@@ -100,6 +105,76 @@ class Centre(TimeStampedModel):
             ('set_result_water_mark', 'Can set the result watermark text'),
         ]
     def __str__(self): return f'{self.code} — {self.name}'
+
+    def receipt_phone_numbers(self):
+        """Phone numbers ticked for payment receipts (falls back to legacy Centre.phone)."""
+        rows = list(
+            self.phone_numbers.filter(is_active=True, show_on_receipt=True).order_by('sort_order', 'created_at')
+        )
+        if rows:
+            return [row.label_display() for row in rows]
+        if self.phone:
+            return [self.phone]
+        return []
+
+    def receipt_contact_line(self):
+        phones = self.receipt_phone_numbers()
+        parts = []
+        if phones:
+            parts.append(' · '.join(phones))
+        if self.email:
+            parts.append(self.email)
+        return ' · '.join(parts)
+
+
+class CentrePhone(TimeStampedModel):
+    """One of several phone numbers for a centre; optionally shown on receipts."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    centre = models.ForeignKey(Centre, on_delete=models.CASCADE, related_name='phone_numbers')
+    label = models.CharField(max_length=40, blank=True, default='', help_text='e.g. Front desk, Lab, WhatsApp')
+    number = models.CharField(max_length=40)
+    show_on_receipt = models.BooleanField(default=False)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['sort_order', 'created_at']
+
+    def __str__(self):
+        return f'{self.centre.code} · {self.number}'
+
+    def label_display(self):
+        number = (self.number or '').strip()
+        label = (self.label or '').strip()
+        return f'{label}: {number}' if label else number
+
+
+class CentreBank(TimeStampedModel):
+    """Platform-admin bank accounts used when recording POS / Transfer payments."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    centre = models.ForeignKey(Centre, on_delete=models.CASCADE, related_name='bank_accounts')
+    bank_name = models.CharField(max_length=120)
+    account_name = models.CharField(max_length=180, blank=True, default='')
+    account_number = models.CharField(max_length=40)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['bank_name', 'account_number']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['centre', 'bank_name', 'account_number'],
+                name='uniq_centre_bank_account',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.bank_name} · {self.account_number}'
+
+    def display_label(self):
+        name = (self.account_name or '').strip()
+        if name:
+            return f'{self.bank_name} — {name} ({self.account_number})'
+        return f'{self.bank_name} ({self.account_number})'
 
 
 class CentreReportFormat(TimeStampedModel):

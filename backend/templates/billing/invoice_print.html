@@ -44,8 +44,9 @@
             <h1 class="h4 mb-1">{{ invoice.visit.centre.name }}</h1>
             {% if invoice.visit.centre.address %}<div>{{ invoice.visit.centre.address }}</div>{% endif %}
             <div class="muted small">
-              {% if invoice.visit.centre.phone %}{{ invoice.visit.centre.phone }}{% endif %}
-              {% if invoice.visit.centre.email %} · {{ invoice.visit.centre.email }}{% endif %}
+              {% with contact=invoice.visit.centre.receipt_contact_line %}
+                {% if contact %}{{ contact }}{% endif %}
+              {% endwith %}
             </div>
           </div>
         </div>

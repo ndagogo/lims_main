@@ -44,8 +44,9 @@
             <h1 class="h4 mb-1">{{ invoice.visit.centre.name }}</h1>
             {% if invoice.visit.centre.address %}<div>{{ invoice.visit.centre.address }}</div>{% endif %}
             <div class="muted small">
-              {% if invoice.visit.centre.phone %}{{ invoice.visit.centre.phone }}{% endif %}
-              {% if invoice.visit.centre.email %} · {{ invoice.visit.centre.email }}{% endif %}
+              {% with contact=invoice.visit.centre.receipt_contact_line %}
+                {% if contact %}{{ contact }}{% endif %}
+              {% endwith %}
             </div>
           </div>
         </div>
@@ -79,17 +80,22 @@
           {% if payment.received_by %}<div>Cashier {{ payment.received_by.display_name|default:payment.received_by.username }}</div>{% endif %}
         </div>
       </div>
+      {% with show_prices=invoice.visit.show_test_prices %}
       <table class="table">
         <thead>
-          <tr><th>Test</th><th class="text-end">Qty</th><th class="text-end">Price</th><th class="text-end">Amount</th></tr>
+          <tr>
+            <th>Test</th>
+            {% if show_prices %}<th class="text-end">Price</th><th class="text-end">Amount</th>{% endif %}
+          </tr>
         </thead>
         <tbody>
           {% for item in invoice.items.all %}
             <tr>
               <td>{{ item.description }}</td>
-              <td class="text-end">{{ item.quantity }}</td>
-              <td class="text-end">₦{{ item.unit_price|floatformat:2 }}</td>
-              <td class="text-end">₦{{ item.line_total|floatformat:2 }}</td>
+              {% if show_prices %}
+                <td class="text-end">₦{{ item.unit_price|floatformat:2 }}</td>
+                <td class="text-end">₦{{ item.line_total|floatformat:2 }}</td>
+              {% endif %}
             </tr>
           {% endfor %}
         </tbody>
@@ -101,13 +107,20 @@
             <div class="d-flex justify-content-between"><span>Discount</span><span>₦{{ invoice.discount_amount|floatformat:2 }}</span></div>
           {% endif %}
           <div class="d-flex justify-content-between fw-semibold"><span>Invoice total</span><span>₦{{ invoice.total|floatformat:2 }}</span></div>
-          <div class="d-flex justify-content-between mt-2"><span>This receipt</span><span>₦{{ payment.amount|floatformat:2 }}</span></div>
+          <div class="d-flex justify-content-between mt-2 fw-semibold"><span>Total amount paid</span><span>₦{{ payment.amount|floatformat:2 }}</span></div>
           <div class="d-flex justify-content-between"><span>Method</span><span>{{ payment.get_method_display }}{% if payment.reference %} · {{ payment.reference }}{% endif %}</span></div>
+          {% if payment.centre_bank %}
+            <div class="d-flex justify-content-between"><span>Bank</span><span>{{ payment.centre_bank.display_label }}</span></div>
+          {% endif %}
           <div class="d-flex justify-content-between"><span>Confirmed payments</span><span>₦{{ invoice.amount_paid|floatformat:2 }}</span></div>
           <div class="d-flex justify-content-between fw-semibold border-top pt-2 mt-2"><span>Balance</span><span>₦{{ invoice.balance|floatformat:2 }}</span></div>
         </div>
       </div>
-      <p class="muted small mt-4 mb-0">This receipt confirms money received at the paypoint for the tests listed above. Keep it for the patient.</p>
+      {% endwith %}
+      {% if invoice.visit.centre.receipt_footer %}
+        <p class="small mt-4 mb-2" style="white-space:pre-line">{{ invoice.visit.centre.receipt_footer }}</p>
+      {% endif %}
+      <p class="muted small mt-3 mb-0">This receipt confirms money received at the paypoint for the tests listed above. Keep it for the patient.</p>
     </article>
   </div>
 </body>

@@ -50,7 +50,17 @@ class SampleActivitySerializer(serializers.ModelSerializer):
 class SampleBatchSerializer(serializers.ModelSerializer):
     sample_ids=serializers.ListField(child=serializers.CharField(max_length=8),write_only=True,required=False)
     samples=serializers.SerializerMethodField()
-    class Meta: model=SampleBatch; fields=['id','batch_code','centre','department','status','created_by','dispatched_at','received_at','received_by','sample_ids','samples','created_at','updated_at']; read_only_fields=['id','batch_code','status','created_by','dispatched_at','received_at','received_by']
+    class Meta:
+        model=SampleBatch
+        fields=[
+            'id','batch_code','centre','department','status','created_by','dispatched_at',
+            'received_at','received_by','receive_temperature','receive_comments',
+            'sample_ids','samples','created_at','updated_at',
+        ]
+        read_only_fields=[
+            'id','batch_code','status','created_by','dispatched_at','received_at','received_by',
+            'receive_temperature','receive_comments',
+        ]
     def get_samples(self,obj): return list(obj.items.select_related('sample').values_list('sample__sample_id',flat=True))
 class SampleProcessingSerializer(serializers.ModelSerializer):
     class Meta: model=SampleProcessing; fields='__all__'; read_only_fields=['id','performed_by','started_at','completed_at','created_at','updated_at']

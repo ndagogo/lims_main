@@ -485,16 +485,108 @@ class SampleBatchViewSet(viewsets.ModelViewSet):
         return Response(SampleBatchSerializer(batch).data)
     @action(detail=True,methods=['post'])
     def receive(self,request,pk=None):
+        """Receive a dispatched batch.
+
+        Optional payload for the receiving desk:
+        - receive_temperature, receive_comments
+        - accept_sample_ids: list of sample_id to accept (default: all remaining BATCHED)
+        - missing_sample_ids: list of sample_id marked missing (stay BATCHED)
+        - reject_lines: [{sample_id, reason}] rejected at receiving
+        """
         require_workspace(request.user, 'laboratory')
         batch=self.get_object(); require(request.user,batch.centre,'can_edit')
         if batch.status!='DISPATCHED': raise ValidationError('Only dispatched batches can be received.')
+        data = request.data if hasattr(request, 'data') else {}
+        accept_ids = data.get('accept_sample_ids')
+        missing_ids = {str(v).strip() for v in (data.get('missing_sample_ids') or []) if str(v).strip()}
+        reject_rows = data.get('reject_lines') or []
+        reject_map = {}
+        for row in reject_rows:
+            if not isinstance(row, dict):
+                continue
+            sid = str(row.get('sample_id') or '').strip()
+            reason = str(row.get('reason') or row.get('remarks') or '').strip()
+            if sid:
+                reject_map[sid] = reason or 'Rejected at department receiving'
+        remarks_map = {
+            str(k).strip(): str(v or '').strip()
+            for k, v in (data.get('remarks') or {}).items()
+            if str(k).strip()
+        }
+        temperature = data.get('receive_temperature')
+        comments = (data.get('receive_comments') or '').strip()
+        items = list(batch.items.select_related('sample__order__test', 'sample__order__visit'))
+        if accept_ids is None:
+            accept_set = {
+                item.sample.sample_id for item in items
+                if item.sample.status == 'BATCHED'
+                and item.sample.sample_id not in missing_ids
+                and item.sample.sample_id not in reject_map
+            }
+        else:
+            accept_set = {str(v).strip() for v in accept_ids if str(v).strip()}
+        overlap = (accept_set & missing_ids) | (accept_set & set(reject_map)) | (missing_ids & set(reject_map))
+        if overlap:
+            raise ValidationError('A sample cannot be accepted, missing, and rejected at the same time.')
+        if not accept_set and not missing_ids and not reject_map:
+            raise ValidationError('Select at least one sample to accept, mark missing, or reject.')
+        from decimal import Decimal, InvalidOperation
+        temp_value = None
+        if temperature not in (None, ''):
+            try:
+                temp_value = Decimal(str(temperature).strip())
+            except (InvalidOperation, ValueError, TypeError) as exc:
+                raise ValidationError({'receive_temperature': 'Enter a valid temperature in °C.'}) from exc
         with transaction.atomic():
-            batch.status='RECEIVED'; batch.received_at=timezone.now(); batch.received_by=request.user; batch.save(update_fields=['status','received_at','received_by','updated_at'])
-            for item in batch.items.select_related('sample__order'):
-                if item.sample.status=='BATCHED':
-                    assert_sample_actionable(item.sample)
-                    enforce_workflow(item.sample.order, 'receive', user=request.user)
-                    set_status(item.sample,request,'RECEIVED','DEPARTMENT_RECEIVED',batch.batch_code)
+            batch.status = 'RECEIVED'
+            batch.received_at = timezone.now()
+            batch.received_by = request.user
+            batch.receive_temperature = temp_value
+            batch.receive_comments = comments
+            batch.save(update_fields=[
+                'status', 'received_at', 'received_by', 'receive_temperature', 'receive_comments', 'updated_at',
+            ])
+            for item in items:
+                sample = item.sample
+                sid = sample.sample_id
+                note = remarks_map.get(sid) or ''
+                if sid in reject_map:
+                    reason = reject_map[sid]
+                    if sample.status in Sample.TERMINAL_STATUSES:
+                        continue
+                    sample.rejection_reason = reason
+                    sample.disposition = 'REJECTED'
+                    sample.corrective_action = note
+                    sample.rejected_by = request.user
+                    sample.rejected_at = timezone.now()
+                    sample.save(update_fields=[
+                        'rejection_reason', 'disposition', 'corrective_action',
+                        'rejected_by', 'rejected_at', 'updated_at',
+                    ])
+                    set_status(sample, request, 'REJECTED', 'REJECTED', reason)
+                    item.receive_disposition = 'REJECTED'
+                    item.remarks = (note or reason)[:255]
+                    item.save(update_fields=['receive_disposition', 'remarks', 'updated_at'])
+                    continue
+                if sid in missing_ids:
+                    item.receive_disposition = 'MISSING'
+                    item.remarks = (note or 'Marked missing at receiving')[:255]
+                    item.save(update_fields=['receive_disposition', 'remarks', 'updated_at'])
+                    activity(sample, request, 'RECEIVE_MISSING', sample.status, item.remarks)
+                    continue
+                if sid in accept_set and sample.status == 'BATCHED':
+                    assert_sample_actionable(sample)
+                    enforce_workflow(sample.order, 'receive', user=request.user)
+                    set_status(sample, request, 'RECEIVED', 'DEPARTMENT_RECEIVED', batch.batch_code)
+                    item.receive_disposition = 'ACCEPTED'
+                    if note:
+                        item.remarks = note[:255]
+                    if not item.scanned_at:
+                        item.scanned_at = timezone.now()
+                        item.scanned_by = request.user
+                    item.save(update_fields=[
+                        'receive_disposition', 'remarks', 'scanned_at', 'scanned_by', 'updated_at',
+                    ])
         return Response(SampleBatchSerializer(batch).data)
 class TestParameterViewSet(viewsets.ReadOnlyModelViewSet): queryset=TestParameter.objects.all(); serializer_class=TestParameterSerializer; permission_classes=[IsAuthenticated]; filterset_fields=['test']
 class ResultTemplateViewSet(viewsets.ReadOnlyModelViewSet): queryset=ResultTemplate.objects.filter(is_active=True); serializer_class=ResultTemplateSerializer; permission_classes=[IsAuthenticated]; filterset_fields=['test']

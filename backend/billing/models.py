@@ -35,7 +35,7 @@ class Invoice(TimeStampedModel):
                 from core.organization import document_prefix
                 self.invoice_number = f'{document_prefix()}-INV-{counter.value:09d}'
         super().save(*args, **kwargs)
-    def recalculate(self):
+    def recalculate(self, actor=None):
         if self.status == 'CANCELLED':
             return
         # Query the tables directly so a prefetched invoice cannot keep a stale total.
@@ -55,6 +55,11 @@ class Invoice(TimeStampedModel):
             self.status = 'UNPAID'
         previously_paid = bool(self.pk) and type(self).objects.filter(pk=self.pk, status='PAID').exists()
         self.save(update_fields=['subtotal', 'discount_amount', 'total', 'status', 'updated_at'])
+        # Wallet debit/restore must not depend on commission side-effects succeeding.
+        from billing.pricing import apply_credit_wallet_for_invoice_status
+        apply_credit_wallet_for_invoice_status(
+            invoice=self, previously_paid=previously_paid, actor=actor,
+        )
         from referrals.services import sync_commission
         sync_commission(self)
         if self.status == 'PAID' and not previously_paid:
@@ -94,6 +99,10 @@ class Payment(TimeStampedModel):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     method = models.CharField(max_length=20, choices=[('CASH','Cash'),('POS','POS'),('TRANSFER','Transfer'),('CARD','Card'),('HMO','HMO'),('CREDIT','Credit')])
     reference = models.CharField(max_length=100, blank=True)
+    centre_bank = models.ForeignKey(
+        'core.CentreBank', null=True, blank=True, on_delete=models.SET_NULL, related_name='payments',
+        help_text='Receiving bank account for POS / Transfer payments.',
+    )
     received_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
     receipt_number = models.CharField(max_length=40, unique=True, blank=True)
     status = models.CharField(max_length=20, choices=[('CONFIRMED','Confirmed'),('REVERSED','Reversed')], default='CONFIRMED')
@@ -117,8 +126,12 @@ class Payment(TimeStampedModel):
                 counter.value += 1; counter.save(update_fields=['value'])
                 from core.organization import document_prefix
                 self.receipt_number = f'{document_prefix()}-RCP-{counter.value:09d}'
-        super().save(*args, **kwargs)
-        self.invoice.recalculate()
+        # Keep payment + invoice status + credit-wallet debit in one transaction so a
+        # failed wallet debit cannot leave a Paid invoice with no deduction.
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            wallet_actor = self.reversed_by if self.status == 'REVERSED' else self.received_by
+            self.invoice.recalculate(actor=wallet_actor)
 
 class DiscountRequest(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

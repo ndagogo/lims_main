@@ -97,8 +97,8 @@ class ClientType(TimeStampedModel):
     code = models.CharField(max_length=20, unique=True)
     name = models.CharField(max_length=80)
     show_test_prices_default = models.BooleanField(
-        default=True,
-        help_text='Default Test_Price_Display_on_receipt for new clients of this type.',
+        default=False,
+        help_text='Default Test_Price_Display_on_receipt for new clients of this type. OFF by default.',
     )
     is_system = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
@@ -127,8 +127,8 @@ class RegistrationChannel(TimeStampedModel):
         help_text='Used for Self and Permanent Doctors. B2B clients use their own mapped tariff.',
     )
     show_test_prices = models.BooleanField(
-        default=True,
-        help_text='Test_Price_Display_on_receipt. When OFF, all clients under this channel hide prices.',
+        default=False,
+        help_text='Test_Price_Display_on_receipt. OFF by default; turn ON per channel when needed.',
     )
     is_active = models.BooleanField(default=True)
 
@@ -168,8 +168,8 @@ class OrganisationClient(TimeStampedModel):
         'laboratory.Tariff', null=True, blank=True, on_delete=models.PROTECT, related_name='clients',
     )
     show_test_prices = models.BooleanField(
-        default=True,
-        help_text='Test_Price_Display_on_receipt for this client (subject to channel override).',
+        default=False,
+        help_text='Test_Price_Display_on_receipt for this client (subject to channel override). OFF by default.',
     )
     effective_from = models.DateField(null=True, blank=True)
     effective_to = models.DateField(null=True, blank=True)
@@ -276,7 +276,7 @@ class OrganisationClient(TimeStampedModel):
 
 
 class CreditWalletLedger(TimeStampedModel):
-    """Top-ups and registration debits against a credit client's wallet."""
+    """Top-ups, Paid-invoice debits, and restores against a credit client's wallet."""
     ENTRY_TYPES = [('TOP_UP', 'Top-up'), ('DEBIT', 'Debit'), ('ADJUSTMENT', 'Adjustment')]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     client = models.ForeignKey(OrganisationClient, on_delete=models.PROTECT, related_name='wallet_ledger')
@@ -317,8 +317,8 @@ class Visit(TimeStampedModel):
         'laboratory.Tariff', null=True, blank=True, on_delete=models.PROTECT, related_name='visits',
     )
     show_test_prices = models.BooleanField(
-        default=True,
-        help_text='Snapshot of Test_Price_Display_on_receipt at registration.',
+        default=False,
+        help_text='Snapshot of Test_Price_Display_on_receipt at registration. OFF by default.',
     )
     def save(self,*args,**kwargs):
         if not self.visit_id:

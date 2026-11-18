@@ -93,36 +93,7 @@
 </div>
 
 {% elif active_stage == 'receive' %}
-<div class="card p-4">
-  <h2 class="h5">5 · Department receiving</h2>
-  <p class="muted small">Receive dispatched batches to move every sample to department-received status.</p>
-  {% for batch in open_batches %}
-    <div class="border-top py-3">
-      <div class="d-flex flex-wrap gap-2 align-items-center">
-        <div class="me-auto">
-          <div class="fw-semibold">{{ batch.batch_code }} — {{ batch.department }}</div>
-          <div class="small muted">{{ batch.centre.code }} · {{ batch.get_status_display }}
-            {% if batch.dispatched_at %} · dispatched {{ batch.dispatched_at|date:"Y-m-d H:i" }}{% endif %}
-            {% if batch.received_at %} · received {{ batch.received_at|date:"Y-m-d H:i" }}{% endif %}
-          </div>
-          <div class="small mt-1">
-            {% for item in batch.items.all %}
-              <span class="badge badge-soft me-1 font-monospace">{{ item.sample.sample_id }}</span>
-            {% endfor %}
-          </div>
-        </div>
-        {% if batch.status == 'OPEN' %}
-          <form method="post">{% csrf_token %}<input type="hidden" name="action" value="dispatch"><input type="hidden" name="stage" value="receive"><input type="hidden" name="batch" value="{{ batch.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Dispatch</button></form>
-        {% elif batch.status == 'DISPATCHED' %}
-          <form method="post">{% csrf_token %}<input type="hidden" name="action" value="receive"><input type="hidden" name="stage" value="receive"><input type="hidden" name="batch" value="{{ batch.pk }}"><button class="btn btn-sm btn-primary" type="submit">Receive at department</button></form>
-        {% else %}
-          <span class="badge badge-soft">Received</span>
-        {% endif %}
-      </div>
-    </div>
-  {% empty %}<p class="muted mb-0">No open or dispatched batches.</p>{% endfor %}
-  {% include "includes/pagination.html" with page=open_batches %}
-</div>
+{% include "laboratory/_batch_receiving.html" %}
 
 {% elif active_stage == 'process' %}
 <div class="card p-4">

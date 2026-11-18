@@ -40,10 +40,16 @@ def handle_accounts_post(request):
         })
         return _finish(status, body, 'Test added at the tariff price.')
     if action == 'pay':
-        status, body = call_create(PaymentViewSet, user, {
-            'invoice': request.POST.get('invoice'), 'amount': request.POST.get('amount'), 'method': request.POST.get('method') or 'CASH',
+        payload = {
+            'invoice': request.POST.get('invoice'),
+            'amount': request.POST.get('amount'),
+            'method': request.POST.get('method') or 'CASH',
             'reference': request.POST.get('reference', ''),
-        })
+        }
+        centre_bank = (request.POST.get('centre_bank') or '').strip()
+        if centre_bank:
+            payload['centre_bank'] = centre_bank
+        status, body = call_create(PaymentViewSet, user, payload)
         if 200 <= status < 300:
             return True, f'Payment recorded. Receipt {body.get("receipt_number")} is ready to print.', body.get('id')
         return False, describe(body)
@@ -93,8 +99,8 @@ def receipt_payment(user, pk):
     payment = get_object_or_404(
         Payment.objects.select_related(
             'invoice__visit__patient', 'invoice__visit__centre', 'invoice__visit__client',
-            'received_by', 'reversed_by',
-        ).prefetch_related('invoice__items', 'invoice__payments'),
+            'centre_bank', 'received_by', 'reversed_by',
+        ).prefetch_related('invoice__items', 'invoice__payments', 'invoice__visit__centre__phone_numbers'),
         pk=pk,
     )
     centre = payment.invoice.visit.centre
@@ -148,6 +154,13 @@ def build_accounts_context(request):
             selected = None
         if selected:
             _decorate([selected])
+    centre_banks = []
+    if selected:
+        from core.models import CentreBank
+        centre_banks = list(
+            CentreBank.objects.filter(centre_id=selected.visit.centre_id, is_active=True)
+            .order_by('bank_name', 'account_number')
+        )
     accountant = is_accountant(user)
     approve_discount = can_approve_discount(user)
     my_requests = None
@@ -181,6 +194,7 @@ def build_accounts_context(request):
         'dues': due_page,
         'due_query': query,
         'selected_due': selected,
+        'centre_banks': centre_banks,
         'payment_methods': ['CASH', 'POS', 'TRANSFER', 'CARD', 'HMO', 'CREDIT'],
         'can_approve_discount': approve_discount,
         'can_cancel_invoice': accountant,
@@ -234,6 +248,9 @@ def build_accountant_context(request):
         centre_id=request.GET.get('centre') or None,
         start=request.GET.get('start'),
         end=request.GET.get('end'),
+        method=request.GET.get('method') or None,
+        bank_name=request.GET.get('bank_name') or None,
+        bank_id=request.GET.get('bank') or None,
     )
     report['can_approve_discount'] = can_approve_discount(request.user)
     report['is_accountant'] = True
@@ -273,6 +290,9 @@ def export_accountant_report(request):
         centre_id=request.GET.get('centre') or None,
         start=request.GET.get('start'),
         end=request.GET.get('end'),
+        method=request.GET.get('method') or None,
+        bank_name=request.GET.get('bank_name') or None,
+        bank_id=request.GET.get('bank') or None,
     )
     fmt = request.GET.get('format') or 'csv'
     dataset = request.GET.get('dataset') or 'payments'

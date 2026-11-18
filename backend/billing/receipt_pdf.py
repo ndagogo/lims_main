@@ -36,11 +36,15 @@ def build_receipt_pdf(payment):
         pdf.setFont('Times-Roman', 9)
         pdf.drawString(48, y, centre.address.replace('\n', ', ')[:110])
         y -= 12
-    contact = ' · '.join(part for part in (centre.phone, centre.email) if part)
+    contact = centre.receipt_contact_line() if hasattr(centre, 'receipt_contact_line') else ' · '.join(
+        part for part in (centre.phone, centre.email) if part
+    )
     if contact:
         pdf.setFont('Times-Roman', 9)
-        pdf.drawString(48, y, contact[:110])
-        y -= 16
+        for chunk_start in range(0, len(contact), 110):
+            pdf.drawString(48, y, contact[chunk_start:chunk_start + 110])
+            y -= 12
+        y -= 4
     pdf.setStrokeColorRGB(0.09, 0.09, 0.09)
     pdf.setLineWidth(1.2)
     pdf.line(48, y, width - 48, y)
@@ -83,7 +87,7 @@ def build_receipt_pdf(payment):
         else:
             show_prices = visit_shows_test_prices(visit)
     except Exception:
-        show_prices = bool(getattr(visit, 'show_test_prices', True))
+        show_prices = bool(getattr(visit, 'show_test_prices', False))
 
     pdf.setFont('Times-Bold', 10)
     pdf.drawString(48, y, 'Description')
@@ -96,8 +100,6 @@ def build_receipt_pdf(payment):
     items = list(invoice.items.all())
     if not items:
         pdf.drawString(48, y, 'Payment received')
-        if show_prices:
-            pdf.drawRightString(width - 48, y, _money(payment.amount))
         y -= 16
     for item in items:
         if y < 90:
@@ -108,35 +110,45 @@ def build_receipt_pdf(payment):
         pdf.drawString(48, y, label[:70])
         if show_prices:
             pdf.drawRightString(width - 48, y, _money(item.line_total))
-        else:
-            pdf.drawRightString(width - 48, y, '****')
         y -= 15
     y -= 6
-    if show_prices:
-        pdf.line(300, y, width - 48, y)
+    pdf.line(300, y, width - 48, y)
     y -= 18
-    if show_prices:
-        lines = [
-            ('This receipt', _money(payment.amount)),
-            ('Method', payment.get_method_display()),
-            ('Invoice total', _money(invoice.total)),
-            ('Confirmed payments', _money(paid)),
-            ('Balance', _money(balance)),
-        ]
-    else:
-        lines = [
-            ('This receipt', '****'),
-            ('Method', payment.get_method_display()),
-            ('Invoice total', '****'),
-            ('Confirmed payments', '****'),
-            ('Balance', '****'),
-        ]
+    lines = [
+        ('Subtotal', _money(invoice.subtotal)),
+    ]
+    if invoice.discount_amount:
+        lines.append(('Discount', _money(invoice.discount_amount)))
+    lines.extend([
+        ('Invoice total', _money(invoice.total)),
+        ('Total amount paid', _money(payment.amount)),
+        ('Method', payment.get_method_display()),
+        ('Confirmed payments', _money(paid)),
+        ('Balance', _money(balance)),
+    ])
     for label, value in lines:
-        pdf.setFont('Times-Bold' if label in ('This receipt', 'Balance') else 'Times-Roman', 10)
+        pdf.setFont('Times-Bold' if label in ('Total amount paid', 'Invoice total', 'Balance') else 'Times-Roman', 10)
         pdf.drawString(300, y, label)
         pdf.drawRightString(width - 48, y, value)
         y -= 14
+    if payment.centre_bank_id:
+        bank_label = payment.centre_bank.display_label()
+        pdf.setFont('Times-Roman', 10)
+        pdf.drawString(300, y, 'Bank')
+        pdf.drawRightString(width - 48, y, bank_label[:42])
+        y -= 14
     y -= 16
+    footer = (getattr(centre, 'receipt_footer', '') or '').strip()
+    if footer:
+        pdf.setFont('Times-Roman', 9)
+        for line in footer.splitlines() or [footer]:
+            if y < 70:
+                pdf.showPage()
+                y = height - 54
+                pdf.setFont('Times-Roman', 9)
+            pdf.drawString(48, y, line[:110])
+            y -= 12
+        y -= 8
     pdf.setFont('Times-Italic', 8)
     pdf.drawString(48, max(y, 48), 'This receipt confirms money received for the visit above. Keep it with your records.')
     pdf.showPage()

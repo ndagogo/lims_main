@@ -38,7 +38,10 @@ def format_snapshot(centre) -> dict:
         'centre_code': centre.code,
         'centre_name': centre.name,
         'centre_address': centre.address if fmt.show_centre_address else '',
-        'centre_phone': centre.phone if fmt.show_centre_contact else '',
+        'centre_phone': (
+            ' · '.join(centre.receipt_phone_numbers()) or centre.phone
+            if fmt.show_centre_contact else ''
+        ),
         'centre_email': centre.email if fmt.show_centre_contact else '',
         'logo_path': logo_path,
         'title_lab': fmt.title_lab,

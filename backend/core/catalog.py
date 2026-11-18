@@ -8,7 +8,7 @@ from django.db.models import Count, ProtectedError, Q
 from django.shortcuts import get_object_or_404, redirect
 
 from core.access import is_platform_admin
-from core.models import AuditEvent, Centre
+from core.models import AuditEvent, Centre, CentreBank, CentrePhone
 from core.paging import PAGE_SIZES, paginate
 from laboratory.collection_catalog import refresh_tests_for_container, refresh_tests_for_specimen, sync_test_collection_labels
 from laboratory.models import (
@@ -1196,17 +1196,31 @@ def build_centres_context(request):
 
     query = _text(request.GET, 'q')
     status = request.GET.get('status') or 'all'
-    rows = Centre.objects.select_related('sample_code_config').order_by('name')
+    rows = Centre.objects.select_related('sample_code_config').prefetch_related('phone_numbers').order_by('name')
     if query:
-        rows = rows.filter(Q(code__icontains=query) | Q(name__icontains=query) | Q(phone__icontains=query))
+        rows = rows.filter(
+            Q(code__icontains=query)
+            | Q(name__icontains=query)
+            | Q(phone__icontains=query)
+            | Q(phone_numbers__number__icontains=query)
+        ).distinct()
     rows = _active_filter(rows, status)
     selected = None
     report_format = None
+    centre_phones = []
+    centre_banks = []
     selected_id = request.GET.get('centre')
     if selected_id:
-        selected = Centre.objects.select_related('sample_code_config', 'report_format').filter(pk=selected_id).first()
+        selected = (
+            Centre.objects.select_related('sample_code_config', 'report_format')
+            .prefetch_related('phone_numbers', 'bank_accounts')
+            .filter(pk=selected_id)
+            .first()
+        )
         if selected:
             report_format = get_report_format(selected)
+            centre_phones = list(selected.phone_numbers.filter(is_active=True).order_by('sort_order', 'created_at'))
+            centre_banks = list(selected.bank_accounts.filter(is_active=True).order_by('bank_name', 'account_number'))
     from core.access import can_set_result_watermark
     return {
         'directory': paginate(request, rows, 'page'),
@@ -1214,6 +1228,8 @@ def build_centres_context(request):
         'query': query,
         'status': status,
         'selected': selected,
+        'centre_phones': centre_phones,
+        'centre_banks': centre_banks,
         'report_format': report_format,
         'layout_choices': CentreReportFormat.LAYOUTS,
         'font_choices': CentreReportFormat.FONTS,
@@ -1231,6 +1247,12 @@ def handle_centres_post(request):
             return _save_centre(request, centre)
         if action == 'save_report_format':
             return _save_report_format(request, centre)
+        if action == 'add_bank':
+            return _add_centre_bank(request, centre)
+        if action == 'update_bank':
+            return _update_centre_bank(request, centre)
+        if action == 'deactivate_bank':
+            return _deactivate_centre_bank(request, centre)
         if action == 'deactivate':
             centre.is_active = False
             centre.save(update_fields=['is_active'])
@@ -1253,6 +1275,75 @@ def handle_centres_post(request):
     return redirect('catalog-centres')
 
 
+def _parse_centre_phone_rows(request):
+    """Parse phone_number_* / phone_label_* / phone_receipt_* / phone_id_* form lists."""
+    numbers = request.POST.getlist('phone_number')
+    labels = request.POST.getlist('phone_label')
+    receipts = set(request.POST.getlist('phone_receipt'))
+    ids = request.POST.getlist('phone_id')
+    rows = []
+    for index, number in enumerate(numbers):
+        number = (number or '').strip()
+        if not number:
+            continue
+        label = (labels[index] if index < len(labels) else '').strip()
+        phone_id = (ids[index] if index < len(ids) else '').strip()
+        show = str(index) in receipts or (phone_id and phone_id in receipts)
+        rows.append({
+            'id': phone_id or None,
+            'number': number[:40],
+            'label': label[:40],
+            'show_on_receipt': show,
+            'sort_order': len(rows),
+        })
+    return rows
+
+
+def _sync_centre_phones(centre, phone_rows, *, legacy_phone=''):
+    keep_ids = []
+    for row in phone_rows:
+        phone_id = row.get('id')
+        existing = None
+        if phone_id:
+            existing = CentrePhone.objects.filter(pk=phone_id, centre=centre).first()
+        if existing:
+            existing.number = row['number']
+            existing.label = row['label']
+            existing.show_on_receipt = row['show_on_receipt']
+            existing.sort_order = row['sort_order']
+            existing.is_active = True
+            existing.save(update_fields=['number', 'label', 'show_on_receipt', 'sort_order', 'is_active', 'updated_at'])
+            keep_ids.append(existing.pk)
+        else:
+            created = CentrePhone.objects.create(
+                centre=centre,
+                number=row['number'],
+                label=row['label'],
+                show_on_receipt=row['show_on_receipt'],
+                sort_order=row['sort_order'],
+                is_active=True,
+            )
+            keep_ids.append(created.pk)
+    if not phone_rows and legacy_phone:
+        # Preserve a single legacy number as an editable phone row.
+        created = CentrePhone.objects.create(
+            centre=centre,
+            number=legacy_phone[:40],
+            label='',
+            show_on_receipt=True,
+            sort_order=0,
+            is_active=True,
+        )
+        keep_ids.append(created.pk)
+        phone_rows = [{'number': legacy_phone}]
+    CentrePhone.objects.filter(centre=centre).exclude(pk__in=keep_ids).update(is_active=False)
+    primary = phone_rows[0]['number'] if phone_rows else ''
+    if centre.phone != primary:
+        centre.phone = primary
+        centre.save(update_fields=['phone', 'updated_at'])
+    return keep_ids
+
+
 def _save_centre(request, centre):
     from core.uploads import validate_upload
 
@@ -1267,13 +1358,19 @@ def _save_centre(request, centre):
     if logo:
         validate_upload(logo, kinds=('jpeg', 'png'), max_bytes=2 * 1024 * 1024)
     clear_logo = _checked(request.POST, 'clear_logo')
+    phone_rows = _parse_centre_phone_rows(request)
+    legacy_phone = _text(request.POST, 'phone')
+    if not phone_rows and legacy_phone:
+        phone_rows = [{'id': None, 'number': legacy_phone[:40], 'label': '', 'show_on_receipt': True, 'sort_order': 0}]
+    primary_phone = phone_rows[0]['number'] if phone_rows else ''
     fields = {
         'code': code,
         'name': name,
         'address': _text(request.POST, 'address'),
-        'phone': _text(request.POST, 'phone'),
+        'phone': primary_phone,
         'email': _text(request.POST, 'email'),
         'timezone': _text(request.POST, 'timezone') or 'Africa/Lagos',
+        'receipt_footer': _text(request.POST, 'receipt_footer'),
         'is_active': _checked(request.POST, 'is_active') if centre or request.POST.get('is_active_submitted') else True,
     }
     with transaction.atomic():
@@ -1302,6 +1399,7 @@ def _save_centre(request, centre):
             centre.save()
             action = 'CENTRE_UPDATED'
             messages.success(request, f'Centre {centre.code} was saved.')
+        _sync_centre_phones(centre, phone_rows, legacy_phone='')
         if sample_digit:
             if SampleCodeConfig.objects.filter(numeric_code=sample_digit).exclude(centre=centre).exists():
                 raise ValidationError('That sample digit is already assigned to another centre.')
@@ -1310,8 +1408,83 @@ def _save_centre(request, centre):
                 defaults={'numeric_code': sample_digit, 'is_active': True},
             )
             _audit(request, 'SAMPLE_CODE_CONFIG_SAVED', config, {'centre': centre.code, 'digit': sample_digit}, centre=centre)
-        _audit(request, action, centre, {'code': centre.code, 'name': centre.name, 'has_logo': bool(centre.logo)}, centre=centre)
+        _audit(
+            request,
+            action,
+            centre,
+            {
+                'code': centre.code,
+                'name': centre.name,
+                'has_logo': bool(centre.logo),
+                'phones': len(phone_rows),
+                'receipt_phones': sum(1 for row in phone_rows if row.get('show_on_receipt')),
+            },
+            centre=centre,
+        )
     return redirect(f'/catalog/centres/?centre={centre.pk}')
+
+
+def _add_centre_bank(request, centre):
+    bank_name = _text(request.POST, 'bank_name')
+    account_number = _text(request.POST, 'account_number')
+    account_name = _text(request.POST, 'account_name')
+    if not bank_name or not account_number:
+        raise ValidationError('Bank name and account number are required.')
+    if CentreBank.objects.filter(
+        centre=centre, bank_name__iexact=bank_name, account_number=account_number, is_active=True,
+    ).exists():
+        raise ValidationError('That bank account is already listed for this centre.')
+    bank = CentreBank.objects.create(
+        centre=centre,
+        bank_name=bank_name,
+        account_name=account_name,
+        account_number=account_number,
+        is_active=True,
+    )
+    _audit(
+        request, 'CENTRE_BANK_ADDED', bank,
+        {'bank': bank.bank_name, 'account': bank.account_number},
+        centre=centre,
+    )
+    messages.success(request, f'{bank.display_label()} was added for {centre.code}.')
+    return redirect(f'/catalog/centres/?centre={centre.pk}#centre-banks')
+
+
+def _update_centre_bank(request, centre):
+    bank = get_object_or_404(CentreBank, pk=request.POST.get('bank'), centre=centre)
+    bank_name = _text(request.POST, 'bank_name')
+    account_number = _text(request.POST, 'account_number')
+    account_name = _text(request.POST, 'account_name')
+    if not bank_name or not account_number:
+        raise ValidationError('Bank name and account number are required.')
+    if CentreBank.objects.filter(
+        centre=centre, bank_name__iexact=bank_name, account_number=account_number, is_active=True,
+    ).exclude(pk=bank.pk).exists():
+        raise ValidationError('That bank account is already listed for this centre.')
+    bank.bank_name = bank_name
+    bank.account_name = account_name
+    bank.account_number = account_number
+    bank.save(update_fields=['bank_name', 'account_name', 'account_number', 'updated_at'])
+    _audit(
+        request, 'CENTRE_BANK_UPDATED', bank,
+        {'bank': bank.bank_name, 'account': bank.account_number},
+        centre=centre,
+    )
+    messages.success(request, f'Bank account for {centre.code} was updated.')
+    return redirect(f'/catalog/centres/?centre={centre.pk}#centre-banks')
+
+
+def _deactivate_centre_bank(request, centre):
+    bank = get_object_or_404(CentreBank, pk=request.POST.get('bank'), centre=centre)
+    bank.is_active = False
+    bank.save(update_fields=['is_active', 'updated_at'])
+    _audit(
+        request, 'CENTRE_BANK_DEACTIVATED', bank,
+        {'bank': bank.bank_name, 'account': bank.account_number},
+        centre=centre,
+    )
+    messages.success(request, f'{bank.display_label()} was removed from {centre.code}.')
+    return redirect(f'/catalog/centres/?centre={centre.pk}#centre-banks')
 
 
 def _save_report_format(request, centre):

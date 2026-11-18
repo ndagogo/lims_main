@@ -1,6 +1,20 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import User, Centre, CentreReportFormat, UserCentreAccess, AuditEvent
+from .models import User, Centre, CentreBank, CentrePhone, CentreReportFormat, UserCentreAccess, AuditEvent
+
+
+class CentrePhoneInline(admin.TabularInline):
+    model = CentrePhone
+    extra = 1
+    fields = ('label', 'number', 'show_on_receipt', 'sort_order', 'is_active')
+
+
+class CentreBankInline(admin.TabularInline):
+    model = CentreBank
+    extra = 1
+    fields = ('bank_name', 'account_name', 'account_number', 'is_active')
+
+
 @admin.register(User)
 class PlatformUserAdmin(UserAdmin):
     list_display=('username','email','display_name','is_active','is_staff','last_login')
@@ -19,6 +33,18 @@ class PlatformUserAdmin(UserAdmin):
 @admin.register(Centre)
 class CentreAdmin(admin.ModelAdmin):
     list_display=('code','name','is_active','phone'); search_fields=('code','name'); list_filter=('is_active',)
+    fields = ('code', 'name', 'address', 'phone', 'email', 'logo', 'timezone', 'receipt_footer', 'is_active')
+    inlines = [CentrePhoneInline, CentreBankInline]
+@admin.register(CentrePhone)
+class CentrePhoneAdmin(admin.ModelAdmin):
+    list_display = ('centre', 'label', 'number', 'show_on_receipt', 'is_active')
+    list_filter = ('show_on_receipt', 'is_active', 'centre')
+    search_fields = ('number', 'label', 'centre__code', 'centre__name')
+@admin.register(CentreBank)
+class CentreBankAdmin(admin.ModelAdmin):
+    list_display = ('centre', 'bank_name', 'account_name', 'account_number', 'is_active')
+    list_filter = ('is_active', 'centre', 'bank_name')
+    search_fields = ('bank_name', 'account_name', 'account_number', 'centre__code')
 @admin.register(CentreReportFormat)
 class CentreReportFormatAdmin(admin.ModelAdmin):
     list_display=('centre','layout_style','font_family','show_authenticator_signature')

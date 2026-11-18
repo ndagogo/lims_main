@@ -5,7 +5,7 @@
   <div>
     <div class="muted small"><a class="text-decoration-none muted" href="{% url 'catalog-hub' %}">Catalog</a> · CENTRES</div>
     <h1 class="h3 mb-1">Centres</h1>
-    <p class="muted mb-0">Site details, centre logo for receipts, and the sample digit used in laboratory IDs.</p>
+    <p class="muted mb-0">Site details, phone numbers for receipts, receipt footer notes, bank accounts for POS/transfer reconciliation, and the sample digit used in laboratory IDs.</p>
   </div>
 </div>
 <div class="row g-4">
@@ -23,7 +23,15 @@
                   <div class="small muted">{{ centre.name }}</div>
                 </td>
                 <td>{% if centre.sample_code_config %}<span class="badge text-bg-light border">{{ centre.sample_code_config.numeric_code }}</span>{% else %}—{% endif %}</td>
-                <td class="small">{{ centre.phone|default:"—" }}</td>
+                <td class="small">
+                  {% with phones=centre.phone_numbers.all %}
+                    {% if phones %}
+                      {% for phone in phones %}{% if phone.is_active %}{{ phone.number }}{% if not forloop.last %}<br>{% endif %}{% endif %}{% endfor %}
+                    {% else %}
+                      {{ centre.phone|default:"—" }}
+                    {% endif %}
+                  {% endwith %}
+                </td>
                 <td>{% if centre.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-danger-soft">Inactive</span>{% endif %}</td>
               </tr>
             {% empty %}
@@ -38,15 +46,34 @@
   <div class="col-xl-5">
     <div class="card p-4 mb-4">
       <h2 class="h5">Create centre</h2>
-      <form method="post" enctype="multipart/form-data" class="row g-3">
+      <form method="post" enctype="multipart/form-data" class="row g-3" id="create-centre-form">
         {% csrf_token %}
         <input type="hidden" name="action" value="create">
         <input type="hidden" name="is_active_submitted" value="1">
         <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" name="code" required></div>
         <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" required></div>
         <div class="col-12"><label class="form-label">Address</label><textarea class="form-control" name="address" rows="2"></textarea></div>
-        <div class="col-md-6"><label class="form-label">Phone</label><input class="form-control" name="phone"></div>
+        <div class="col-12">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <label class="form-label mb-0">Phone numbers</label>
+            <button class="btn btn-outline-dark btn-sm" type="button" data-phone-add="create-phones">Add phone</button>
+          </div>
+          <div class="form-text mb-2">Tick <strong>On receipt</strong> for numbers that should appear on payment receipts.</div>
+          <div id="create-phones" class="vstack gap-2">
+            <div class="row g-2 align-items-end phone-row">
+              <input type="hidden" name="phone_id" value="">
+              <div class="col-md-4"><label class="form-label">Label</label><input class="form-control" name="phone_label" placeholder="Front desk"></div>
+              <div class="col-md-5"><label class="form-label">Number</label><input class="form-control" name="phone_number" placeholder="+234…"></div>
+              <div class="col-md-3"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="phone_receipt" value="0" id="create-phone-receipt-0"><label class="form-check-label" for="create-phone-receipt-0">On receipt</label></div></div>
+            </div>
+          </div>
+        </div>
         <div class="col-md-6"><label class="form-label">Email</label><input class="form-control" type="email" name="email"></div>
+        <div class="col-12">
+          <label class="form-label">Receipt footer notes</label>
+          <textarea class="form-control" name="receipt_footer" rows="3" placeholder="Thank you for choosing us. Kindly note that there is NO REFUND after payment. Thanks Management"></textarea>
+          <div class="form-text">Printed at the bottom of payment receipts for this centre.</div>
+        </div>
         <div class="col-12">
           <label class="form-label">Centre logo</label>
           <input class="form-control" type="file" name="logo" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
@@ -74,15 +101,43 @@
           </div>
         {% endif %}
         {% include "catalog/_soft_actions.html" with pk_name="centre" pk_value=selected.pk is_active=selected.is_active delete_action="delete" confirm_label=selected.code %}
-        <form method="post" enctype="multipart/form-data" class="row g-2">
+        <form method="post" enctype="multipart/form-data" class="row g-2" id="edit-centre-form">
           {% csrf_token %}
           <input type="hidden" name="action" value="update">
           <input type="hidden" name="centre" value="{{ selected.pk }}">
           <div class="col-md-4"><label class="form-label">Code</label><input class="form-control" name="code" value="{{ selected.code }}" required></div>
           <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ selected.name }}" required></div>
           <div class="col-12"><label class="form-label">Address</label><textarea class="form-control" name="address" rows="2">{{ selected.address }}</textarea></div>
-          <div class="col-md-6"><label class="form-label">Phone</label><input class="form-control" name="phone" value="{{ selected.phone }}"></div>
+          <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label mb-0">Phone numbers</label>
+              <button class="btn btn-outline-dark btn-sm" type="button" data-phone-add="edit-phones">Add phone</button>
+            </div>
+            <div class="form-text mb-2">Only numbers with <strong>On receipt</strong> checked appear on payment receipts.</div>
+            <div id="edit-phones" class="vstack gap-2">
+              {% for phone in centre_phones %}
+                <div class="row g-2 align-items-end phone-row">
+                  <input type="hidden" name="phone_id" value="{{ phone.pk }}">
+                  <div class="col-md-4"><label class="form-label">Label</label><input class="form-control" name="phone_label" value="{{ phone.label }}" placeholder="Front desk"></div>
+                  <div class="col-md-5"><label class="form-label">Number</label><input class="form-control" name="phone_number" value="{{ phone.number }}" required></div>
+                  <div class="col-md-3"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="phone_receipt" value="{{ forloop.counter0 }}" id="edit-phone-receipt-{{ forloop.counter0 }}" {% if phone.show_on_receipt %}checked{% endif %}><label class="form-check-label" for="edit-phone-receipt-{{ forloop.counter0 }}">On receipt</label></div></div>
+                </div>
+              {% empty %}
+                <div class="row g-2 align-items-end phone-row">
+                  <input type="hidden" name="phone_id" value="">
+                  <div class="col-md-4"><label class="form-label">Label</label><input class="form-control" name="phone_label" value="" placeholder="Front desk"></div>
+                  <div class="col-md-5"><label class="form-label">Number</label><input class="form-control" name="phone_number" value="{{ selected.phone }}" placeholder="+234…"></div>
+                  <div class="col-md-3"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="phone_receipt" value="0" id="edit-phone-receipt-0" {% if selected.phone %}checked{% endif %}><label class="form-check-label" for="edit-phone-receipt-0">On receipt</label></div></div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
           <div class="col-md-6"><label class="form-label">Email</label><input class="form-control" type="email" name="email" value="{{ selected.email }}"></div>
+          <div class="col-12">
+            <label class="form-label">Receipt footer notes</label>
+            <textarea class="form-control" name="receipt_footer" rows="3" placeholder="Thank you for choosing us. Kindly note that there is NO REFUND after payment. Thanks Management">{{ selected.receipt_footer }}</textarea>
+            <div class="form-text">Printed at the bottom of payment receipts. Result footer text remains under Result formatting below.</div>
+          </div>
           <div class="col-12">
             <label class="form-label">Centre logo</label>
             <input class="form-control" type="file" name="logo" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
@@ -100,6 +155,50 @@
           <div class="col-12"><button class="btn btn-outline-dark btn-sm" type="submit">Save centre</button></div>
         </form>
       </div>
+
+      <div class="card p-4 mt-4" id="centre-banks">
+        <h2 class="h5">Bank accounts</h2>
+        <p class="small muted">Platform-admin bank accounts for this centre. Cashiers select one when recording POS or Transfer payments so owners can reconcile by account.</p>
+        {% if centre_banks %}
+          <div class="vstack gap-3 mb-3">
+            {% for bank in centre_banks %}
+              <div class="border rounded p-3">
+                <form method="post" class="row g-2 align-items-end">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="update_bank">
+                  <input type="hidden" name="centre" value="{{ selected.pk }}">
+                  <input type="hidden" name="bank" value="{{ bank.pk }}">
+                  <div class="col-md-4"><label class="form-label">Bank name</label><input class="form-control form-control-sm" name="bank_name" value="{{ bank.bank_name }}" required></div>
+                  <div class="col-md-4"><label class="form-label">Account name</label><input class="form-control form-control-sm" name="account_name" value="{{ bank.account_name }}" placeholder="Account name"></div>
+                  <div class="col-md-4"><label class="form-label">Account number</label><input class="form-control form-control-sm" name="account_number" value="{{ bank.account_number }}" required></div>
+                  <div class="col-12 d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-dark" type="submit">Save</button>
+                  </div>
+                </form>
+                <form method="post" class="mt-2" onsubmit="return confirm('Remove this bank account from the cashier list?');">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="deactivate_bank">
+                  <input type="hidden" name="centre" value="{{ selected.pk }}">
+                  <input type="hidden" name="bank" value="{{ bank.pk }}">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Remove</button>
+                </form>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="small muted">No bank accounts yet. Add at least one before cashiers can tag POS / Transfer collections.</p>
+        {% endif %}
+        <form method="post" class="row g-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="add_bank">
+          <input type="hidden" name="centre" value="{{ selected.pk }}">
+          <div class="col-md-4"><label class="form-label">Bank name</label><input class="form-control" name="bank_name" required placeholder="Access Bank"></div>
+          <div class="col-md-4"><label class="form-label">Account name</label><input class="form-control" name="account_name" placeholder="HFDN Ikeja"></div>
+          <div class="col-md-4"><label class="form-label">Account number</label><input class="form-control" name="account_number" required></div>
+          <div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Add bank account</button></div>
+        </form>
+      </div>
+
       {% if report_format %}
       <div class="card p-4 mt-4" id="report-format">
         <h2 class="h5">Result formatting</h2>
@@ -176,9 +275,41 @@
     {% else %}
       <div class="card p-4">
         <h2 class="h5">Select a centre</h2>
-        <p class="muted mb-0">Open a centre to edit details, upload a logo, set result formatting, or deactivate it.</p>
+        <p class="muted mb-0">Open a centre to edit details, phones, receipt footer, bank accounts, logo, result formatting, or deactivate it.</p>
       </div>
     {% endif %}
   </div>
 </div>
+<template id="phone-row-template">
+  <div class="row g-2 align-items-end phone-row">
+    <input type="hidden" name="phone_id" value="">
+    <div class="col-md-4"><label class="form-label">Label</label><input class="form-control" name="phone_label" placeholder="Front desk"></div>
+    <div class="col-md-5"><label class="form-label">Number</label><input class="form-control" name="phone_number" placeholder="+234…"></div>
+    <div class="col-md-3"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="phone_receipt" value="__INDEX__" id="phone-receipt-__INDEX__"><label class="form-check-label" for="phone-receipt-__INDEX__">On receipt</label></div></div>
+  </div>
+</template>
+<script>
+(function () {
+  function reindex(container) {
+    container.querySelectorAll('.phone-row').forEach(function (row, index) {
+      var box = row.querySelector('input[name="phone_receipt"]');
+      if (!box) return;
+      box.value = String(index);
+      box.id = container.id + '-receipt-' + index;
+      var label = row.querySelector('label[for]');
+      if (label) label.setAttribute('for', box.id);
+    });
+  }
+  document.querySelectorAll('[data-phone-add]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var container = document.getElementById(btn.getAttribute('data-phone-add'));
+      var tpl = document.getElementById('phone-row-template');
+      if (!container || !tpl) return;
+      var html = tpl.innerHTML.replaceAll('__INDEX__', String(container.querySelectorAll('.phone-row').length));
+      container.insertAdjacentHTML('beforeend', html);
+      reindex(container);
+    });
+  });
+})();
+</script>
 {% endblock %}

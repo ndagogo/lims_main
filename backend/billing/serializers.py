@@ -44,16 +44,37 @@ class InvoiceSerializer(serializers.ModelSerializer):
 class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
-        fields = ['id','invoice','amount','method','reference','received_by','receipt_number','status','created_at']
-        read_only_fields = ['id','received_by','receipt_number','status','created_at']
+        fields = [
+            'id', 'invoice', 'amount', 'method', 'reference', 'centre_bank',
+            'received_by', 'receipt_number', 'status', 'created_at',
+        ]
+        read_only_fields = ['id', 'received_by', 'receipt_number', 'status', 'created_at']
     def validate(self, attrs):
         invoice = attrs.get('invoice') or self.instance.invoice
         amount = attrs.get('amount', self.instance.amount if self.instance else None)
+        method = attrs.get('method', getattr(self.instance, 'method', None))
+        centre_bank = attrs.get('centre_bank', getattr(self.instance, 'centre_bank', None))
         paid = sum((p.amount for p in invoice.payments.filter(status='CONFIRMED')), Decimal('0.00'))
         if invoice.status == 'CANCELLED': raise serializers.ValidationError('Cannot pay a cancelled invoice.')
         if invoice.discount_requests.filter(status='PENDING').exists():
             raise serializers.ValidationError('This invoice has a discount request waiting for accountant review. Payment is locked until it is approved or rejected.')
         if amount and amount + paid > invoice.total: raise serializers.ValidationError('Payment exceeds the outstanding invoice balance.')
+        if method in ('POS', 'TRANSFER'):
+            if centre_bank is None:
+                raise serializers.ValidationError({'centre_bank': 'Select the centre bank account that received this POS or Transfer payment.'})
+            if centre_bank.centre_id != invoice.visit.centre_id or not centre_bank.is_active:
+                raise serializers.ValidationError({'centre_bank': 'Choose an active bank account belonging to this invoice centre.'})
+        elif centre_bank is not None:
+            attrs['centre_bank'] = None
+        # Pre-check credit wallet when this payment will settle a credit-client invoice.
+        if amount and (amount + paid) >= (invoice.total or Decimal('0.00')):
+            visit = getattr(invoice, 'visit', None)
+            from billing.pricing import ensure_credit_wallet_covers, visit_uses_credit_wallet
+            if visit_uses_credit_wallet(visit):
+                try:
+                    ensure_credit_wallet_covers(client=visit.client, amount=invoice.total or Decimal('0.00'))
+                except Exception as exc:
+                    raise serializers.ValidationError(str(exc)) from exc
         return attrs
 
 class DiscountRequestSerializer(serializers.ModelSerializer):

@@ -1,0 +1,391 @@
+{% comment %}Enterprise batch receiving desk — included from laboratory workspace receive stage.{% endcomment %}
+<style>
+  .br-desk { background: #fff; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .br-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; padding: .85rem 1rem; border-bottom: 1px solid var(--line); background: #fbfaf7; }
+  .br-title { font-family: Newsreader, Georgia, serif; font-size: 1.35rem; line-height: 1.1; margin: 0; }
+  .br-centre { font-weight: 650; color: var(--sage-ink); }
+  .br-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem; padding: .55rem .85rem; border-bottom: 1px solid var(--line); }
+  .br-pills { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .br-pill { display: inline-flex; align-items: center; gap: .45rem; border-radius: 999px; padding: .32rem .85rem; font-size: .86rem; font-weight: 650; border: 1px solid transparent; }
+  .br-pill-pending { background: #fdecec; color: var(--danger); border-color: #f3c7c4; }
+  .br-pill-scanned { background: var(--sage); color: var(--sage-ink); border-color: #cfe0d4; }
+  .br-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+  .br-mandatory { color: var(--danger); font-size: .78rem; font-weight: 650; }
+  .br-body { padding: .85rem; }
+  .br-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .55rem .7rem; }
+  .br-field label { display: block; font-size: .72rem; font-weight: 650; letter-spacing: .02em; color: #57534e; margin-bottom: .15rem; }
+  .br-field .form-control, .br-field .form-select { width: 100%; height: 2rem; min-height: 2rem; font-size: .86rem; background: #fff; }
+  .br-field textarea.form-control { height: auto; min-height: 2.6rem; }
+  .br-field .is-readonly { background: #fafaf9; }
+  .br-span-2 { grid-column: span 2; }
+  .br-span-4 { grid-column: span 4; }
+  .br-tests { margin-top: .95rem; }
+  .br-tests h2 { font-size: .95rem; margin: 0 0 .4rem; }
+  .br-grid { font-size: .8rem; min-width: 1280px; }
+  .br-grid th { white-space: nowrap; font-size: .72rem; letter-spacing: .01em; color: #44403c; background: #fafaf9; position: sticky; top: 0; z-index: 1; }
+  .br-grid td { vertical-align: middle; }
+  .br-sample { background: #1e3a5f; color: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 650; padding: .2rem .45rem; border-radius: 6px; display: inline-block; }
+  .br-vac { font-weight: 650; padding: .18rem .45rem; border-radius: 6px; display: inline-block; }
+  .br-vac-yellow { background: #fde047; color: #422006; }
+  .br-vac-lavender { background: #ddd6fe; color: #4c1d95; }
+  .br-vac-blue { background: #bfdbfe; color: #1e3a8a; }
+  .br-vac-green { background: #bbf7d0; color: #14532d; }
+  .br-vac-red { background: #fecaca; color: #7f1d1d; }
+  .br-vac-grey { background: #e7e5e4; color: #1c1917; }
+  .br-row-scanned { background: #f4f8f5; }
+  .br-row-missing { background: #fff7ed; }
+  .br-row-reject { background: #fef2f2; }
+  .br-queue { margin-top: 1rem; }
+  .br-empty { padding: 1.4rem .2rem; color: var(--muted); }
+  .br-filter { width: 100%; min-width: 5.5rem; height: 1.7rem; min-height: 1.7rem; font-size: .72rem; margin-top: .2rem; }
+  @media (max-width: 1100px) {
+    .br-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .br-span-2, .br-span-4 { grid-column: span 2; }
+  }
+</style>
+
+<section class="br-desk" data-batch-receiving>
+  <div class="br-top">
+    <div>
+      <h1 class="br-title">Batch receiving</h1>
+      <div class="small muted">Scan or enter sample IDs for a dispatched batch, then accept, mark missing, or reject before saving.</div>
+    </div>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      {% if selected_batch %}<span class="br-centre">{{ selected_batch.centre.name }} · {{ selected_batch.department }}</span>{% endif %}
+      <form method="get" class="d-flex flex-wrap gap-2 align-items-center">
+        <input type="hidden" name="stage" value="receive">
+        {% if date_from %}<input type="hidden" name="from" value="{{ date_from }}">{% endif %}
+        {% if date_to %}<input type="hidden" name="to" value="{{ date_to }}">{% endif %}
+        {% if service_group %}<input type="hidden" name="service_group" value="{{ service_group }}">{% endif %}
+        <input class="form-control form-control-sm" style="min-width:14rem" name="q" value="{{ search_query }}" placeholder="Batch code, sample ID, patient, UHID" aria-label="Search batches">
+        <button class="btn btn-sm btn-dark" type="submit">Search</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="br-bar">
+    <div class="br-pills">
+      <span class="br-pill br-pill-pending">{{ pending_vac_count }} Pending vacutainer{% if pending_vac_count != 1 %}s{% endif %}</span>
+      <span class="br-pill br-pill-scanned" data-scanned-pill>{{ scanned_vac_count }} Scanned</span>
+    </div>
+    <form method="get" class="d-flex flex-wrap align-items-center gap-2">
+      <input type="hidden" name="stage" value="receive">
+      {% if search_query %}<input type="hidden" name="q" value="{{ search_query }}">{% endif %}
+      {% if selected_batch %}<input type="hidden" name="batch" value="{{ selected_batch.pk }}">{% endif %}
+      <label class="small muted mb-0" for="br-from">From</label>
+      <input id="br-from" class="form-control form-control-sm" type="date" name="from" value="{{ date_from }}" style="width:9.2rem">
+      <label class="small muted mb-0" for="br-to">To</label>
+      <input id="br-to" class="form-control form-control-sm" type="date" name="to" value="{{ date_to }}" style="width:9.2rem">
+      <button class="btn btn-sm btn-outline-dark" type="submit">Go</button>
+    </form>
+    <div class="br-actions">
+      <span class="br-mandatory">Accept / Missing / Reject before Save</span>
+      {% if receive_editable %}
+      <button class="btn btn-sm btn-primary" type="submit" form="br-receive"><i class="bi bi-check2"></i> Save</button>
+      {% endif %}
+      <a class="btn btn-sm btn-outline-dark" href="{{ clear_href }}">Clear</a>
+      <a class="btn btn-sm btn-outline-dark" href="{{ grid_href }}"><i class="bi bi-grid"></i> Gridview</a>
+    </div>
+  </div>
+
+  <div class="br-body">
+    {% if selected_batch %}
+    <form id="br-receive" method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="receive_desk">
+      <input type="hidden" name="stage" value="receive">
+      <input type="hidden" name="batch" value="{{ selected_batch.pk }}">
+
+      <div class="br-meta">
+        <div class="br-field">
+          <label for="br-batch">Batch code</label>
+          <input id="br-batch" class="form-control is-readonly font-monospace" value="{{ selected_batch.batch_code }}" readonly>
+        </div>
+        <div class="br-field">
+          <label for="br-scan">Sample ID <span class="text-danger">*</span></label>
+          <input id="br-scan" class="form-control" type="text" inputmode="numeric" autocomplete="off" placeholder="Scan or type sample ID" {% if not receive_editable %}disabled{% endif %} aria-label="Scan sample ID">
+        </div>
+        <div class="br-field">
+          <label for="br-when">Batch date / time</label>
+          <input id="br-when" class="form-control is-readonly" value="{% if selected_batch.dispatched_at %}{{ selected_batch.dispatched_at|date:'d-M-Y H:i' }}{% else %}{{ selected_batch.created_at|date:'d-M-Y H:i' }}{% endif %}" readonly>
+        </div>
+        <div class="br-field">
+          <label for="br-count">Sample count</label>
+          <input id="br-count" class="form-control is-readonly" value="{{ desk_rows|length }}" readonly>
+        </div>
+        <div class="br-field">
+          <label for="br-centre">Registration centre</label>
+          <input id="br-centre" class="form-control is-readonly" value="{{ selected_batch.centre.name }}" readonly>
+        </div>
+        <div class="br-field">
+          <label for="br-temp">Rec. temp (°C)</label>
+          <input id="br-temp" class="form-control" name="receive_temperature" value="{{ selected_batch.receive_temperature|default_if_none:'' }}" {% if not receive_editable %}readonly{% endif %} placeholder="e.g. 4.0">
+        </div>
+        <div class="br-field">
+          <label for="br-dept">Department</label>
+          <input id="br-dept" class="form-control is-readonly" value="{{ selected_batch.department }}" readonly>
+        </div>
+        <div class="br-field">
+          <label for="br-status">Status</label>
+          <input id="br-status" class="form-control is-readonly" value="{{ selected_batch.get_status_display }}" readonly>
+        </div>
+        <div class="br-field br-span-4">
+          <label for="br-comments">Comments</label>
+          <textarea id="br-comments" class="form-control" name="receive_comments" rows="2" {% if not receive_editable %}readonly{% endif %}>{{ selected_batch.receive_comments }}</textarea>
+        </div>
+      </div>
+
+      <div class="br-tests">
+        <h2>Test details</h2>
+        <div class="table-responsive" style="max-height: 28rem;">
+          <table class="table table-sm table-hover br-grid mb-0" id="br-grid">
+            <thead>
+              <tr>
+                <th>Accept</th>
+                <th>Remarks</th>
+                <th>Sample ID</th>
+                <th>Collected</th>
+                <th>Customer name</th>
+                <th>Age / Gender</th>
+                <th>Test name</th>
+                <th>Sample type</th>
+                <th>Service group</th>
+                <th>Vacutainer</th>
+                <th>UHID#</th>
+                <th>Test Cd</th>
+                <th>Missing</th>
+                <th>Reject</th>
+              </tr>
+              <tr class="br-filters">
+                <th></th>
+                <th><input class="form-control br-filter" data-col="1" placeholder="Search…"></th>
+                <th><input class="form-control br-filter" data-col="2" placeholder="Search…"></th>
+                <th><input class="form-control br-filter" data-col="3" placeholder="Search…"></th>
+                <th><input class="form-control br-filter" data-col="4" placeholder="Search…"></th>
+                <th><input class="form-control br-filter" data-col="5" placeholder="Search…"></th>
+                <th><input class="form-control br-filter" data-col="6" placeholder="Search…"></th>
+                <th><input class="form-control br-filter" data-col="7" placeholder="Search…"></th>
+                <th><input class="form-control br-filter" data-col="8" placeholder="Search…"></th>
+                <th><input class="form-control br-filter" data-col="9" placeholder="Search…"></th>
+                <th><input class="form-control br-filter" data-col="10" placeholder="Search…"></th>
+                <th><input class="form-control br-filter" data-col="11" placeholder="Search…"></th>
+                <th></th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in desk_rows %}
+              <tr class="{% if row.disposition == 'ACCEPTED' or row.disposition == 'SCANNED' %}br-row-scanned{% elif row.disposition == 'MISSING' %}br-row-missing{% elif row.disposition == 'REJECTED' %}br-row-reject{% endif %}"
+                  data-sample-id="{{ row.sample.sample_id }}"
+                  data-row>
+                <td>
+                  {% if row.editable %}
+                  <input class="form-check-input br-accept" type="checkbox" name="accept" value="{{ row.sample.sample_id }}" {% if row.disposition == 'ACCEPTED' or row.disposition == 'SCANNED' %}checked{% endif %} aria-label="Accept {{ row.sample.sample_id }}">
+                  {% else %}
+                  <span class="small muted">{{ row.disposition|default:'—' }}</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if row.editable %}
+                  <input class="form-control form-control-sm" name="remarks-{{ row.sample.sample_id }}" value="{{ row.item.remarks }}" maxlength="255" aria-label="Remarks {{ row.sample.sample_id }}">
+                  {% else %}{{ row.item.remarks|default:'—' }}{% endif %}
+                </td>
+                <td><span class="br-sample">{{ row.sample.sample_id }}</span></td>
+                <td class="small">{% if row.collected_at %}{{ row.collected_at|date:'d-M-Y H:i' }}{% else %}—{% endif %}</td>
+                <td class="fw-semibold">{{ row.patient_name }}</td>
+                <td class="small">{{ row.age|default:'—' }}{% if row.sex %} · {{ row.sex }}{% endif %}</td>
+                <td>{{ row.order.test.name }} {% include "includes/stat_badge.html" with stat=row.order.stat %}</td>
+                <td class="small">{{ row.specimen|default:'—' }}</td>
+                <td class="small">{{ row.group|default:'—' }}</td>
+                <td>{% if row.vacutainer %}<span class="br-vac {% if row.vac_tone %}br-vac-{{ row.vac_tone }}{% endif %}">{{ row.vacutainer }}</span>{% else %}—{% endif %}</td>
+                <td class="small font-monospace">{{ row.uhid|default:'—' }}</td>
+                <td class="small font-monospace">{{ row.order.test.code }}</td>
+                <td>
+                  {% if row.editable %}
+                  <input class="form-check-input br-missing" type="checkbox" name="missing" value="{{ row.sample.sample_id }}" {% if row.disposition == 'MISSING' %}checked{% endif %} aria-label="Missing {{ row.sample.sample_id }}">
+                  {% endif %}
+                </td>
+                <td>
+                  {% if row.editable %}
+                  <input class="form-check-input br-reject" type="checkbox" name="reject" value="{{ row.sample.sample_id }}" {% if row.disposition == 'REJECTED' %}checked{% endif %} aria-label="Reject {{ row.sample.sample_id }}">
+                  {% endif %}
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="14" class="muted">This batch has no samples.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if not receive_editable %}
+        <p class="muted small mt-2 mb-0">This batch is {{ selected_batch.get_status_display|lower }}. Open a dispatched batch to scan and save.</p>
+        {% endif %}
+      </div>
+    </form>
+    {% else %}
+    <p class="br-empty mb-0">Open a dispatched batch from the queue below, or search by batch code / sample ID.</p>
+    {% endif %}
+
+    {% if desk_view == 'grid' or not selected_batch %}
+    <div class="br-queue">
+      <h2 class="h6 mb-2">Batch queue</h2>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th>Batch code</th>
+              <th>Centre</th>
+              <th>Department</th>
+              <th>Status</th>
+              <th>Samples</th>
+              <th>Dispatched</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for batch in pending_batches %}
+            <tr>
+              <td class="font-monospace fw-semibold">{{ batch.batch_code }}</td>
+              <td>{{ batch.centre.code }} — {{ batch.centre.name }}</td>
+              <td>{{ batch.department }}</td>
+              <td><span class="badge badge-soft">{{ batch.get_status_display }}</span></td>
+              <td>{{ batch.sample_count }}</td>
+              <td class="small muted">{% if batch.dispatched_at %}{{ batch.dispatched_at|date:'d-M-Y H:i' }}{% else %}—{% endif %}</td>
+              <td class="text-end">
+                <a class="btn btn-sm btn-outline-dark" href="?stage=receive&amp;batch={{ batch.pk }}{% if filter_qs %}&amp;{{ filter_qs }}{% endif %}">Open</a>
+                {% if batch.status == 'OPEN' %}
+                <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="dispatch"><input type="hidden" name="stage" value="receive"><input type="hidden" name="batch" value="{{ batch.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Dispatch</button></form>
+                {% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" class="muted">No dispatched batches waiting for department receiving.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=pending_batches %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<script>
+(function () {
+  var root = document.querySelector('[data-batch-receiving]');
+  if (!root) return;
+  var scan = document.getElementById('br-scan');
+  var pill = root.querySelector('[data-scanned-pill]');
+  var form = document.getElementById('br-receive');
+
+  function refreshCounts() {
+    var rows = root.querySelectorAll('tr[data-row]');
+    var scanned = 0;
+    rows.forEach(function (row) {
+      var accept = row.querySelector('.br-accept');
+      if (accept && accept.checked) scanned += 1;
+      else if (row.classList.contains('br-row-scanned')) scanned += 1;
+    });
+    if (pill) pill.textContent = scanned + ' Scanned';
+  }
+
+  function exclusive(row, kind) {
+    var accept = row.querySelector('.br-accept');
+    var missing = row.querySelector('.br-missing');
+    var reject = row.querySelector('.br-reject');
+    if (kind === 'accept') {
+      if (missing) missing.checked = false;
+      if (reject) reject.checked = false;
+      row.classList.add('br-row-scanned');
+      row.classList.remove('br-row-missing', 'br-row-reject');
+    } else if (kind === 'missing') {
+      if (accept) accept.checked = false;
+      if (reject) reject.checked = false;
+      row.classList.add('br-row-missing');
+      row.classList.remove('br-row-scanned', 'br-row-reject');
+    } else if (kind === 'reject') {
+      if (accept) accept.checked = false;
+      if (missing) missing.checked = false;
+      row.classList.add('br-row-reject');
+      row.classList.remove('br-row-scanned', 'br-row-missing');
+    }
+    refreshCounts();
+  }
+
+  function markScanned(sampleId) {
+    var row = root.querySelector('tr[data-sample-id="' + CSS.escape(sampleId) + '"]');
+    if (!row) return false;
+    var accept = row.querySelector('.br-accept');
+    if (!accept) return false;
+    accept.checked = true;
+    exclusive(row, 'accept');
+    row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    return true;
+  }
+
+  root.querySelectorAll('tr[data-row]').forEach(function (row) {
+    var accept = row.querySelector('.br-accept');
+    var missing = row.querySelector('.br-missing');
+    var reject = row.querySelector('.br-reject');
+    if (accept) accept.addEventListener('change', function () {
+      if (accept.checked) exclusive(row, 'accept');
+      else { row.classList.remove('br-row-scanned'); refreshCounts(); }
+    });
+    if (missing) missing.addEventListener('change', function () {
+      if (missing.checked) exclusive(row, 'missing');
+      else row.classList.remove('br-row-missing');
+    });
+    if (reject) reject.addEventListener('change', function () {
+      if (reject.checked) exclusive(row, 'reject');
+      else row.classList.remove('br-row-reject');
+    });
+  });
+
+  if (scan) {
+    scan.focus();
+    scan.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      var value = (scan.value || '').trim();
+      if (!value) return;
+      if (markScanned(value)) {
+        scan.value = '';
+      } else {
+        scan.select();
+        scan.setAttribute('aria-invalid', 'true');
+      }
+    });
+  }
+
+  root.querySelectorAll('.br-filter').forEach(function (input) {
+    input.addEventListener('input', function () {
+      var filters = Array.from(root.querySelectorAll('.br-filter')).map(function (el) {
+        return { col: Number(el.getAttribute('data-col')), q: (el.value || '').trim().toLowerCase() };
+      });
+      root.querySelectorAll('tbody tr[data-row]').forEach(function (row) {
+        var cells = row.children;
+        var show = filters.every(function (f) {
+          if (!f.q) return true;
+          var cell = cells[f.col];
+          return cell && (cell.textContent || '').toLowerCase().indexOf(f.q) !== -1;
+        });
+        row.style.display = show ? '' : 'none';
+      });
+    });
+  });
+
+  if (form) {
+    form.addEventListener('submit', function (event) {
+      var accepts = form.querySelectorAll('.br-accept:checked').length;
+      var missing = form.querySelectorAll('.br-missing:checked').length;
+      var rejects = form.querySelectorAll('.br-reject:checked').length;
+      if (!accepts && !missing && !rejects) {
+        event.preventDefault();
+        alert('Select at least one sample to accept, mark missing, or reject.');
+      }
+    });
+  }
+
+  refreshCounts();
+})();
+</script>

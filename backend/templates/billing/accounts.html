@@ -86,11 +86,39 @@
           <label class="form-label">Amount</label>
           <input name="amount" class="form-control mb-2" value="{{ selected_due.balance_input }}" required>
           <label class="form-label">Method of payment</label>
-          <select name="method" class="form-select mb-2">{% for method in payment_methods %}<option>{{ method }}</option>{% endfor %}</select>
+          <select name="method" id="pay-method" class="form-select mb-2">{% for method in payment_methods %}<option>{{ method }}</option>{% endfor %}</select>
+          <div id="pay-bank-wrap" class="mb-2" hidden>
+            <label class="form-label">Centre bank account</label>
+            <select name="centre_bank" id="pay-centre-bank" class="form-select">
+              <option value="">Select receiving bank…</option>
+              {% for bank in centre_banks %}
+                <option value="{{ bank.pk }}">{{ bank.display_label }}</option>
+              {% empty %}
+                <option value="" disabled>No banks configured for this centre — add them under Catalog → Centres</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Required for POS and Transfer so collections can be reconciled by bank account.</div>
+          </div>
           <label class="form-label">Reference</label>
           <input name="reference" class="form-control mb-3" placeholder="POS slip, transfer reference, or receipt note">
           <button class="btn btn-primary" type="submit">Record payment</button>
         </form>
+        <script>
+        (function () {
+          var method = document.getElementById('pay-method');
+          var wrap = document.getElementById('pay-bank-wrap');
+          var bank = document.getElementById('pay-centre-bank');
+          function sync() {
+            var needsBank = method && (method.value === 'POS' || method.value === 'TRANSFER');
+            if (wrap) wrap.hidden = !needsBank;
+            if (bank) bank.required = !!needsBank;
+          }
+          if (method) {
+            method.addEventListener('change', sync);
+            sync();
+          }
+        })();
+        </script>
       </div>
       <div class="col-lg-6">
         <form method="post">

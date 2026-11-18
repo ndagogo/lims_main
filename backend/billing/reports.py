@@ -20,6 +20,14 @@ PERIOD_CHOICES = (
     ('annual', 'This year'),
     ('custom', 'Custom range'),
 )
+PAYMENT_METHOD_CHOICES = (
+    ('CASH', 'Cash'),
+    ('POS', 'POS'),
+    ('TRANSFER', 'Transfer'),
+    ('CARD', 'Card'),
+    ('HMO', 'HMO'),
+    ('CREDIT', 'Credit'),
+)
 DATASETS = (
     ('summary', 'Executive summary'),
     ('payments', 'Payments / collections'),
@@ -90,13 +98,42 @@ def _centre_scope(user, centre_id=None):
     return centres, centre_ids, selected
 
 
-def build_accountant_report(user, period='daily', centre_id=None, start=None, end=None):
+def build_accountant_report(
+    user,
+    period='daily',
+    centre_id=None,
+    start=None,
+    end=None,
+    method=None,
+    bank_name=None,
+    bank_id=None,
+):
     period, start_dt, end_dt, label = resolve_period(period, start, end)
     centres, centre_ids, selected_centre = _centre_scope(user, centre_id)
 
+    method = (method or '').strip().upper()
+    if method and method not in dict(PAYMENT_METHOD_CHOICES):
+        method = ''
+    bank_name = (bank_name or '').strip()
+    bank_id = (bank_id or '').strip()
+
+    from core.models import CentreBank
+    bank_options = CentreBank.objects.filter(is_active=True).select_related('centre').order_by(
+        'centre__code', 'bank_name', 'account_number',
+    )
+    if centre_ids is not None:
+        bank_options = bank_options.filter(centre_id__in=centre_ids)
+    bank_name_choices = sorted({
+        (row.bank_name or '').strip()
+        for row in bank_options
+        if (row.bank_name or '').strip()
+    })
+
     payments = Payment.objects.filter(
         status='CONFIRMED', created_at__gte=start_dt, created_at__lte=end_dt,
-    ).select_related('invoice__visit__patient', 'invoice__visit__centre', 'received_by')
+    ).select_related(
+        'invoice__visit__patient', 'invoice__visit__centre', 'received_by', 'centre_bank',
+    )
     invoices = Invoice.objects.filter(
         created_at__gte=start_dt, created_at__lte=end_dt,
     ).select_related('visit__patient', 'visit__centre').prefetch_related('payments')
@@ -121,6 +158,21 @@ def build_accountant_report(user, period='daily', centre_id=None, start=None, en
         outstanding = outstanding.filter(visit__centre_id__in=centre_ids)
         refunds = refunds.filter(invoice__visit__centre_id__in=centre_ids)
 
+    # Mode-of-payment / bank filters apply to revenue & transaction datasets.
+    if method:
+        payments = payments.filter(method=method)
+        refunds = refunds.filter(payment__method=method)
+    selected_bank = None
+    if bank_id:
+        selected_bank = bank_options.filter(pk=bank_id).first()
+        if selected_bank:
+            payments = payments.filter(centre_bank_id=selected_bank.pk)
+            refunds = refunds.filter(payment__centre_bank_id=selected_bank.pk)
+            bank_name = selected_bank.bank_name
+    elif bank_name:
+        payments = payments.filter(centre_bank__bank_name__iexact=bank_name)
+        refunds = refunds.filter(payment__centre_bank__bank_name__iexact=bank_name)
+
     collections = _money(payments.aggregate(total=Sum('amount'))['total'])
     refunds_total = _money(refunds.aggregate(total=Sum('amount'))['total'])
     gross_charges = _money(invoices.exclude(status='CANCELLED').aggregate(total=Sum('subtotal'))['total'])
@@ -143,6 +195,20 @@ def build_accountant_report(user, period='daily', centre_id=None, start=None, en
     payments_by_method = [
         {'method': row['method'], 'count': row['count'], 'total': _money(row['total'])}
         for row in payments.values('method').annotate(count=Count('id'), total=Sum('amount')).order_by('method')
+    ]
+    payments_by_bank = [
+        {
+            'bank': row['centre_bank__bank_name'] or 'Unassigned',
+            'account': row['centre_bank__account_number'] or '',
+            'account_name': row['centre_bank__account_name'] or '',
+            'count': row['count'],
+            'total': _money(row['total']),
+        }
+        for row in payments.values(
+            'centre_bank__bank_name', 'centre_bank__account_name', 'centre_bank__account_number',
+        ).annotate(count=Count('id'), total=Sum('amount')).order_by(
+            'centre_bank__bank_name', 'centre_bank__account_number',
+        )
     ]
     payments_by_centre = [
         {
@@ -176,6 +242,7 @@ def build_accountant_report(user, period='daily', centre_id=None, start=None, en
         'patient': f'{p.invoice.visit.patient.first_name} {p.invoice.visit.patient.last_name}',
         'centre': p.invoice.visit.centre.code,
         'method': p.method,
+        'bank': p.centre_bank.display_label() if p.centre_bank_id else '',
         'amount': _money(p.amount),
         'reference': p.reference,
         'received_by': getattr(p.received_by, 'username', '') or '',
@@ -218,6 +285,15 @@ def build_accountant_report(user, period='daily', centre_id=None, start=None, en
         'created_at': timezone.localtime(v.created_at).strftime('%Y-%m-%d %H:%M'),
     } for v in visits.order_by('-created_at')[:2000]]
 
+    filter_bits = []
+    if method:
+        filter_bits.append(dict(PAYMENT_METHOD_CHOICES).get(method, method))
+    if selected_bank:
+        filter_bits.append(selected_bank.display_label())
+    elif bank_name:
+        filter_bits.append(bank_name)
+    filter_label = ' · '.join(filter_bits) if filter_bits else 'All payment modes / banks'
+
     return {
         'period': period,
         'period_label': label,
@@ -228,6 +304,13 @@ def build_accountant_report(user, period='daily', centre_id=None, start=None, en
         'centres': centres,
         'selected_centre': selected_centre,
         'centre_id': str(selected_centre.pk) if selected_centre else '',
+        'method': method,
+        'bank_name': bank_name if not selected_bank else selected_bank.bank_name,
+        'bank_id': str(selected_bank.pk) if selected_bank else '',
+        'bank_options': list(bank_options),
+        'bank_name_choices': bank_name_choices,
+        'payment_method_choices': PAYMENT_METHOD_CHOICES,
+        'filter_label': filter_label,
         'kpis': {
             'gross_charges': gross_charges,
             'collections': collections,
@@ -245,6 +328,7 @@ def build_accountant_report(user, period='daily', centre_id=None, start=None, en
             'rejected_discounts': discounts.filter(status='REJECTED').count(),
         },
         'payments_by_method': payments_by_method,
+        'payments_by_bank': payments_by_bank,
         'payments_by_centre': payments_by_centre,
         'invoices_by_status': invoices_by_status,
         'discounts_by_status': discounts_by_status,
@@ -284,6 +368,7 @@ def _dataset_table(report, dataset):
         kpis = report['kpis']
         rows = [
             ['Period', report['period_label']],
+            ['Payment filter', report.get('filter_label') or 'All payment modes / banks'],
             ['Gross charges (₦)', kpis.get('gross_charges', 0)],
             ['Invoice discounts (₦)', kpis.get('invoice_discounts', 0)],
             ['Invoice value / billed (₦)', kpis['invoice_billed']],
@@ -301,14 +386,17 @@ def _dataset_table(report, dataset):
         ]
         for row in report['payments_by_method']:
             rows.append([f"Collections via {row['method']}", row['total']])
+        for row in report.get('payments_by_bank') or []:
+            label = row['bank'] if not row.get('account') else f"{row['bank']} ({row['account']})"
+            rows.append([f'Collections via bank {label}', row['total']])
         for row in report['payments_by_centre']:
             rows.append([f"Collections at {row['centre']}", row['total']])
         title = 'Executive summary'
     else:
-        headers = ['Receipt', 'Invoice', 'Patient', 'Centre', 'Method', 'Amount', 'Reference', 'Received by', 'Created']
+        headers = ['Receipt', 'Invoice', 'Patient', 'Centre', 'Method', 'Bank', 'Amount', 'Reference', 'Received by', 'Created']
         rows = [[
-            r['receipt'], r['invoice'], r['patient'], r['centre'], r['method'], r['amount'],
-            r['reference'], r['received_by'], r['created_at'],
+            r['receipt'], r['invoice'], r['patient'], r['centre'], r['method'], r.get('bank', ''),
+            r['amount'], r['reference'], r['received_by'], r['created_at'],
         ] for r in report['payment_rows']]
         title = 'Payments'
         dataset = 'payments'

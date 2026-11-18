@@ -37,9 +37,37 @@
         {% endfor %}
       </select>
     </div>
-    <div class="col-md-3"><button class="btn btn-primary w-100" type="submit">Refresh report</button></div>
+    <div class="col-md-3">
+      <label class="form-label">Mode of payment</label>
+      <select class="form-select" name="method">
+        <option value="">All modes</option>
+        {% for value, label in payment_method_choices %}
+          <option value="{{ value }}" {% if method == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Bank name</label>
+      <select class="form-select" name="bank_name">
+        <option value="">All banks</option>
+        {% for name in bank_name_choices %}
+          <option value="{{ name }}" {% if bank_name == name and not bank_id %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Bank account</label>
+      <select class="form-select" name="bank">
+        <option value="">All accounts</option>
+        {% for bank in bank_options %}
+          <option value="{{ bank.pk }}" {% if bank_id == bank.pk|stringformat:"s" %}selected{% endif %}>{{ bank.centre.code }} · {{ bank.display_label }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-text">Use bank name for all accounts at that bank, or pick one account to reconcile precisely.</div>
+    </div>
+    <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Refresh report</button></div>
   </div>
-  <div class="muted small mt-2">Showing <strong>{{ period_label }}</strong> ({{ start_date }} → {{ end_date }})</div>
+  <div class="muted small mt-2">Showing <strong>{{ period_label }}</strong> ({{ start_date }} → {{ end_date }}) · <strong>{{ filter_label }}</strong></div>
 </form>
 
 <div class="row g-3 mb-4">
@@ -128,6 +156,9 @@
       <input type="hidden" name="start" value="{{ start_date }}">
       <input type="hidden" name="end" value="{{ end_date }}">
       <input type="hidden" name="centre" value="{{ centre_id }}">
+      <input type="hidden" name="method" value="{{ method }}">
+      <input type="hidden" name="bank_name" value="{{ bank_name }}">
+      <input type="hidden" name="bank" value="{{ bank_id }}">
       <div>
         <label class="form-label mb-0 small">Status</label>
         <select class="form-select form-select-sm" name="dstatus" onchange="this.form.submit()">
@@ -195,20 +226,34 @@
 </div>
 
 <div class="row g-4 mb-4">
-  <div class="col-lg-6">
+  <div class="col-lg-4">
     <div class="card p-4 h-100">
       <h2 class="h5">Collections by method</h2>
       {% for row in payments_by_method %}
         <div class="status-pill"><span>{{ row.method }} <span class="muted small">({{ row.count }})</span></span><span>₦{{ row.total|floatformat:2 }}</span></div>
-      {% empty %}<p class="muted mb-0">No confirmed payments in this period.</p>{% endfor %}
+      {% empty %}<p class="muted mb-0">No confirmed payments for this filter.</p>{% endfor %}
     </div>
   </div>
-  <div class="col-lg-6">
+  <div class="col-lg-4">
+    <div class="card p-4 h-100">
+      <h2 class="h5">Collections by bank</h2>
+      {% for row in payments_by_bank %}
+        <div class="status-pill">
+          <span>
+            {{ row.bank }}{% if row.account %} <span class="muted small">({{ row.account }})</span>{% endif %}
+            <span class="muted small">({{ row.count }})</span>
+          </span>
+          <span>₦{{ row.total|floatformat:2 }}</span>
+        </div>
+      {% empty %}<p class="muted mb-0">No bank-tagged collections for this filter. POS/Transfer payments need a centre bank selected at payment.</p>{% endfor %}
+    </div>
+  </div>
+  <div class="col-lg-4">
     <div class="card p-4 h-100">
       <h2 class="h5">Collections by centre</h2>
       {% for row in payments_by_centre %}
         <div class="status-pill"><span>{{ row.centre }} — {{ row.name }}</span><span>₦{{ row.total|floatformat:2 }}</span></div>
-      {% empty %}<p class="muted mb-0">No centre collections in this period.</p>{% endfor %}
+      {% empty %}<p class="muted mb-0">No centre collections for this filter.</p>{% endfor %}
     </div>
   </div>
 </div>
@@ -252,7 +297,7 @@
   <h2 class="h5">Payment detail</h2>
   <div class="table-responsive">
     <table class="table align-middle">
-      <thead><tr><th>Receipt</th><th>Patient</th><th>Centre</th><th>Method</th><th>Amount</th><th>When</th></tr></thead>
+      <thead><tr><th>Receipt</th><th>Patient</th><th>Centre</th><th>Method</th><th>Bank</th><th>Amount</th><th>When</th></tr></thead>
       <tbody>
         {% for row in payment_rows %}
           <tr>
@@ -260,11 +305,12 @@
             <td>{{ row.patient }}<div class="small muted">{{ row.invoice }}</div></td>
             <td>{{ row.centre }}</td>
             <td>{{ row.method }}</td>
+            <td class="small">{{ row.bank|default:"—" }}</td>
             <td>₦{{ row.amount|floatformat:2 }}</td>
             <td class="small">{{ row.created_at }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="6" class="muted text-center py-3">No payments in this period.</td></tr>
+          <tr><td colspan="7" class="muted text-center py-3">No payments match this filter.</td></tr>
         {% endfor %}
       </tbody>
     </table>

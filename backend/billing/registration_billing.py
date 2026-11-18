@@ -7,7 +7,6 @@ from django.db import transaction
 from billing.models import Invoice, InvoiceItem
 from billing.pricing import (
     CREDIT_CHANNELS,
-    debit_credit_wallet,
     ensure_credit_wallet_covers,
     normalize_channel,
     resolve_tariff,
@@ -137,16 +136,8 @@ def process_registration(visit, user, post):
         visit.status = 'PROCESSED'
         visit.save(update_fields=['status', 'updated_at'])
         invoice.refresh_from_db()
-
-        if use_credit_wallet:
-            debit_credit_wallet(
-                client=visit.client,
-                amount=invoice.total,
-                visit=visit,
-                invoice=invoice,
-                actor=user,
-                note=f'Registration debit for {visit.visit_id}',
-            )
+        # Credit-client wallets stay untouched while the invoice is Unpaid.
+        # Wallet debit runs only when Invoice status becomes Paid (see Invoice.recalculate).
 
         from communications.inbox import announce, record_corporate_invoice
         announce(lambda: record_corporate_invoice(invoice))

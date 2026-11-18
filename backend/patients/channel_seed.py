@@ -10,8 +10,8 @@ from patients.models import RegistrationChannel
 
 
 CHANNEL_SPECS = [
-    ('SELF', 'Self (B2C)', True),
-    ('DOCTOR', 'Permanent doctors (B2D)', True),
+    ('SELF', 'Self (B2C)', False),
+    ('DOCTOR', 'Permanent doctors (B2D)', False),
     ('CREDIT_CLIENT', 'Credit clients (B2B)', False),
     ('ON_PAYMENT_CLIENT', 'On payment clients (B2B)', False),
 ]
@@ -22,7 +22,7 @@ def ensure_default_client_types():
     defaults = [
         ('CREDIT', 'Credit', False, 1),
         ('ON_PAYMENT', 'On Payment', False, 2),
-        ('DEFAULT', 'Default', True, 3),
+        ('DEFAULT', 'Default', False, 3),
     ]
     for code, name, show, order in defaults:
         ClientType.objects.get_or_create(

@@ -13,7 +13,7 @@ from laboratory.models import LabOrder, LabResult, Sample, SampleActivity, Sampl
 
 LAB_STAGES = [
     ('batch', 'Batch', 'Create and dispatch sample batches'),
-    ('receive', 'Receive', 'Department receiving'),
+    ('receive', 'Batch receiving', 'Scan, accept, missing, or reject tubes at department receiving'),
     ('process', 'Process', 'Processing and activity logging'),
     ('entry', 'Results', 'Result entry'),
     ('review', 'Review', 'First review / validation'),
@@ -26,6 +26,48 @@ LAB_STAGES = [
 def _finish(status, body, success):
     if 200 <= status < 300:
         return True, success
+    return False, describe(body)
+
+
+def _receive_desk_save(request):
+    """Enterprise batch-receiving desk: accept / missing / reject selected tubes."""
+    post = request.POST
+    batch_id = (post.get('batch') or '').strip()
+    if not batch_id:
+        return False, 'Open a batch before saving.'
+    accept = [v for v in post.getlist('accept') if v]
+    missing = [v for v in post.getlist('missing') if v]
+    reject = [v for v in post.getlist('reject') if v]
+    if not accept and not missing and not reject:
+        return False, 'Select at least one sample to accept, mark missing, or reject.'
+    remarks = {}
+    for key in post.keys():
+        if not key.startswith('remarks-'):
+            continue
+        sid = key[len('remarks-'):]
+        remarks[sid] = (post.get(key) or '').strip()
+    reject_lines = [
+        {'sample_id': sid, 'reason': remarks.get(sid) or 'Rejected at department receiving'}
+        for sid in reject
+    ]
+    payload = {
+        'accept_sample_ids': accept,
+        'missing_sample_ids': missing,
+        'reject_lines': reject_lines,
+        'remarks': remarks,
+        'receive_temperature': (post.get('receive_temperature') or '').strip(),
+        'receive_comments': (post.get('receive_comments') or '').strip(),
+    }
+    status, body = call_action(SampleBatchViewSet, 'receive', request.user, batch_id, payload)
+    if 200 <= status < 300:
+        parts = []
+        if accept:
+            parts.append(f'{len(accept)} accepted')
+        if missing:
+            parts.append(f'{len(missing)} missing')
+        if reject:
+            parts.append(f'{len(reject)} rejected')
+        return True, 'Batch receiving saved: ' + ', '.join(parts) + '.'
     return False, describe(body)
 
 
@@ -84,6 +126,8 @@ def handle_laboratory_post(request):
         }), 'Batch created.')
     if action == 'dispatch':
         return _finish(*call_action(SampleBatchViewSet, 'dispatch_batch', user, post.get('batch'), {}), 'Batch dispatched.')
+    if action == 'receive_desk':
+        return _receive_desk_save(request)
     if action == 'receive':
         return _finish(*call_action(SampleBatchViewSet, 'receive', user, post.get('batch'), {}), 'Batch received by department.')
     if action == 'start_processing':
@@ -621,11 +665,7 @@ def build_laboratory_context(request):
         ctx['collected_samples'] = paginate(request, collected, 'cpage')
         ctx['recent_batches'] = paginate(request, batches.order_by('-created_at'), 'bpage')
     elif stage == 'receive':
-        ctx['open_batches'] = paginate(
-            request,
-            batches.filter(status__in=['OPEN', 'DISPATCHED', 'RECEIVED']).order_by('-created_at'),
-            'bpage',
-        )
+        ctx.update(_build_batch_receiving_context(request, batches))
     elif stage == 'process':
         queue = samples.filter(status__in=['RECEIVED', 'PROCESSING']).order_by('-updated_at')
         page = paginate(request, queue, 'spage')
@@ -674,3 +714,152 @@ def build_laboratory_context(request):
         ctx['pending_results'] = results.filter(status__in=['DRAFT', 'SUBMITTED', 'REVIEWED', 'AUTHENTICATED']).order_by('-created_at')[:30]
 
     return ctx
+
+
+def _vacutainer_tone(name):
+    text = (name or '').lower()
+    if any(token in text for token in ('yellow', 'gold', 'sst', 'gel')):
+        return 'yellow'
+    if any(token in text for token in ('lavender', 'purple', 'edta')):
+        return 'lavender'
+    if any(token in text for token in ('blue', 'citrate')):
+        return 'blue'
+    if any(token in text for token in ('green', 'heparin')):
+        return 'green'
+    if any(token in text for token in ('red', 'plain', 'clot')):
+        return 'red'
+    if any(token in text for token in ('grey', 'gray', 'fluoride')):
+        return 'grey'
+    return ''
+
+
+def _build_batch_receiving_context(request, batches):
+    from urllib.parse import urlencode
+
+    from django.db.models import Count, Q
+    from django.utils.dateparse import parse_date
+
+    query = (request.GET.get('q') or '').strip()
+    date_from = (request.GET.get('from') or '').strip()
+    date_to = (request.GET.get('to') or '').strip()
+    service_group = (request.GET.get('service_group') or '').strip()
+    batch_key = (request.GET.get('batch') or request.GET.get('batch_code') or '').strip()
+    view = (request.GET.get('view') or '').strip().lower()
+    if view not in ('', 'grid'):
+        view = ''
+    start = parse_date(date_from)
+    end = parse_date(date_to)
+
+    queue = batches.filter(status__in=['DISPATCHED', 'RECEIVED', 'OPEN']).annotate(
+        sample_count=Count('items', distinct=True),
+    )
+    if start:
+        queue = queue.filter(Q(dispatched_at__date__gte=start) | Q(created_at__date__gte=start))
+    if end:
+        queue = queue.filter(Q(dispatched_at__date__lte=end) | Q(created_at__date__lte=end))
+    if query:
+        queue = queue.filter(
+            Q(batch_code__icontains=query)
+            | Q(department__icontains=query)
+            | Q(centre__name__icontains=query)
+            | Q(centre__code__icontains=query)
+            | Q(items__sample__sample_id__icontains=query)
+            | Q(items__sample__order__visit__patient__first_name__icontains=query)
+            | Q(items__sample__order__visit__patient__last_name__icontains=query)
+            | Q(items__sample__order__visit__patient__uhid__icontains=query)
+        ).distinct()
+    if service_group:
+        queue = queue.filter(
+            Q(items__sample__order__test__service_group__name__icontains=service_group)
+            | Q(department__icontains=service_group)
+        ).distinct()
+
+    selected = None
+    if batch_key:
+        selected = queue.filter(Q(pk=batch_key) | Q(batch_code__iexact=batch_key)).first()
+        if selected is None:
+            selected = batches.filter(Q(pk=batch_key) | Q(batch_code__iexact=batch_key)).first()
+
+    desk_rows = []
+    pending_count = 0
+    scanned_count = 0
+    service_groups = sorted({
+        name for name in batches.filter(status='DISPATCHED').values_list(
+            'items__sample__order__test__service_group__name', flat=True,
+        ) if name
+    })
+
+    if selected is not None:
+        items = (
+            selected.items.select_related(
+                'sample__centre',
+                'sample__order__test__service_group',
+                'sample__order__stat',
+                'sample__order__visit__patient',
+                'sample__order__visit__centre',
+            ).order_by('sample__sample_id')
+        )
+        for item in items:
+            sample = item.sample
+            order = sample.order
+            _decorate_order(order)
+            patient = order.visit.patient
+            disposition = item.receive_disposition or 'PENDING'
+            is_pending = sample.status == 'BATCHED' and disposition in ('PENDING', 'SCANNED', '')
+            is_scanned = bool(item.scanned_at) or disposition in ('SCANNED', 'ACCEPTED')
+            if is_pending:
+                pending_count += 1
+            if is_scanned or disposition == 'ACCEPTED':
+                scanned_count += 1
+            desk_rows.append({
+                'item': item,
+                'sample': sample,
+                'order': order,
+                'patient_name': f'{patient.first_name} {patient.last_name}'.strip(),
+                'age': _age_text(patient),
+                'sex': (patient.sex or '').strip(),
+                'uhid': patient.uhid or '',
+                'vacutainer': order.desk_vacutainer,
+                'vac_tone': _vacutainer_tone(order.desk_vacutainer),
+                'specimen': sample.specimen_type or order.desk_specimen or '',
+                'group': order.desk_group or selected.department,
+                'disposition': disposition,
+                'editable': sample.status == 'BATCHED' and selected.status == 'DISPATCHED',
+                'collected_at': sample.collected_at,
+            })
+
+    filters = {}
+    if query:
+        filters['q'] = query
+    if date_from:
+        filters['from'] = date_from
+    if date_to:
+        filters['to'] = date_to
+    if service_group:
+        filters['service_group'] = service_group
+    filter_qs = urlencode(filters)
+    clear_params = {'stage': 'receive', 'browse': '1', **filters}
+    grid_params = {'stage': 'receive', 'view': 'grid', **filters}
+    if selected is not None:
+        grid_params['batch'] = str(selected.pk)
+
+    pending_batches = queue.filter(status='DISPATCHED').order_by('-dispatched_at', '-created_at')
+    return {
+        'open_batches': paginate(request, queue.order_by('-created_at'), 'bpage'),
+        'pending_batches': paginate(request, pending_batches, 'ppage'),
+        'receive_desk': True,
+        'selected_batch': selected,
+        'desk_rows': desk_rows,
+        'pending_vac_count': pending_count if selected else pending_batches.count(),
+        'scanned_vac_count': scanned_count,
+        'search_query': query,
+        'date_from': date_from,
+        'date_to': date_to,
+        'service_group': service_group,
+        'service_groups': service_groups,
+        'desk_view': view,
+        'filter_qs': filter_qs,
+        'clear_href': '?' + urlencode(clear_params),
+        'grid_href': '?' + urlencode(grid_params),
+        'receive_editable': bool(selected and selected.status == 'DISPATCHED'),
+    }

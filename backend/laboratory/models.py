@@ -360,6 +360,11 @@ class SampleBatch(TimeStampedModel):
     dispatched_at=models.DateTimeField(null=True,blank=True)
     received_at=models.DateTimeField(null=True,blank=True)
     received_by=models.ForeignKey(settings.AUTH_USER_MODEL,null=True,blank=True,on_delete=models.SET_NULL,related_name='batches_received')
+    receive_temperature=models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        help_text='Recorded temperature (°C) when the batch was received at the department.',
+    )
+    receive_comments=models.TextField(blank=True, default='')
     def save(self,*args,**kwargs):
         if not self.batch_code:
             with transaction.atomic():
@@ -370,9 +375,23 @@ class SampleBatch(TimeStampedModel):
     def __str__(self): return self.batch_code
 
 class BatchSample(TimeStampedModel):
+    RECEIVE_DISPOSITIONS=[
+        ('PENDING','Pending'),
+        ('SCANNED','Scanned'),
+        ('ACCEPTED','Accepted'),
+        ('MISSING','Missing'),
+        ('REJECTED','Rejected'),
+    ]
     batch=models.ForeignKey(SampleBatch,on_delete=models.PROTECT,related_name='items')
     sample=models.ForeignKey(Sample,on_delete=models.PROTECT,related_name='batch_memberships')
     added_by=models.ForeignKey(settings.AUTH_USER_MODEL,null=True,on_delete=models.SET_NULL)
+    receive_disposition=models.CharField(max_length=12,choices=RECEIVE_DISPOSITIONS,default='PENDING')
+    remarks=models.CharField(max_length=255,blank=True,default='')
+    scanned_at=models.DateTimeField(null=True,blank=True)
+    scanned_by=models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='batch_samples_scanned',
+    )
     class Meta: constraints=[models.UniqueConstraint(fields=['batch','sample'],name='uniq_sample_per_batch')]
 
 class SampleProcessing(TimeStampedModel):

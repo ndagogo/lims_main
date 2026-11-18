@@ -161,7 +161,7 @@
         <div class="col-md-6"><label class="form-label">Agreement file</label><input class="form-control" type="file" name="agreement_file"></div>
         <div class="col-12">
           <div class="row g-2">
-            <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" name="show_test_prices" id="show-prices" {% if selected and selected.show_test_prices or not selected %}checked{% endif %}><label class="form-check-label" for="show-prices">Test_Price_Display on receipt</label></div></div>
+            <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" name="show_test_prices" id="show-prices" {% if selected and selected.show_test_prices %}checked{% endif %}><label class="form-check-label" for="show-prices">Test_Price_Display on receipt</label></div></div>
             <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" name="enable_auto_locking" id="auto-lock" {% if selected and selected.enable_auto_locking %}checked{% endif %}><label class="form-check-label" for="auto-lock">Enable auto locking</label></div></div>
             <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_copayment" id="copay" {% if selected and selected.is_copayment %}checked{% endif %}><label class="form-check-label" for="copay">Is co-payment</label></div></div>
             <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" name="email_required" id="email-req" {% if selected and selected.email_required %}checked{% endif %}><label class="form-check-label" for="email-req">Email required to customer</label></div></div>
@@ -209,7 +209,7 @@
               <td>{{ row.get_entry_type_display }}</td>
               <td>₦{{ row.amount }}</td>
               <td>₦{{ row.balance_after }}</td>
-              <td class="small">{{ row.created_by|default:"—" }}</td>
+              <td class="small">{% if row.created_by %}{{ row.created_by.display_name|default:row.created_by.username }}{% else %}—{% endif %}</td>
               <td class="small">{{ row.note|default:row.reference }}</td>
             </tr>
             {% empty %}
