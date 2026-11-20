@@ -424,6 +424,7 @@ def _list_query(modality, when, desk, date_from, date_to, visit_query, status_fi
 def _template_catalog(order):
     if order is None:
         return []
+    from radiology.report_sections import sections_from_template
     rows = []
     for template in getattr(order, 'available_templates', []) or []:
         rows.append({
@@ -435,6 +436,7 @@ def _template_catalog(order):
             'findings': template.findings_boilerplate or '',
             'impression': template.impression_boilerplate or '',
             'recommendations': template.recommendations_boilerplate or '',
+            'report_sections': sections_from_template(template),
         })
     return rows
 
@@ -510,6 +512,7 @@ def build_radiology_templates_context(request, *, platform=False):
 
 def build_radiology_template_builder_context(request, pk, *, platform=False):
     import json
+    from radiology.report_sections import section_type_choices, sections_from_template
     template = get_object_or_404(RadiologyReportTemplate, pk=pk)
     if platform:
         if template.scope != 'PLATFORM' or template.owner_id:
@@ -524,9 +527,12 @@ def build_radiology_template_builder_context(request, pk, *, platform=False):
     if platform and template.status == 'PUBLISHED':
         can_edit_meta = False
     can_edit_body = template.status != 'RETIRED'
+    sections = sections_from_template(template)
     return {
         'template': template,
         'body_html_json': json.dumps(template.body_html or ''),
+        'report_sections': sections,
+        'report_section_types': [{'key': key, 'label': label} for key, label in section_type_choices()],
         'extra_fields_json': json.dumps(template.extra_fields or [], indent=2),
         'modality_types': ImagingModality.MODALITY_TYPES,
         'visibility_choices': RadiologyReportTemplate.VISIBILITY,
@@ -539,16 +545,10 @@ def build_radiology_template_builder_context(request, pk, *, platform=False):
     }
 
 
-def _default_body_html(modality_label, body_part=''):
-    part = body_part or '—'
-    return (
-        f'<p><strong>EXAM:</strong> {modality_label} — {part}</p>'
-        '<p><strong>CLINICAL INFORMATION:</strong> Clinical history not provided.</p>'
-        '<p><strong>TECHNIQUE:</strong> </p>'
-        '<p><strong>FINDINGS:</strong> </p>'
-        '<p><strong>IMPRESSION:</strong> </p>'
-        '<p><strong>COMPARISON:</strong> No prior studies available for comparison.</p>'
-    )
+def _default_template_seed(modality_label, body_part=''):
+    from radiology.report_sections import compose_report_html, default_template_sections
+    sections = default_template_sections(modality_label=modality_label, body_part=body_part)
+    return sections, compose_report_html(sections)
 
 
 def handle_radiology_templates_post(request, *, platform=False):
@@ -567,6 +567,7 @@ def handle_radiology_templates_post(request, *, platform=False):
             messages.error(request, 'Body part is required.')
             return redirect('platform-radiology-templates' if platform else 'radiology-templates')
         modality_label = dict(ImagingModality.MODALITY_TYPES).get(modality_type, modality_type)
+        sections, body_html = _default_template_seed(modality_label, body_part)
         try:
             row = RadiologyReportTemplate.objects.create(
                 modality_type=modality_type,
@@ -578,9 +579,13 @@ def handle_radiology_templates_post(request, *, platform=False):
                 status='DRAFT',
                 scope='PLATFORM' if platform else 'PERSONAL',
                 owner=None if platform else request.user,
-                body_html=_default_body_html(modality_label, body_part),
+                body_html=body_html,
+                report_sections=sections,
                 is_active=True,
             )
+            from radiology.report_sections import apply_sections_to_template
+            apply_sections_to_template(row, sections)
+            row.save()
         except IntegrityError:
             messages.error(request, 'That template name/version already exists.')
             return redirect('platform-radiology-templates' if platform else 'radiology-templates')
@@ -602,6 +607,8 @@ def handle_radiology_templates_post(request, *, platform=False):
 
 
 def _apply_template_form(template, post):
+    from radiology.report_sections import apply_sections_to_template, normalize_sections
+
     name = _text(post, 'name') or template.name
     modality_type = _text(post, 'modality_type').upper() or template.modality_type
     if modality_type not in dict(ImagingModality.MODALITY_TYPES):
@@ -617,7 +624,10 @@ def _apply_template_form(template, post):
     template.modality_type = modality_type
     template.body_part = body_part
     template.visibility = visibility
-    if post.get('body_html') is not None:
+    sections = normalize_sections(post.get('report_sections'))
+    if sections:
+        apply_sections_to_template(template, sections)
+    elif post.get('body_html') is not None:
         template.body_html = post.get('body_html') or ''
     template.is_active = post.get('is_active') == 'on'
     return template
@@ -674,7 +684,15 @@ def handle_radiology_template_builder_post(request, pk, *, platform=False):
         clone.body_part = body_part
         clone.visibility = visibility
         clone.modality_type = modality_type
-        clone.body_html = request.POST.get('body_html') if request.POST.get('body_html') is not None else template.body_html
+        from radiology.report_sections import apply_sections_to_template, normalize_sections
+        sections = normalize_sections(request.POST.get('report_sections'))
+        if sections:
+            apply_sections_to_template(clone, sections)
+        elif request.POST.get('body_html') is not None:
+            clone.body_html = request.POST.get('body_html') or ''
+        else:
+            clone.body_html = template.body_html
+            clone.report_sections = list(template.report_sections or [])
         clone.is_active = request.POST.get('is_active') == 'on' if can_edit else True
         clone.save()
         messages.success(request, f'Saved as new variant template v{clone.version}.')

@@ -1,22 +1,63 @@
 {% extends "base.html" %}
 {% block title %}Report Template · {{ template.name }}{% endblock %}
 {% block content %}
-<link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet">
 <style>
   .rt-shell { background:#fff; border:1px solid var(--hfdn-line); border-radius:1rem; overflow:hidden; box-shadow:0 14px 36px #10203312; }
   .rt-top { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem 1.25rem; border-bottom:1px solid var(--hfdn-line); }
   .rt-grid { display:grid; grid-template-columns: minmax(260px, 320px) 1fr; min-height: 62vh; }
   @media (max-width: 991px) { .rt-grid { grid-template-columns: 1fr; } }
   .rt-meta { border-right:1px solid var(--hfdn-line); padding:1.15rem 1.25rem; background:#fbfcfe; }
-  .rt-editor-pane { padding:1rem 1.15rem 0; display:flex; flex-direction:column; min-height: 62vh; }
-  #rt-editor { flex:1; min-height: 420px; }
-  .ql-toolbar.ql-snow { border-radius:.65rem .65rem 0 0; border-color:var(--hfdn-line); background:#f8fafc; }
-  .ql-container.ql-snow { border-radius:0 0 .65rem .65rem; border-color:var(--hfdn-line); font-size:1rem; }
-  .ql-editor { min-height: 380px; }
-  .ql-editor h1, .ql-editor h2, .ql-editor h3, .ql-editor strong { color: var(--hfdn-ink); }
-  .rt-stats { display:flex; justify-content:flex-end; gap:1rem; padding:.45rem .25rem .85rem; color:var(--hfdn-muted); font-size:.78rem; letter-spacing:.04em; }
+  .rt-editor-pane { padding:1rem 1.15rem 1.15rem; display:flex; flex-direction:column; min-height: 62vh; gap:.85rem; }
   .rt-footer { display:flex; justify-content:flex-end; gap:.65rem; flex-wrap:wrap; padding:1rem 1.25rem; border-top:1px solid var(--hfdn-line); background:#fbfcfe; }
   .rt-req::after { content:" *"; color:#c53030; }
+  .rte-stack { display: flex; flex-direction: column; gap: .85rem; }
+  .rte-block { border: 1px solid #d7d2c8; border-radius: 10px; background: #fff; overflow: hidden; }
+  .rte-block-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .55rem .7rem; background: #f7f5f1; border-bottom: 1px solid #e7e2d9; }
+  .rte-section-wrap { position: relative; }
+  .rte-section-btn {
+    border: 1px solid #d4cfc4; background: #fff; border-radius: 8px; padding: .35rem .7rem;
+    font-weight: 650; font-size: .92rem; min-width: 11rem; text-align: left; display: inline-flex;
+    align-items: center; justify-content: space-between; gap: .5rem;
+  }
+  .rte-section-btn::after { content: "▾"; font-size: .75rem; color: #78716c; }
+  .rte-section-menu {
+    position: absolute; z-index: 20; top: calc(100% + .25rem); left: 0; min-width: 14rem;
+    background: #fff; border: 1px solid #ddd6cb; border-radius: 10px; box-shadow: 0 10px 28px rgba(28, 25, 23, .12);
+    padding: .35rem; display: none;
+  }
+  .rte-section-menu.is-open { display: block; }
+  .rte-section-menu button {
+    display: block; width: 100%; text-align: left; border: 0; background: transparent;
+    padding: .45rem .6rem; border-radius: 7px; font-size: .9rem;
+  }
+  .rte-section-menu button:hover, .rte-section-menu button.is-active { background: #f3f0ea; }
+  .rte-section-menu .rte-add-item { color: #1d4ed8; font-weight: 650; border-top: 1px solid #ebe6dc; margin-top: .25rem; padding-top: .55rem; }
+  .rte-head-actions { display: inline-flex; gap: .35rem; align-items: center; }
+  .rte-remove, .rte-move {
+    width: 2rem; height: 2rem; border-radius: 8px; border: 1px solid #d4cfc4; background: #fff;
+    color: #44403c; font-size: 1rem; line-height: 1;
+  }
+  .rte-toolbar {
+    display: flex; flex-wrap: wrap; gap: .2rem; align-items: center;
+    padding: .4rem .55rem; background: #eceae4; border-bottom: 1px solid #ddd7cc;
+  }
+  .rte-toolbar button, .rte-toolbar label.rte-tool {
+    border: 0; background: transparent; min-width: 1.85rem; height: 1.85rem; border-radius: 5px;
+    display: inline-flex; align-items: center; justify-content: center; color: #292524; font-size: .85rem; cursor: pointer; padding: 0 .35rem;
+  }
+  .rte-toolbar button:hover, .rte-toolbar label.rte-tool:hover { background: #ddd7cc; }
+  .rte-toolbar .rte-sep { width: 1px; height: 1.2rem; background: #cfc8bb; margin: 0 .2rem; }
+  .rte-toolbar select {
+    border: 1px solid #cfc8bb; border-radius: 5px; background: #fff; font-size: .78rem; height: 1.85rem; padding: 0 .3rem;
+  }
+  .rte-toolbar input[type="color"] { width: 1.5rem; height: 1.5rem; padding: 0; border: 0; background: transparent; cursor: pointer; }
+  .rte-editor { min-height: 7.5rem; padding: .85rem 1rem; outline: none; line-height: 1.45; }
+  .rte-editor:empty:before { content: attr(data-placeholder); color: #a8a29e; pointer-events: none; }
+  .rte-editor[contenteditable="false"] { background: #fafaf9; }
+  .rte-status {
+    display: flex; justify-content: space-between; gap: .75rem; padding: .35rem .7rem;
+    border-top: 1px solid #e7e2d9; background: #faf8f5; color: #78716c; font-size: .72rem; letter-spacing: .02em;
+  }
 </style>
 
 <div class="rt-shell dash-enter">
@@ -35,6 +76,7 @@
     {% csrf_token %}
     <input type="hidden" name="action" id="rt-action" value="update">
     <input type="hidden" name="body_html" id="rt-body-html" value="">
+    <input type="hidden" name="report_sections" id="rt-report-sections" value="">
     <div class="rt-grid">
       <aside class="rt-meta">
         <div class="mb-3">
@@ -72,12 +114,19 @@
           <label class="form-check-label" for="rt-active">Mark as Active Template</label>
           {% if not can_edit_meta and template.is_active %}<input type="hidden" name="is_active" value="on">{% endif %}
         </div>
-        <p class="small muted mb-0">Use the editor for <strong>bold</strong>, <em>italic</em>, <u>underline</u>, lists, alignment, colours, links and more.</p>
+        <p class="small muted mb-0">Build the report the same way radiologists write it: choose section types, set the sequence with ↑/↓, and fill each rich-text block.</p>
       </aside>
 
       <section class="rt-editor-pane">
-        <div id="rt-editor"></div>
-        <div class="rt-stats"><span id="rt-chars">CHARS: 0</span><span id="rt-words">WORDS: 0</span></div>
+        {{ report_sections|json_script:"rt-sections-data" }}
+        {{ report_section_types|json_script:"rt-section-types" }}
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <div class="small muted">Section sequence is saved with the template and loads into the reporting desk.</div>
+          {% if can_edit_body %}
+          <button class="btn btn-sm btn-outline-dark" type="button" id="rte-add-section">+ Add section</button>
+          {% endif %}
+        </div>
+        <div id="report-sections" class="rte-stack" aria-label="Template sections" data-editable="{{ can_edit_body|yesno:'1,0' }}"></div>
       </section>
     </div>
 
@@ -92,81 +141,266 @@
   </form>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
 <script>
 (function () {
-  const initialHtml = {{ body_html_json|safe }};
   const canEditMeta = {{ can_edit_meta|yesno:"true,false" }};
   const canEditBody = {{ can_edit_body|yesno:"true,false" }};
-  const quill = new Quill('#rt-editor', {
-    theme: 'snow',
-    readOnly: !canEditBody,
-    placeholder: 'Compose the report template…',
-    modules: {
-      toolbar: canEditBody ? [
-        [{ header: [1, 2, 3, false] }],
-        ['bold', 'italic', 'underline', 'strike'],
-        [{ color: [] }, { background: [] }],
-        [{ list: 'ordered' }, { list: 'bullet' }],
-        [{ align: [] }],
-        ['blockquote', 'code-block'],
-        ['link', 'image'],
-        ['clean'],
-      ] : false,
-      history: { delay: 500, maxStack: 100, userOnly: true },
-    },
-  });
-  if (initialHtml) {
-    quill.clipboard.dangerouslyPasteHTML(initialHtml);
-  } else {
-    quill.setText('');
-  }
-
-  const charsEl = document.getElementById('rt-chars');
-  const wordsEl = document.getElementById('rt-words');
-  const updateBtn = document.getElementById('rt-update');
-  const variantBtn = document.getElementById('rt-save-variant');
+  const root = document.getElementById('report-sections');
+  const types = JSON.parse(document.getElementById('rt-section-types').textContent || '[]');
+  const initialSections = JSON.parse(document.getElementById('rt-sections-data').textContent || '[]');
   const form = document.getElementById('rt-form');
   const actionInput = document.getElementById('rt-action');
   const bodyInput = document.getElementById('rt-body-html');
+  const sectionsInput = document.getElementById('rt-report-sections');
+  const updateBtn = document.getElementById('rt-update');
+  const variantBtn = document.getElementById('rt-save-variant');
+  const addBtn = document.getElementById('rte-add-section');
+  let openMenu = null;
+  let baseline = '';
 
-  const snapshot = () => JSON.stringify({
-    name: document.getElementById('rt-name').value,
-    variant: document.getElementById('rt-variant').value,
-    modality: document.getElementById('rt-modality').value,
-    bodyPart: document.getElementById('rt-body-part').value,
-    visibility: document.getElementById('rt-visibility').value,
-    active: document.getElementById('rt-active').checked,
-    html: quill.root.innerHTML,
-  });
-  let baseline = snapshot();
-
-  function refreshStats() {
-    const text = quill.getText().trim();
-    const chars = text.length;
-    const words = text ? text.split(/\s+/).filter(Boolean).length : 0;
-    charsEl.textContent = 'CHARS: ' + chars;
-    wordsEl.textContent = 'WORDS: ' + words;
+  function labelFor(key) {
+    var hit = types.find(function (row) { return row.key === key; });
+    return hit ? hit.label : key;
   }
+
+  function collectSections() {
+    var sections = [];
+    var composed = [];
+    root.querySelectorAll('.rte-block').forEach(function (block) {
+      var key = block.dataset.key || 'findings';
+      var editor = block.querySelector('.rte-editor');
+      var html = editor ? editor.innerHTML : '';
+      var label = labelFor(key);
+      sections.push({ key: key, label: label, html: html });
+      var plain = (editor ? editor.innerText : '').trim();
+      var heading = '<p><strong>' + label.toUpperCase() + ':</strong></p>';
+      composed.push(plain ? heading + html : heading);
+    });
+    return { sections: sections, bodyHtml: composed.join('\n') };
+  }
+
+  function snapshot() {
+    var payload = collectSections();
+    return JSON.stringify({
+      name: document.getElementById('rt-name').value,
+      variant: document.getElementById('rt-variant').value,
+      modality: document.getElementById('rt-modality').value,
+      bodyPart: document.getElementById('rt-body-part').value,
+      visibility: document.getElementById('rt-visibility').value,
+      active: document.getElementById('rt-active').checked,
+      sections: payload.sections,
+    });
+  }
+
   function refreshDirty() {
-    const dirty = snapshot() !== baseline;
+    var dirty = snapshot() !== baseline;
     if (updateBtn) updateBtn.disabled = !canEditMeta || !dirty;
     if (variantBtn) variantBtn.disabled = !canEditBody || !dirty;
   }
-  quill.on('text-change', function () { refreshStats(); refreshDirty(); });
-  ['rt-name','rt-variant','rt-modality','rt-body-part','rt-visibility','rt-active'].forEach(function (id) {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('input', refreshDirty);
-    if (el) el.addEventListener('change', refreshDirty);
-  });
-  refreshStats();
+
+  function closeMenus() {
+    if (openMenu) openMenu.classList.remove('is-open');
+    openMenu = null;
+  }
+
+  function updateCounts(block) {
+    var editor = block.querySelector('.rte-editor');
+    var counts = block.querySelector('.rte-counts');
+    if (!editor || !counts) return;
+    var text = (editor.innerText || '').replace(/\u00a0/g, ' ').trim();
+    var words = text ? text.split(/\s+/).length : 0;
+    counts.textContent = 'CHARS: ' + text.length + ' WORDS: ' + words;
+  }
+
+  function execOn(editor, command, value) {
+    if (!canEditBody) return;
+    editor.focus();
+    try { document.execCommand(command, false, value || null); } catch (err) {}
+    updateCounts(editor.closest('.rte-block'));
+    refreshDirty();
+  }
+
+  function toolbarHtml() {
+    return '' +
+      '<div class="rte-toolbar" role="toolbar">' +
+      '<button type="button" data-cmd="bold" title="Bold"><b>B</b></button>' +
+      '<button type="button" data-cmd="italic" title="Italic"><i>I</i></button>' +
+      '<button type="button" data-cmd="underline" title="Underline"><u>U</u></button>' +
+      '<button type="button" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>' +
+      '<button type="button" data-cmd="removeFormat" title="Clear formatting">⌫</button>' +
+      '<span class="rte-sep"></span>' +
+      '<button type="button" data-cmd="insertUnorderedList" title="Bulleted list">•≡</button>' +
+      '<button type="button" data-cmd="insertOrderedList" title="Numbered list">1.</button>' +
+      '<span class="rte-sep"></span>' +
+      '<label class="rte-tool" title="Text colour">A <input type="color" data-color="foreColor" value="#111111"></label>' +
+      '<label class="rte-tool" title="Highlight">▮ <input type="color" data-color="hiliteColor" value="#fff59d"></label>' +
+      '<select data-font-size title="Font size">' +
+      '<option value="">Size</option><option value="2">Small</option><option value="3">Normal</option>' +
+      '<option value="4">Large</option><option value="5">Larger</option><option value="6">Huge</option>' +
+      '</select>' +
+      '<select data-align title="Alignment">' +
+      '<option value="justifyLeft">Left</option><option value="justifyCenter">Center</option>' +
+      '<option value="justifyRight">Right</option><option value="justifyFull">Justify</option>' +
+      '</select>' +
+      '<span class="rte-sep"></span>' +
+      '<button type="button" data-cmd="insertHorizontalRule" title="Horizontal line">―</button>' +
+      '<button type="button" data-cmd="superscript" title="Superscript">x²</button>' +
+      '<button type="button" data-cmd="subscript" title="Subscript">x₂</button>' +
+      '<button type="button" data-cmd="insertImage" title="Insert image">🖼</button>' +
+      '</div>';
+  }
+
+  function menuHtml(activeKey) {
+    var html = '<div class="rte-section-menu">';
+    types.forEach(function (row) {
+      html += '<button type="button" data-pick="' + row.key + '"' +
+        (row.key === activeKey ? ' class="is-active"' : '') + '>' + row.label + '</button>';
+    });
+    html += '<button type="button" class="rte-add-item" data-add-item="+">+ Add item</button></div>';
+    return html;
+  }
+
+  function bindBlock(block) {
+    var editor = block.querySelector('.rte-editor');
+    var btn = block.querySelector('.rte-section-btn');
+    var menu = block.querySelector('.rte-section-menu');
+    var remove = block.querySelector('.rte-remove');
+    var moveUp = block.querySelector('[data-move="up"]');
+    var moveDown = block.querySelector('[data-move="down"]');
+    if (!canEditBody) {
+      editor.contentEditable = 'false';
+      return;
+    }
+    btn.addEventListener('click', function (event) {
+      event.stopPropagation();
+      if (openMenu && openMenu !== menu) openMenu.classList.remove('is-open');
+      menu.classList.toggle('is-open');
+      openMenu = menu.classList.contains('is-open') ? menu : null;
+    });
+    menu.addEventListener('click', function (event) {
+      var pick = event.target.closest('[data-pick]');
+      var addItem = event.target.closest('[data-add-item]');
+      if (addItem) {
+        closeMenus();
+        appendSection({ key: 'findings', html: '' });
+        refreshDirty();
+        return;
+      }
+      if (!pick) return;
+      block.dataset.key = pick.getAttribute('data-pick');
+      btn.textContent = labelFor(block.dataset.key);
+      menu.querySelectorAll('[data-pick]').forEach(function (el) {
+        el.classList.toggle('is-active', el.getAttribute('data-pick') === block.dataset.key);
+      });
+      closeMenus();
+      refreshDirty();
+    });
+    remove.addEventListener('click', function () {
+      if (root.querySelectorAll('.rte-block').length <= 1) {
+        editor.innerHTML = '';
+        updateCounts(block);
+        refreshDirty();
+        return;
+      }
+      block.remove();
+      refreshDirty();
+    });
+    if (moveUp) moveUp.addEventListener('click', function () {
+      if (block.previousElementSibling) root.insertBefore(block, block.previousElementSibling);
+      refreshDirty();
+    });
+    if (moveDown) moveDown.addEventListener('click', function () {
+      if (block.nextElementSibling) root.insertBefore(block.nextElementSibling, block);
+      refreshDirty();
+    });
+    block.querySelectorAll('[data-cmd]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var cmd = el.getAttribute('data-cmd');
+        if (cmd === 'insertImage') {
+          var url = window.prompt('Image URL');
+          if (url) execOn(editor, 'insertImage', url);
+          return;
+        }
+        execOn(editor, cmd);
+      });
+    });
+    block.querySelectorAll('input[data-color]').forEach(function (input) {
+      input.addEventListener('input', function () {
+        execOn(editor, input.getAttribute('data-color'), input.value);
+      });
+    });
+    var size = block.querySelector('[data-font-size]');
+    if (size) size.addEventListener('change', function () {
+      if (size.value) execOn(editor, 'fontSize', size.value);
+      size.value = '';
+    });
+    var align = block.querySelector('[data-align]');
+    if (align) align.addEventListener('change', function () {
+      execOn(editor, align.value);
+    });
+    ['input', 'keyup', 'blur'].forEach(function (evt) {
+      editor.addEventListener(evt, function () { updateCounts(block); refreshDirty(); });
+    });
+    updateCounts(block);
+  }
+
+  function appendSection(row) {
+    var key = (row && row.key) || 'findings';
+    var html = (row && row.html) || '';
+    var block = document.createElement('div');
+    block.className = 'rte-block';
+    block.dataset.key = key;
+    block.innerHTML =
+      '<div class="rte-block-head">' +
+      '<div class="rte-section-wrap">' +
+      '<button type="button" class="rte-section-btn"' + (canEditBody ? '' : ' disabled') + '>' + labelFor(key) + '</button>' +
+      (canEditBody ? menuHtml(key) : '') +
+      '</div>' +
+      (canEditBody
+        ? ('<div class="rte-head-actions">' +
+           '<button type="button" class="rte-move" data-move="up" aria-label="Move section up">↑</button>' +
+           '<button type="button" class="rte-move" data-move="down" aria-label="Move section down">↓</button>' +
+           '<button type="button" class="rte-remove" aria-label="Remove section">−</button>' +
+           '</div>')
+        : '') +
+      '</div>' +
+      (canEditBody ? toolbarHtml() : '') +
+      '<div class="rte-editor" contenteditable="' + (canEditBody ? 'true' : 'false') + '" role="textbox" data-placeholder="Start typing here..."></div>' +
+      '<div class="rte-status"><span class="rte-path">p</span><span class="rte-counts">CHARS: 0 WORDS: 0</span></div>';
+    block.querySelector('.rte-editor').innerHTML = html;
+    root.appendChild(block);
+    bindBlock(block);
+    return block;
+  }
+
+  function renderSections(rows) {
+    root.innerHTML = '';
+    (rows && rows.length ? rows : [{ key: 'findings', html: '' }]).forEach(appendSection);
+  }
+
+  renderSections(initialSections);
+  baseline = snapshot();
   refreshDirty();
 
+  ['rt-name','rt-variant','rt-modality','rt-body-part','rt-visibility','rt-active'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', refreshDirty);
+    el.addEventListener('change', refreshDirty);
+  });
+  if (addBtn) addBtn.addEventListener('click', function () {
+    appendSection({ key: 'findings', html: '' });
+    refreshDirty();
+  });
+  document.addEventListener('click', closeMenus);
+
   form.addEventListener('submit', function (ev) {
-    const btn = ev.submitter;
-    const value = (btn && btn.value) || 'update';
+    var btn = ev.submitter;
+    var value = (btn && btn.value) || 'update';
     actionInput.value = value === 'save_variant' ? 'save_variant' : (value === 'publish' ? 'publish' : 'update');
-    bodyInput.value = quill.root.innerHTML;
+    var payload = collectSections();
+    bodyInput.value = payload.bodyHtml;
+    sectionsInput.value = JSON.stringify(payload.sections);
   });
 })();
 </script>

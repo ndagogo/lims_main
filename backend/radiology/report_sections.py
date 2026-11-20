@@ -40,6 +40,7 @@ _KEY_BY_LABEL.update({
     'recommendation': 'follow_up',
     'follow up': 'follow_up',
     'follow-up': 'follow_up',
+    'exam': 'findings',
 })
 
 
@@ -200,6 +201,64 @@ def apply_sections_to_report_payload(data, sections):
     extras['report_sections'] = sections
     payload['extra_values'] = extras
     return payload
+
+
+def default_template_sections(*, modality_label='', body_part=''):
+    """Starter sequence for a new radiology report template."""
+    part = (body_part or '—').strip() or '—'
+    modality = (modality_label or 'Study').strip() or 'Study'
+    return [
+        {
+            'key': 'clinical_information',
+            'label': 'Clinical Information',
+            'html': '<p>Clinical history not provided.</p>',
+        },
+        {
+            'key': 'comparison',
+            'label': 'Comparison',
+            'html': '<p>No prior studies available for comparison.</p>',
+        },
+        {'key': 'technique', 'label': 'Technique', 'html': ''},
+        {
+            'key': 'findings',
+            'label': 'Findings',
+            'html': f'<p><strong>EXAM:</strong> {modality} — {part}</p>',
+        },
+        {'key': 'impression', 'label': 'Impression', 'html': ''},
+    ]
+
+
+def sections_from_template(template):
+    """Load ordered sections from a RadiologyReportTemplate (new or legacy)."""
+    stored = normalize_sections(getattr(template, 'report_sections', None))
+    if stored:
+        return stored
+    body = (getattr(template, 'body_html', None) or '').strip()
+    if body and _looks_like_sectioned_html(body):
+        split = _split_legacy_html(body)
+        if split:
+            return split
+    return default_sections(
+        indication=getattr(template, 'indication_boilerplate', '') or '',
+        technique=getattr(template, 'technique_boilerplate', '') or '',
+        findings=(getattr(template, 'findings_boilerplate', '') or body or ''),
+        impression=getattr(template, 'impression_boilerplate', '') or '',
+        recommendations=getattr(template, 'recommendations_boilerplate', '') or '',
+    )
+
+
+def apply_sections_to_template(template, sections):
+    """Persist sequenced sections onto a template and sync classic fields."""
+    sections = normalize_sections(sections)
+    template.report_sections = sections
+    by_key = {row['key']: row.get('html') or '' for row in sections}
+    template.indication_boilerplate = by_key.get('clinical_information', '')
+    template.technique_boilerplate = by_key.get('technique', '')
+    template.findings_boilerplate = by_key.get('findings', '')
+    template.impression_boilerplate = by_key.get('impression') or by_key.get('conclusion', '')
+    template.recommendations_boilerplate = by_key.get('follow_up', '')
+    template.body_html = compose_report_html(sections)
+    return template
 
 
 def _looks_like_sectioned_html(text):

@@ -770,6 +770,11 @@
 
     function sectionsFromTemplate(row) {
       if (!row) return null;
+      if (row.report_sections && row.report_sections.length) {
+        return row.report_sections.map(function (item) {
+          return { key: item.key, html: item.html || '' };
+        });
+      }
       var body = (row.body_html || '').trim();
       if (body) {
         return [
@@ -778,7 +783,7 @@
           { key: 'findings', html: body },
           { key: 'impression', html: row.impression || '' },
           { key: 'follow_up', html: row.recommendations || '' }
-        ].filter(function (item, index, all) {
+        ].filter(function (item) {
           if ((item.html || '').trim()) return true;
           return ['clinical_information', 'technique', 'findings'].indexOf(item.key) >= 0;
         });

@@ -218,6 +218,10 @@ class RadiologyReportTemplate(TimeStampedModel):
         blank=True,
         help_text='Rich-text report body (HTML) composed in the template builder.',
     )
+    report_sections = models.JSONField(
+        default=list, blank=True,
+        help_text='Ordered rich-text sections: [{"key":"findings","label":"Findings","html":"..."}].',
+    )
     extra_fields = models.JSONField(
         default=list, blank=True,
         help_text='Approved modality-specific fields: [{"code":"BI_RADS","label":"BI-RADS","boilerplate":""}].',

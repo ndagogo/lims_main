@@ -597,7 +597,9 @@ class RadiologyReportViewSet(viewsets.ModelViewSet):
                 raise ValidationError({'template': 'Template modality does not match this study.'})
             if template.scope == 'PERSONAL' and template.owner_id not in (None, self.request.user.pk) and not self.request.user.is_superuser:
                 raise ValidationError({'template': 'That personal template belongs to another radiologist.'})
+            from radiology.report_sections import apply_sections_to_report_payload, sections_from_template
             rich_body = (template.body_html or '').strip()
+            template_sections = sections_from_template(template)
             for field, attr in (
                 ('indication', 'indication_boilerplate'),
                 ('technique', 'technique_boilerplate'),
@@ -605,19 +607,25 @@ class RadiologyReportViewSet(viewsets.ModelViewSet):
                 ('impression', 'impression_boilerplate'),
                 ('recommendations', 'recommendations_boilerplate'),
             ):
-                if field == 'findings' and rich_body:
+                if field == 'findings' and (rich_body or template_sections):
                     continue
                 if not (serializer.validated_data.get(field) or '').strip():
                     serializer.validated_data[field] = getattr(template, attr, '') or ''
-            # Prefer rich HTML body when present (single-document template builder).
-            if rich_body and not (serializer.validated_data.get('findings') or '').strip():
+            # Prefer sequenced template sections, then rich HTML body.
+            if template_sections and not (serializer.validated_data.get('findings') or '').strip():
+                seeded = apply_sections_to_report_payload(serializer.validated_data, template_sections)
+                serializer.validated_data.update(seeded)
+            elif rich_body and not (serializer.validated_data.get('findings') or '').strip():
                 serializer.validated_data['findings'] = template.body_html
-            if not serializer.validated_data.get('extra_values') and template.extra_fields:
-                extras = {}
+            extras = dict(serializer.validated_data.get('extra_values') or {})
+            if template_sections and not extras.get('report_sections'):
+                extras['report_sections'] = template_sections
+            if template.extra_fields:
                 for item in template.extra_fields or []:
                     code = (item or {}).get('code')
-                    if code:
+                    if code and code not in extras:
                         extras[code] = (item or {}).get('boilerplate') or ''
+            if extras:
                 serializer.validated_data['extra_values'] = extras
         report = serializer.save(author=self.request.user, template=template)
         record_exam_activity(

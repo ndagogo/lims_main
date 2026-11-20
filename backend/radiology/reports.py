@@ -172,7 +172,8 @@ def build_radiology_report_pdf(report, *, watermark_text=None):
         story.append(extra_table)
 
     if fmt.get('show_authenticator_signature', True) and auth:
-        # Name first, handwritten signature image directly underneath, then credentials.
+        # Left-stacked: label → name → signature image → credentials.
+        # ReportLab Image defaults to hAlign=CENTER, which places the mark beside the name.
         sign_bits = [Spacer(1, 16), HRFlowable(width='100%', thickness=0.4, color=rule, spaceBefore=2, spaceAfter=10)]
         sign_bits.append(Paragraph(escape(fmt.get('signature_label') or 'Reported by'), sign_label))
         if auth.get('name'):
@@ -180,8 +181,14 @@ def build_radiology_report_pdf(report, *, watermark_text=None):
             sign_bits.append(Paragraph(escape(auth['name']), sign_name))
         sig_path = auth.get('signature_path') or ''
         if sig_path and _image_readable(os.path.join(settings.MEDIA_ROOT, sig_path)):
+            sig_img = Image(
+                os.path.join(settings.MEDIA_ROOT, sig_path),
+                width=42 * mm, height=18 * mm, kind='proportional',
+            )
+            sig_img.hAlign = 'LEFT'
+            sign_bits.append(Spacer(1, 4))
+            sign_bits.append(sig_img)
             sign_bits.append(Spacer(1, 3))
-            sign_bits.append(Image(os.path.join(settings.MEDIA_ROOT, sig_path), width=42 * mm, height=16 * mm, kind='proportional'))
         for line in (auth.get('title'), auth.get('qualifications'), auth.get('specialty')):
             if line:
                 sign_bits.append(Paragraph(escape(str(line)), sign_meta))

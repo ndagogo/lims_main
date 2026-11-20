@@ -56,6 +56,7 @@ def clone_template_version(template: RadiologyReportTemplate, *, user=None, name
         instructions=template.instructions,
         report_header=template.report_header,
         body_html=template.body_html,
+        report_sections=list(template.report_sections or []),
         indication_boilerplate=template.indication_boilerplate,
         technique_boilerplate=template.technique_boilerplate,
         findings_boilerplate=template.findings_boilerplate,

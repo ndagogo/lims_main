@@ -354,6 +354,7 @@ class RadiologyWorkflowTests(TestCase):
         self.assertIn('X-ray', text)
 
     def test_rich_template_builder_update_and_variant(self):
+        import json
         from django.test import Client
         tpl = RadiologyReportTemplate.objects.create(
             modality_type='CT', name='ABUAD RADIOLOGY', variant_name='', body_part='Abdomen',
@@ -362,6 +363,14 @@ class RadiologyWorkflowTests(TestCase):
         )
         web = Client()
         web.force_login(self.user)
+        page = web.get(f'/radiology/templates/{tpl.pk}/')
+        self.assertContains(page, 'id="report-sections"')
+        self.assertContains(page, 'rte-add-section')
+        sections = [
+            {'key': 'technique', 'label': 'Technique', 'html': '<p>CT aortogram protocol</p>'},
+            {'key': 'findings', 'label': 'Findings', 'html': '<p>CT Aortogram of the abdomen. <em>Italic note</em></p>'},
+            {'key': 'impression', 'label': 'Impression', 'html': '<p>Normal study</p>'},
+        ]
         update = web.post(f'/radiology/templates/{tpl.pk}/', {
             'action': 'update',
             'name': 'ABUAD RADIOLOGY',
@@ -370,13 +379,17 @@ class RadiologyWorkflowTests(TestCase):
             'body_part': 'Abdomen',
             'visibility': 'PUBLIC',
             'is_active': 'on',
-            'body_html': '<p><strong>EXAM:</strong> CT Aortogram of the abdomen.</p><p><em>Italic note</em></p>',
+            'report_sections': json.dumps(sections),
         })
         self.assertEqual(update.status_code, 302)
         tpl.refresh_from_db()
         self.assertEqual(tpl.variant_name, 'Adult')
+        self.assertEqual([row['key'] for row in tpl.report_sections], ['technique', 'findings', 'impression'])
         self.assertIn('Aortogram', tpl.body_html)
         self.assertIn('<em>Italic note</em>', tpl.body_html)
+        variant_sections = [
+            {'key': 'findings', 'label': 'Findings', 'html': '<p><u>Underlined paediatric variant</u></p>'},
+        ]
         variant = web.post(f'/radiology/templates/{tpl.pk}/', {
             'action': 'save_variant',
             'name': 'ABUAD RADIOLOGY',
@@ -385,7 +398,7 @@ class RadiologyWorkflowTests(TestCase):
             'body_part': 'Abdomen',
             'visibility': 'PRIVATE',
             'is_active': 'on',
-            'body_html': '<p><u>Underlined paediatric variant</u></p>',
+            'report_sections': json.dumps(variant_sections),
         })
         self.assertEqual(variant.status_code, 302)
         clone = RadiologyReportTemplate.objects.filter(
@@ -394,5 +407,6 @@ class RadiologyWorkflowTests(TestCase):
         self.assertIsNotNone(clone)
         self.assertEqual(clone.visibility, 'PRIVATE')
         self.assertIn('Underlined', clone.body_html)
+        self.assertEqual(clone.report_sections[0]['key'], 'findings')
         tpl.refresh_from_db()
         self.assertEqual(tpl.variant_name, 'Adult')  # original unchanged by save_variant
