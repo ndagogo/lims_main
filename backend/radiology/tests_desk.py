@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -7,6 +8,8 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.models import Centre, UserCentreAccess
+from inventory.models import ConsumableDepartment, ReagentSku
+from inventory.services import receive_stock
 from patients.models import Patient, Visit
 from radiology.desk import release_expired_assignments
 from radiology.models import ExamSupplyUse, ImagingModality, ImagingOrder, RadiologyDeskSetting, RadiologyExam
@@ -33,6 +36,17 @@ class RadiologyDeskTests(TestCase):
         self.order = ImagingOrder.objects.create(visit=visit, modality=modality, requested_by=self.tech)
         self.exam = RadiologyExam.objects.create(order=self.order, status='ASSIGNED')
         self.client = APIClient()
+        self.sku = ReagentSku.objects.create(
+            centre=self.centre, department=ConsumableDepartment.RADIOLOGY,
+            sku_code='DSK-FILM', name='Film', unit='sheet', reorder_level=Decimal('1'),
+        )
+        receive_stock(sku=self.sku, quantity=50, user=self.tech)
+
+    def _end_payload(self, radiologist=None, quantity=1):
+        return {
+            'radiologist': str((radiologist or self.rad).pk),
+            'supplies': [{'name': self.sku.name, 'quantity': quantity, 'sku': str(self.sku.pk)}],
+        }
 
     def test_only_radiographers_can_be_assigned_and_start(self):
         self.client.force_authenticate(self.tech)
@@ -40,11 +54,14 @@ class RadiologyDeskTests(TestCase):
         self.assertEqual(denied.status_code, 400)
         started = self.client.post(f'/api/radiology-exams/{self.exam.pk}/start/', {}, format='json')
         self.assertEqual(started.status_code, 200)
-        ended = self.client.post(f'/api/radiology-exams/{self.exam.pk}/end/', {
-            'supplies': [{'name': 'Syringe', 'quantity': 1}, {'name': 'Film', 'quantity': 2}],
+        blocked = self.client.post(f'/api/radiology-exams/{self.exam.pk}/end/', {
+            'radiologist': self.rad.pk,
+            'supplies': [],
         }, format='json')
-        self.assertEqual(ended.status_code, 200)
-        self.assertEqual(ExamSupplyUse.objects.filter(exam=self.exam).count(), 2)
+        self.assertEqual(blocked.status_code, 400)
+        ended = self.client.post(f'/api/radiology-exams/{self.exam.pk}/end/', self._end_payload(quantity=2), format='json')
+        self.assertEqual(ended.status_code, 200, ended.content)
+        self.assertEqual(ExamSupplyUse.objects.filter(exam=self.exam).count(), 1)
         self.exam.refresh_from_db()
         self.assertIsNotNone(self.exam.ended_at)
         self.assertGreaterEqual(int((self.exam.ended_at - self.exam.started_at).total_seconds()), 0)
@@ -52,24 +69,26 @@ class RadiologyDeskTests(TestCase):
     def test_radiologist_queue_waits_for_pacs_and_accept_window(self):
         self.client.force_authenticate(self.tech)
         self.client.post(f'/api/radiology-exams/{self.exam.pk}/start/', {}, format='json')
-        self.client.post(f'/api/radiology-exams/{self.exam.pk}/end/', {}, format='json')
+        # End without radiologist assignment via end payload — still requires items used.
+        ended = self.client.post(
+            f'/api/radiology-exams/{self.exam.pk}/end/',
+            {'supplies': [{'name': self.sku.name, 'quantity': 1, 'sku': str(self.sku.pk)}]},
+            format='json',
+        )
+        self.assertEqual(ended.status_code, 400)  # radiologist now required
+        ended = self.client.post(f'/api/radiology-exams/{self.exam.pk}/end/', self._end_payload(), format='json')
+        self.assertEqual(ended.status_code, 200, ended.content)
         screen = Client()
         screen.force_login(self.rad)
+        # Assigned at end, but still hidden from the reporting worklist until PACS upload.
         hidden = screen.get('/radiology/')
-        self.assertNotContains(hidden, 'Ada')
+        self.assertContains(hidden, 'No studies have been uploaded to PACS yet')
+        self.assertNotContains(hidden, self.order.visit.visit_id)
         self.client.force_authenticate(self.tech)
         uploaded = self.client.post(f'/api/radiology-exams/{self.exam.pk}/upload-pacs/', {}, format='json')
         self.assertEqual(uploaded.status_code, 200)
-        still_hidden = screen.get('/radiology/')
-        self.assertNotContains(still_hidden, 'Ada')
-        self.client.force_authenticate(self.tech)
-        assigned = self.client.post(
-            f'/api/imaging-orders/{self.order.pk}/assign-radiologist/',
-            {'radiologist': self.rad.pk}, format='json',
-        )
-        self.assertEqual(assigned.status_code, 200)
         visible = screen.get('/radiology/')
-        self.assertContains(visible, 'Ada')
+        self.assertContains(visible, self.order.visit.visit_id)
         self.assertContains(visible, 'Templates')
         self.client.force_authenticate(self.rad)
         RadiologyDeskSetting.objects.update_or_create(pk=1, defaults={'accept_minutes': 15})
@@ -86,7 +105,7 @@ class RadiologyDeskTests(TestCase):
         UserCentreAccess.objects.create(user=other, centre=self.centre, can_view=True, can_edit=True, can_approve=True)
         self.client.force_authenticate(self.tech)
         self.client.post(f'/api/radiology-exams/{self.exam.pk}/start/', {}, format='json')
-        self.client.post(f'/api/radiology-exams/{self.exam.pk}/end/', {'radiologist': str(self.rad.pk)}, format='json')
+        self.client.post(f'/api/radiology-exams/{self.exam.pk}/end/', self._end_payload(), format='json')
         self.client.post(f'/api/radiology-exams/{self.exam.pk}/upload-pacs/', {}, format='json')
         screen = Client()
         screen.force_login(self.rad)
@@ -103,7 +122,7 @@ class RadiologyDeskTests(TestCase):
         UserCentreAccess.objects.create(user=other, centre=self.centre, can_view=True, can_edit=True, can_approve=True)
         self.client.force_authenticate(self.tech)
         self.client.post(f'/api/radiology-exams/{self.exam.pk}/start/', {}, format='json')
-        ended = self.client.post(f'/api/radiology-exams/{self.exam.pk}/end/', {'radiologist': str(self.rad.pk)}, format='json')
+        ended = self.client.post(f'/api/radiology-exams/{self.exam.pk}/end/', self._end_payload(), format='json')
         self.assertEqual(ended.status_code, 200)
         self.exam.refresh_from_db()
         self.assertEqual(self.exam.assigned_radiologist_id, self.rad.pk)
@@ -142,7 +161,7 @@ class RadiologyDeskTests(TestCase):
         UserCentreAccess.objects.create(user=other, centre=self.centre, can_view=True, can_edit=True, can_approve=True)
         self.client.force_authenticate(self.tech)
         self.client.post(f'/api/radiology-exams/{self.exam.pk}/start/', {}, format='json')
-        self.client.post(f'/api/radiology-exams/{self.exam.pk}/end/', {'radiologist': str(self.rad.pk)}, format='json')
+        self.client.post(f'/api/radiology-exams/{self.exam.pk}/end/', self._end_payload(), format='json')
         self.client.post(f'/api/radiology-exams/{self.exam.pk}/upload-pacs/', {}, format='json')
         RadiologyDeskSetting.objects.update_or_create(pk=1, defaults={'accept_minutes': 15})
         self.exam.refresh_from_db()
@@ -166,7 +185,7 @@ class RadiologyDeskTests(TestCase):
         self.assertContains(returned, 'Assign another radiologist')
         screen.force_login(self.rad)
         hidden = screen.get('/radiology/')
-        self.assertNotContains(hidden, 'Ada')
+        self.assertNotContains(hidden, self.order.visit.visit_id)
         self.assertNotContains(hidden, 'Assign another radiologist')
         admin = User.objects.create_superuser(username='perf.admin', email='perf.admin@example.test', password='A-long-unique-password-2026!')
         screen.force_login(admin)
@@ -222,7 +241,7 @@ class RadiologyDeskTests(TestCase):
         publish_template(template, self.rad)
         self.client.force_authenticate(self.tech)
         self.client.post(f'/api/radiology-exams/{self.exam.pk}/start/', {}, format='json')
-        self.client.post(f'/api/radiology-exams/{self.exam.pk}/end/', {'radiologist': str(self.rad.pk)}, format='json')
+        self.client.post(f'/api/radiology-exams/{self.exam.pk}/end/', self._end_payload(), format='json')
         self.client.post(f'/api/radiology-exams/{self.exam.pk}/upload-pacs/', {}, format='json')
         screen = Client()
         screen.force_login(self.rad)

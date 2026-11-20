@@ -26,6 +26,10 @@
   .sc-field .form-control, .sc-field .form-select { width: 100%; height: 2rem; min-height: 2rem; font-size: .86rem; background: #fff; }
   .sc-field .is-readonly { background: #fafaf9; }
   .sc-span-2 { grid-column: span 2; }
+  .sc-span-3 { grid-column: span 3; }
+  .sc-patient-row { display: flex; flex-wrap: nowrap; gap: .5rem; align-items: center; }
+  .sc-patient-row .form-control { width: auto; flex: 1 1 auto; min-width: 0; }
+  .sc-patient-row .btn, .sc-patient-row .small { flex: 0 0 auto; }
   .sc-tests { margin-top: .9rem; }
   .sc-tests h2 { font-size: .95rem; margin: 0 0 .4rem; }
   .sc-grid { font-size: .8rem; min-width: 1180px; }
@@ -36,7 +40,8 @@
   .sc-empty { padding: 1.4rem .2rem; color: var(--muted); }
   @media (max-width: 1100px) {
     .sc-identity { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .sc-span-2 { grid-column: span 2; }
+    .sc-span-2, .sc-span-3 { grid-column: span 2; }
+    .sc-patient-row { flex-wrap: wrap; }
   }
 </style>
 {% endblock %}
@@ -186,13 +191,20 @@
             <label for="sc-bill">Bill date</label>
             <input id="sc-bill" class="form-control is-readonly" value="{{ identity.bill_date|date:'d-M-Y H:i' }}" readonly>
           </div>
+          <div class="sc-field sc-span-3">
+            <label for="sc-patient">Patient name</label>
+            <div class="sc-patient-row">
+              <input id="sc-patient" class="form-control is-readonly" value="{{ identity.name }}" readonly>
+              {% if identity.request_form_url %}
+              <a class="btn btn-sm btn-outline-dark text-nowrap" href="{{ identity.request_form_url }}" target="_blank" rel="noopener">View {{ identity.request_form_label|default:"registration form" }}</a>
+              {% else %}
+              <span class="small muted text-nowrap">No registration form on file</span>
+              {% endif %}
+            </div>
+          </div>
           <div class="sc-field">
             <label for="sc-uhid">UHID#</label>
             <input id="sc-uhid" class="form-control is-readonly" value="{{ identity.patient.uhid }}" readonly>
-          </div>
-          <div class="sc-field sc-span-2">
-            <label for="sc-patient">Patient name</label>
-            <input id="sc-patient" class="form-control is-readonly" value="{{ identity.name }}" readonly>
           </div>
           <div class="sc-field">
             <label for="sc-sex">Gender / age</label>

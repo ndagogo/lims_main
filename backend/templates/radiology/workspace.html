@@ -91,7 +91,74 @@
     <a class="rad-pill {% if modality_filter == pill.code %}is-on{% endif %}" href="?modality={{ pill.code }}&when={{ when }}&desk={{ desk }}&scope={{ scope }}&date_from={{ date_from }}&date_to={{ date_to }}&visit={{ visit_query }}&status={{ status_filter }}">{{ pill.label }} · {{ pill.count }}</a>
     {% endfor %}
   </div>
-  <div class="rad-grid">
+  {% if reporting_active and selected %}
+  <section class="card rad-report-panel p-4 mb-3" id="rad-report-panel">
+    <div class="rad-report-top mb-3">
+      <div class="rad-viewer rad-viewer-compact">
+        <div class="small">{{ selected.visit.patient.first_name }} {{ selected.visit.patient.last_name }} · {{ selected.modality.get_modality_type_display }}</div>
+        <div class="rad-viewer-mark">{{ org_short_name }} viewer</div>
+        {% if selected.modality.wado_url %}<a class="small" href="{{ selected.modality.wado_url }}" target="_blank" rel="noopener">Open PACS</a>{% endif %}
+      </div>
+      <div class="rad-report-meta">
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <div>
+            <h2 class="h5 mb-0">{{ selected.modality.get_modality_type_display }} · {{ selected.procedure.name|default:selected.modality.name }} {% include "includes/stat_badge.html" with stat=selected.stat %}</h2>
+            <div class="small muted">{{ selected.visit.visit_id }}{% if selected.exam.duration_label %} · {{ selected.exam.duration_label }}{% endif %}</div>
+          </div>
+          <span class="badge text-bg-secondary">Draft</span>
+        </div>
+        <div class="row g-2 align-items-end mt-2">
+          <div class="col-md-5">
+            <label class="form-label" for="report-template">Template</label>
+            <select id="report-template" class="form-select form-select-sm" form="report-draft-form" name="template">
+              <option value="">Free text</option>
+              {% for t in selected.available_templates %}
+                <option value="{{ t.pk }}" {% if selected.exam.report and selected.exam.report.template_id == t.pk %}selected{% endif %}>{{ t.get_modality_type_display }} — {{ t.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-7 small muted pb-1">Choose a published template to seed the sections below. Reorder or change section types to match how you want this report to read.</div>
+        </div>
+      </div>
+    </div>
+    {{ report_templates|json_script:"report-templates" }}
+    {{ report_body|json_script:"report-body" }}
+    {{ report_sections|json_script:"report-sections-data" }}
+    {{ report_section_types|json_script:"report-section-types" }}
+    <form method="post" id="report-draft-form" onsubmit="return saveReportEditor()">
+      {% csrf_token %}
+      {% if selected.exam.report %}
+        <input type="hidden" name="action" value="update_draft">
+        <input type="hidden" name="report" value="{{ selected.exam.report.pk }}">
+        <input type="hidden" name="exam" value="{{ selected.exam.pk }}">
+      {% else %}
+        <input type="hidden" name="action" value="draft">
+        <input type="hidden" name="exam" value="{{ selected.exam.pk }}">
+      {% endif %}
+      <input type="hidden" name="findings" id="report-findings" value="">
+      <input type="hidden" name="indication" id="report-indication" value="">
+      <input type="hidden" name="technique" id="report-technique" value="">
+      <input type="hidden" name="impression" id="report-impression" value="">
+      <input type="hidden" name="recommendations" id="report-recommendations" value="">
+      <input type="hidden" name="report_sections" id="report-sections-field" value="">
+      <div id="report-sections" class="rte-stack" aria-label="Report sections"></div>
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
+        <div class="small muted">Only the reporting radiologist can sign. Use each section dropdown to choose its type, add or remove sections, and move them up/down to set your preferred report sequence.</div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-dark" type="button" id="rte-add-section">+ Add section</button>
+          <button class="btn btn-outline-dark" type="submit">Save draft</button>
+        </div>
+      </div>
+    </form>
+    {% if selected.exam.report %}
+    <form method="post" class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="finalize"><input type="hidden" name="report" value="{{ selected.exam.report.pk }}"><button class="btn btn-primary" type="submit">Sign report</button></form>
+    {% endif %}
+    {% if selected.exam.supply_rows %}
+      <div class="small mt-3">Items used: {% for row in selected.exam.supply_rows %}{{ row.item_name }} ×{{ row.quantity }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+    {% endif %}
+  </section>
+  {% endif %}
+  <div class="rad-grid{% if reporting_active %} is-reporting{% endif %}">
     <section class="card rad-table-card">
       <div class="rad-table-scroll">
         <table class="table rad-worklist mb-0">
@@ -191,6 +258,7 @@
       <div class="p-3">{% include "includes/pagination.html" with page=orders %}</div>
     </section>
 
+    {% if not reporting_active %}
     <aside class="card rad-side p-4">
       {% if selected %}
         <div class="rad-viewer mb-3">
@@ -211,29 +279,58 @@
           {% csrf_token %}
           <input type="hidden" name="action" value="end">
           <input type="hidden" name="exam" value="{{ selected.exam.pk }}">
-          <label class="form-label">Items used</label>
-          <table class="table table-sm">
-            <thead><tr><th>Item</th><th>Qty</th></tr></thead>
+          <label class="form-label">Items used <span class="text-danger">*</span></label>
+          <p class="small muted mb-2">Required before assigning a radiologist. Enter quantity for at least one inventory consumable (cannot exceed on-hand stock).</p>
+          {% if consumables %}
+          <table class="table table-sm" id="items-used-table">
+            <thead><tr><th>Item</th><th>On hand</th><th>Qty used</th></tr></thead>
             <tbody>
-              {% for name in supply_presets %}
+              {% for item in consumables %}
               <tr>
-                <td><input class="form-control form-control-sm" name="item_name" value="{{ name }}"></td>
-                <td style="width:5rem"><input class="form-control form-control-sm" name="quantity" type="number" min="0" value="0"></td>
+                <td>
+                  <input type="hidden" name="item_sku" value="{{ item.pk }}">
+                  <input type="hidden" name="item_name" value="{{ item.name }}">
+                  <span class="fw-semibold">{{ item.name }}</span>
+                  <div class="small muted">{{ item.sku_code }}{% if item.unit %} · {{ item.unit }}{% endif %}</div>
+                </td>
+                <td class="small {% if item.is_low %}text-danger{% endif %}">{{ item.on_hand }}</td>
+                <td style="width:5.5rem">
+                  <input class="form-control form-control-sm qty-used" name="quantity" type="number" min="0" max="{{ item.on_hand }}" step="1" value="0" title="Available: {{ item.on_hand }} {{ item.unit }}">
+                </td>
               </tr>
               {% endfor %}
-              <tr>
-                <td><input class="form-control form-control-sm" name="item_name" placeholder="Other item"></td>
-                <td><input class="form-control form-control-sm" name="quantity" type="number" min="0" value="0"></td>
-              </tr>
             </tbody>
           </table>
-          <label class="form-label">Assign radiologist</label>
-          <select name="radiologist" class="form-select form-select-sm mb-3" required>
+          {% else %}
+          <div class="alert alert-warning py-2 small">No Radiology consumables are set up for this centre. Contact an administrator to create them in Consumables / inventory before ending the exam.</div>
+          {% endif %}
+          <label class="form-label">Assign radiologist <span class="text-danger">*</span></label>
+          <select name="radiologist" class="form-select form-select-sm mb-3" required {% if not consumables %}disabled{% endif %}>
             <option value="">Radiologist</option>
             {% for person in radiologists %}<option value="{{ person.pk }}">{{ person.get_full_name|default:person.username }}</option>{% endfor %}
           </select>
-          <button class="btn btn-primary" type="submit">End exam</button>
+          <button class="btn btn-primary" type="submit" {% if not consumables %}disabled{% endif %}>End exam</button>
         </form>
+        {% if consumables %}
+        <script>
+        (function () {
+          var form = document.getElementById('end-form');
+          if (!form) return;
+          form.addEventListener('submit', function (event) {
+            var qtys = form.querySelectorAll('.qty-used');
+            var used = 0;
+            qtys.forEach(function (input) {
+              var n = parseInt(input.value || '0', 10);
+              if (n > 0) used += n;
+            });
+            if (used < 1) {
+              event.preventDefault();
+              alert('Record the quantity of items used before ending the exam and assigning a radiologist.');
+            }
+          });
+        })();
+        </script>
+        {% endif %}
         {% endif %}
 
         {% if is_radiographer and selected.exam.status == 'ACQUIRED' and not selected.exam.pacs_uploaded_at %}
@@ -284,43 +381,7 @@
               {% endif %}
             {% endif %}
           {% elif not selected.exam.report or selected.exam.report.status == 'DRAFT' %}
-            {{ report_templates|json_script:"report-templates" }}
-            {{ report_body|json_script:"report-body" }}
-            <form method="post" class="row g-2" id="report-draft-form" onsubmit="return saveReportEditor()">
-              {% csrf_token %}
-              {% if selected.exam.report %}
-                <input type="hidden" name="action" value="update_draft">
-                <input type="hidden" name="report" value="{{ selected.exam.report.pk }}">
-                <input type="hidden" name="exam" value="{{ selected.exam.pk }}">
-              {% else %}
-                <input type="hidden" name="action" value="draft">
-                <input type="hidden" name="exam" value="{{ selected.exam.pk }}">
-              {% endif %}
-              <input type="hidden" name="findings" id="report-findings" value="">
-              <input type="hidden" name="indication" value="{% if selected.exam.report %}{{ selected.exam.report.indication }}{% else %}{{ selected.clinical_history }}{% endif %}">
-              <div class="col-12">
-                <label class="form-label" for="report-template">Template</label>
-                <select name="template" id="report-template" class="form-select form-select-sm">
-                  <option value="">Free text</option>
-                  {% for t in selected.available_templates %}
-                    <option value="{{ t.pk }}" {% if selected.exam.report and selected.exam.report.template_id == t.pk %}selected{% endif %}>{{ t.get_modality_type_display }} — {{ t.name }}</option>
-                  {% endfor %}
-                </select>
-                <div class="form-text">Choose a published template and it loads here for you to complete.</div>
-              </div>
-              <div class="col-12">
-                <label class="form-label">Report</label>
-                <div id="report-editor" class="report-editor" contenteditable="true" role="textbox" aria-label="Report"></div>
-              </div>
-              <div class="col-12 d-flex gap-2">
-                <button class="btn btn-outline-dark" type="submit">Save draft</button>
-              </div>
-              <div class="col-12 small muted">Only the reporting radiologist can sign. Reporting stays blocked until the exam is acquired and uploaded.</div>
-            </form>
-            {% if selected.exam.report %}
-            <form method="post" class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="finalize"><input type="hidden" name="report" value="{{ selected.exam.report.pk }}"><button class="btn btn-primary" type="submit">Sign report</button></form>
-            <p class="small muted mt-2">Only the reporting radiologist can edit a signed report.</p>
-            {% endif %}
+            <p class="small muted mb-0">Open a study with <strong>Open report</strong> to use the full-page rich reporting editor.</p>
           {% elif selected.exam.report.status == 'FINAL' %}
             <a class="btn btn-outline-dark" target="_blank" href="{% url 'radiology-report-preview' selected.exam.report.pk %}">Preview finished report</a>
             <p class="small muted mt-2">Opens the finished PDF with an UNVERIFIED watermark. Approval changes it to APPROVED for dispatch.</p>
@@ -351,6 +412,7 @@
         <p class="muted mb-0">Select a study.</p>
       {% endif %}
     </aside>
+    {% endif %}
   </div>
 </div>
 <style>
@@ -359,6 +421,10 @@
   .rad-pill { border: 1px solid #e4dfd6; background: #fff; color: #1c1917; border-radius: 999px; padding: .35rem .85rem; text-decoration: none; font-size: .92rem; }
   .rad-pill.is-on { background: #171717; color: #fff; border-color: #171717; }
   .rad-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, .75fr); gap: 1rem; align-items: start; }
+  .rad-grid.is-reporting { grid-template-columns: 1fr; }
+  .rad-report-panel { border-radius: 18px; width: 100%; }
+  .rad-report-top { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); gap: 1rem; align-items: stretch; }
+  .rad-viewer-compact { min-height: 140px; }
   .rad-table-card, .rad-side { border-radius: 18px; }
   .rad-table-card { padding: 0; overflow: hidden; }
   .rad-table-scroll { overflow-x: auto; }
@@ -410,13 +476,63 @@
   .btn-rad-accept:hover { background: #115e59; border-color: #115e59; color: #fff; }
   .btn-rad-open { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
   .btn-rad-open:hover { background: #1e40af; border-color: #1e40af; color: #fff; }
-  .report-editor { min-height: 240px; border: 1px solid #e4dfd6; border-radius: 12px; padding: .85rem 1rem; background: #fff; }
-  .report-editor:focus { outline: 2px solid #1d4ed8; outline-offset: 1px; }
-  .report-editor:empty:before { content: "Select a template to load it here."; color: #a8a29e; }
   .rad-viewer { background: #171717; color: #fff; border-radius: 16px; min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .4rem; }
-  .rad-viewer-mark { width: 92px; height: 92px; border: 1px solid #444; border-radius: 50%; display: grid; place-items: center; font-size: .75rem; letter-spacing: .04em; }
+  .rad-viewer-mark { width: 92px; height: 92px; border: 1px solid #444; border-radius: 50%; display: grid; place-items: center; font-size: .75rem; letter-spacing: .04em; text-align: center; padding: .35rem; }
   .rad-viewer a { color: #d6d3d1; }
-  @media (max-width: 991.98px) { .rad-grid { grid-template-columns: 1fr; } }
+  .rte-stack { display: flex; flex-direction: column; gap: .85rem; }
+  .rte-block { border: 1px solid #d7d2c8; border-radius: 10px; background: #fff; overflow: hidden; }
+  .rte-block-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .55rem .7rem; background: #f7f5f1; border-bottom: 1px solid #e7e2d9; }
+  .rte-section-wrap { position: relative; }
+  .rte-section-btn {
+    border: 1px solid #d4cfc4; background: #fff; border-radius: 8px; padding: .35rem .7rem;
+    font-weight: 650; font-size: .92rem; min-width: 11rem; text-align: left; display: inline-flex;
+    align-items: center; justify-content: space-between; gap: .5rem;
+  }
+  .rte-section-btn::after { content: "▾"; font-size: .75rem; color: #78716c; }
+  .rte-section-menu {
+    position: absolute; z-index: 20; top: calc(100% + .25rem); left: 0; min-width: 14rem;
+    background: #fff; border: 1px solid #ddd6cb; border-radius: 10px; box-shadow: 0 10px 28px rgba(28, 25, 23, .12);
+    padding: .35rem; display: none;
+  }
+  .rte-section-menu.is-open { display: block; }
+  .rte-section-menu button {
+    display: block; width: 100%; text-align: left; border: 0; background: transparent;
+    padding: .45rem .6rem; border-radius: 7px; font-size: .9rem;
+  }
+  .rte-section-menu button:hover, .rte-section-menu button.is-active { background: #f3f0ea; }
+  .rte-section-menu .rte-add-item { color: #1d4ed8; font-weight: 650; border-top: 1px solid #ebe6dc; margin-top: .25rem; padding-top: .55rem; }
+  .rte-head-actions { display: inline-flex; gap: .35rem; align-items: center; }
+  .rte-remove, .rte-move {
+    width: 2rem; height: 2rem; border-radius: 8px; border: 1px solid #d4cfc4; background: #fff;
+    color: #44403c; font-size: 1rem; line-height: 1;
+  }
+  .rte-toolbar {
+    display: flex; flex-wrap: wrap; gap: .2rem; align-items: center;
+    padding: .4rem .55rem; background: #eceae4; border-bottom: 1px solid #ddd7cc;
+  }
+  .rte-toolbar button, .rte-toolbar label.rte-tool {
+    border: 0; background: transparent; min-width: 1.85rem; height: 1.85rem; border-radius: 5px;
+    display: inline-flex; align-items: center; justify-content: center; color: #292524; font-size: .85rem; cursor: pointer; padding: 0 .35rem;
+  }
+  .rte-toolbar button:hover, .rte-toolbar label.rte-tool:hover { background: #ddd7cc; }
+  .rte-toolbar button.is-on { background: #d6d3d1; }
+  .rte-toolbar .rte-sep { width: 1px; height: 1.2rem; background: #cfc8bb; margin: 0 .2rem; }
+  .rte-toolbar select {
+    border: 1px solid #cfc8bb; border-radius: 5px; background: #fff; font-size: .78rem; height: 1.85rem; padding: 0 .3rem;
+  }
+  .rte-toolbar input[type="color"] { width: 1.5rem; height: 1.5rem; padding: 0; border: 0; background: transparent; cursor: pointer; }
+  .rte-editor {
+    min-height: 7.5rem; padding: .85rem 1rem; outline: none; line-height: 1.45;
+  }
+  .rte-editor:empty:before { content: attr(data-placeholder); color: #a8a29e; pointer-events: none; }
+  .rte-status {
+    display: flex; justify-content: space-between; gap: .75rem; padding: .35rem .7rem;
+    border-top: 1px solid #e7e2d9; background: #faf8f5; color: #78716c; font-size: .72rem; letter-spacing: .02em;
+  }
+  @media (max-width: 991.98px) {
+    .rad-grid { grid-template-columns: 1fr; }
+    .rad-report-top { grid-template-columns: 1fr; }
+  }
 </style>
 <script>
   function guardExamStart(form) {
@@ -426,41 +542,276 @@
     }
     return true;
   }
-  function reportTemplateHtml(row) {
-    if ((row.body_html || '').trim()) return row.body_html;
-    function block(label, text) {
-      text = (text || '').trim();
-      if (!text) return '';
-      var safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
-      return '<p><strong>' + label + ':</strong> ' + safe + '</p>';
-    }
-    return [
-      block('CLINICAL INFORMATION', row.indication),
-      block('TECHNIQUE', row.technique),
-      block('FINDINGS', row.findings),
-      block('IMPRESSION', row.impression),
-      block('RECOMMENDATIONS', row.recommendations),
-    ].join('');
-  }
+
   function saveReportEditor() {
-    var editor = document.getElementById('report-editor');
-    var field = document.getElementById('report-findings');
-    if (editor && field) field.value = editor.innerHTML;
+    var root = document.getElementById('report-sections');
+    if (!root) return true;
+    var types = window.__reportSectionTypes || [];
+    var labelOf = {};
+    types.forEach(function (row) { labelOf[row.key] = row.label; });
+    var sections = [];
+    var composed = [];
+    var fieldMap = {
+      clinical_information: 'indication',
+      technique: 'technique',
+      findings: 'findings',
+      impression: 'impression',
+      conclusion: 'impression',
+      follow_up: 'recommendations'
+    };
+    var mapped = { indication: '', technique: '', impression: '', recommendations: '' };
+    root.querySelectorAll('.rte-block').forEach(function (block) {
+      var key = block.dataset.key || 'findings';
+      var editor = block.querySelector('.rte-editor');
+      var html = editor ? editor.innerHTML : '';
+      var label = labelOf[key] || key;
+      sections.push({ key: key, label: label, html: html });
+      var plain = (editor ? editor.innerText : '').trim();
+      var heading = '<p><strong>' + label.toUpperCase() + ':</strong></p>';
+      composed.push(plain ? heading + html : heading);
+      var target = fieldMap[key];
+      if (target && target !== 'findings' && !mapped[target]) mapped[target] = html;
+    });
+    var findingsField = document.getElementById('report-findings');
+    var sectionsField = document.getElementById('report-sections-field');
+    if (findingsField) findingsField.value = composed.join('\n');
+    if (sectionsField) sectionsField.value = JSON.stringify(sections);
+    ['indication', 'technique', 'impression', 'recommendations'].forEach(function (name) {
+      var el = document.getElementById('report-' + name);
+      if (el) el.value = mapped[name] || '';
+    });
     return true;
   }
+
   document.addEventListener('DOMContentLoaded', function () {
-    var editor = document.getElementById('report-editor');
+    var root = document.getElementById('report-sections');
+    if (!root) return;
+    var typesEl = document.getElementById('report-section-types');
+    var sectionsEl = document.getElementById('report-sections-data');
+    var templatesEl = document.getElementById('report-templates');
+    var types = typesEl ? JSON.parse(typesEl.textContent || '[]') : [];
+    var sections = sectionsEl ? JSON.parse(sectionsEl.textContent || '[]') : [];
+    var catalog = templatesEl ? JSON.parse(templatesEl.textContent || '[]') : [];
+    window.__reportSectionTypes = types;
     var select = document.getElementById('report-template');
-    if (!editor || !select) return;
-    var catalog = JSON.parse(document.getElementById('report-templates').textContent || '[]');
-    var saved = JSON.parse(document.getElementById('report-body').textContent || '""');
-    function applySelected() {
-      var chosen = catalog.find(function (row) { return String(row.id) === select.value; });
-      editor.innerHTML = chosen ? reportTemplateHtml(chosen) : '';
+    var addBtn = document.getElementById('rte-add-section');
+    var openMenu = null;
+
+    function labelFor(key) {
+      var hit = types.find(function (row) { return row.key === key; });
+      return hit ? hit.label : key;
     }
-    if ((saved || '').trim()) editor.innerHTML = saved;
-    else if (select.value) applySelected();
-    select.addEventListener('change', applySelected);
+
+    function closeMenus() {
+      if (openMenu) openMenu.classList.remove('is-open');
+      openMenu = null;
+    }
+
+    function updateCounts(block) {
+      var editor = block.querySelector('.rte-editor');
+      var counts = block.querySelector('.rte-counts');
+      if (!editor || !counts) return;
+      var text = (editor.innerText || '').replace(/\u00a0/g, ' ').trim();
+      var words = text ? text.split(/\s+/).length : 0;
+      counts.textContent = 'CHARS: ' + text.length + ' WORDS: ' + words;
+    }
+
+    function execOn(editor, command, value) {
+      editor.focus();
+      try { document.execCommand(command, false, value || null); } catch (err) {}
+      updateCounts(editor.closest('.rte-block'));
+    }
+
+    function toolbarHtml() {
+      return '' +
+        '<div class="rte-toolbar" role="toolbar">' +
+        '<button type="button" data-cmd="bold" title="Bold"><b>B</b></button>' +
+        '<button type="button" data-cmd="italic" title="Italic"><i>I</i></button>' +
+        '<button type="button" data-cmd="underline" title="Underline"><u>U</u></button>' +
+        '<button type="button" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>' +
+        '<button type="button" data-cmd="removeFormat" title="Clear formatting">⌫</button>' +
+        '<span class="rte-sep"></span>' +
+        '<button type="button" data-cmd="insertUnorderedList" title="Bulleted list">•≡</button>' +
+        '<button type="button" data-cmd="insertOrderedList" title="Numbered list">1.</button>' +
+        '<span class="rte-sep"></span>' +
+        '<label class="rte-tool" title="Text colour">A <input type="color" data-color="foreColor" value="#111111"></label>' +
+        '<label class="rte-tool" title="Highlight">▮ <input type="color" data-color="hiliteColor" value="#fff59d"></label>' +
+        '<select data-font-size title="Font size">' +
+        '<option value="">Size</option><option value="2">Small</option><option value="3">Normal</option>' +
+        '<option value="4">Large</option><option value="5">Larger</option><option value="6">Huge</option>' +
+        '</select>' +
+        '<select data-align title="Alignment">' +
+        '<option value="justifyLeft">Left</option><option value="justifyCenter">Center</option>' +
+        '<option value="justifyRight">Right</option><option value="justifyFull">Justify</option>' +
+        '</select>' +
+        '<span class="rte-sep"></span>' +
+        '<button type="button" data-cmd="insertHorizontalRule" title="Horizontal line">―</button>' +
+        '<button type="button" data-cmd="superscript" title="Superscript">x²</button>' +
+        '<button type="button" data-cmd="subscript" title="Subscript">x₂</button>' +
+        '<button type="button" data-cmd="insertImage" title="Insert image">🖼</button>' +
+        '</div>';
+    }
+
+    function menuHtml(activeKey) {
+      var html = '<div class="rte-section-menu">';
+      types.forEach(function (row) {
+        html += '<button type="button" data-pick="' + row.key + '"' +
+          (row.key === activeKey ? ' class="is-active"' : '') + '>' + row.label + '</button>';
+      });
+      html += '<button type="button" class="rte-add-item" data-add-item="+">+ Add item</button></div>';
+      return html;
+    }
+
+    function bindBlock(block) {
+      var editor = block.querySelector('.rte-editor');
+      var btn = block.querySelector('.rte-section-btn');
+      var menu = block.querySelector('.rte-section-menu');
+      var remove = block.querySelector('.rte-remove');
+      var moveUp = block.querySelector('[data-move="up"]');
+      var moveDown = block.querySelector('[data-move="down"]');
+      btn.addEventListener('click', function (event) {
+        event.stopPropagation();
+        if (openMenu && openMenu !== menu) openMenu.classList.remove('is-open');
+        menu.classList.toggle('is-open');
+        openMenu = menu.classList.contains('is-open') ? menu : null;
+      });
+      menu.addEventListener('click', function (event) {
+        var pick = event.target.closest('[data-pick]');
+        var addItem = event.target.closest('[data-add-item]');
+        if (addItem) {
+          closeMenus();
+          appendSection({ key: 'findings', html: '' });
+          return;
+        }
+        if (!pick) return;
+        block.dataset.key = pick.getAttribute('data-pick');
+        btn.textContent = labelFor(block.dataset.key);
+        menu.querySelectorAll('[data-pick]').forEach(function (el) {
+          el.classList.toggle('is-active', el.getAttribute('data-pick') === block.dataset.key);
+        });
+        closeMenus();
+      });
+      remove.addEventListener('click', function () {
+        if (root.querySelectorAll('.rte-block').length <= 1) {
+          editor.innerHTML = '';
+          updateCounts(block);
+          return;
+        }
+        block.remove();
+      });
+      if (moveUp) moveUp.addEventListener('click', function () {
+        if (block.previousElementSibling) root.insertBefore(block, block.previousElementSibling);
+      });
+      if (moveDown) moveDown.addEventListener('click', function () {
+        if (block.nextElementSibling) root.insertBefore(block.nextElementSibling, block);
+      });
+      block.querySelectorAll('[data-cmd]').forEach(function (el) {
+        el.addEventListener('click', function () {
+          var cmd = el.getAttribute('data-cmd');
+          if (cmd === 'insertImage') {
+            var url = window.prompt('Image URL');
+            if (url) execOn(editor, 'insertImage', url);
+            return;
+          }
+          execOn(editor, cmd);
+        });
+      });
+      block.querySelectorAll('input[data-color]').forEach(function (input) {
+        input.addEventListener('input', function () {
+          execOn(editor, input.getAttribute('data-color'), input.value);
+        });
+      });
+      var size = block.querySelector('[data-font-size]');
+      if (size) size.addEventListener('change', function () {
+        if (size.value) execOn(editor, 'fontSize', size.value);
+        size.value = '';
+      });
+      var align = block.querySelector('[data-align]');
+      if (align) align.addEventListener('change', function () {
+        execOn(editor, align.value);
+      });
+      ['input', 'keyup', 'blur'].forEach(function (evt) {
+        editor.addEventListener(evt, function () { updateCounts(block); });
+      });
+      updateCounts(block);
+    }
+
+    function appendSection(row) {
+      var key = (row && row.key) || 'findings';
+      var html = (row && row.html) || '';
+      var block = document.createElement('div');
+      block.className = 'rte-block';
+      block.dataset.key = key;
+      block.innerHTML =
+        '<div class="rte-block-head">' +
+        '<div class="rte-section-wrap">' +
+        '<button type="button" class="rte-section-btn">' + labelFor(key) + '</button>' +
+        menuHtml(key) +
+        '</div>' +
+        '<div class="rte-head-actions">' +
+        '<button type="button" class="rte-move" data-move="up" aria-label="Move section up">↑</button>' +
+        '<button type="button" class="rte-move" data-move="down" aria-label="Move section down">↓</button>' +
+        '<button type="button" class="rte-remove" aria-label="Remove section">−</button>' +
+        '</div>' +
+        '</div>' +
+        toolbarHtml() +
+        '<div class="rte-editor" contenteditable="true" role="textbox" data-placeholder="Start typing here..."></div>' +
+        '<div class="rte-status"><span class="rte-path">p</span><span class="rte-counts">CHARS: 0 WORDS: 0</span></div>';
+      block.querySelector('.rte-editor').innerHTML = html;
+      root.appendChild(block);
+      bindBlock(block);
+      return block;
+    }
+
+    function renderSections(rows) {
+      root.innerHTML = '';
+      (rows && rows.length ? rows : [{ key: 'findings', html: '' }]).forEach(appendSection);
+    }
+
+    function sectionsFromTemplate(row) {
+      if (!row) return null;
+      var body = (row.body_html || '').trim();
+      if (body) {
+        return [
+          { key: 'clinical_information', html: row.indication || '' },
+          { key: 'technique', html: row.technique || '' },
+          { key: 'findings', html: body },
+          { key: 'impression', html: row.impression || '' },
+          { key: 'follow_up', html: row.recommendations || '' }
+        ].filter(function (item, index, all) {
+          if ((item.html || '').trim()) return true;
+          return ['clinical_information', 'technique', 'findings'].indexOf(item.key) >= 0;
+        });
+      }
+      return [
+        { key: 'clinical_information', html: row.indication || '' },
+        { key: 'technique', html: row.technique || '' },
+        { key: 'findings', html: row.findings || '' },
+        { key: 'impression', html: row.impression || '' },
+        { key: 'follow_up', html: row.recommendations || '' }
+      ];
+    }
+
+    renderSections(sections);
+    if (select) {
+      select.addEventListener('change', function () {
+        var chosen = catalog.find(function (row) { return String(row.id) === select.value; });
+        if (!chosen) {
+          renderSections([
+            { key: 'clinical_information', html: '' },
+            { key: 'comparison', html: '' },
+            { key: 'technique', html: '' },
+            { key: 'findings', html: '' }
+          ]);
+          return;
+        }
+        renderSections(sectionsFromTemplate(chosen));
+      });
+    }
+    if (addBtn) addBtn.addEventListener('click', function () {
+      appendSection({ key: 'findings', html: '' });
+    });
+    document.addEventListener('click', closeMenus);
   });
 </script>
 {% endblock %}

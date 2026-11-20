@@ -266,7 +266,7 @@
       z-index: 20;
     }
     .pp-tools { grid-area: signout; justify-self: end; display: flex; align-items: center; gap: .45rem; }
-    .nb { position: relative; }
+    .nb { position: relative; z-index: 1; }
     .sidebar .nb { display: flex; justify-content: flex-end; margin: 0 .35rem .85rem; }
     .nb-btn {
       position: relative;
@@ -280,6 +280,7 @@
       place-items: center;
       padding: 0;
       line-height: 1;
+      z-index: 2;
     }
     .nb-btn:hover, .nb-btn[aria-expanded="true"] { background: #f6f4ef; }
     .nb-count {
@@ -297,27 +298,39 @@
       line-height: 1.15rem;
       text-align: center;
     }
+    .nb-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(28, 25, 23, .28);
+      z-index: 1040;
+      border: 0;
+      padding: 0;
+      margin: 0;
+      cursor: default;
+    }
     .nb-panel {
       position: fixed;
-      width: min(22rem, calc(100vw - 1.5rem));
+      width: min(22.5rem, calc(100vw - 1.5rem));
       background: #fff;
       border: 1px solid var(--line);
       border-radius: 16px;
-      box-shadow: 0 18px 44px rgba(28, 25, 23, .14);
-      z-index: 80;
+      box-shadow: 0 22px 56px rgba(28, 25, 23, .22);
+      z-index: 1050;
       overflow: auto;
-      max-height: min(28rem, calc(100vh - 5rem));
+      max-height: min(32rem, calc(100vh - 5rem));
+      isolation: isolate;
     }
     .nb-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: .75rem;
-      padding: .8rem .95rem .7rem;
+      padding: .85rem 1rem .75rem;
       border-bottom: 1px solid var(--line);
       position: sticky;
       top: 0;
       background: #fff;
+      z-index: 1;
     }
     .nb-mark {
       border: 0;
@@ -334,7 +347,7 @@
       border: 0;
       border-bottom: 1px solid #f1eee8;
       background: #fff;
-      padding: .75rem .95rem;
+      padding: .8rem 1rem;
     }
     .nb-item.is-unread { background: #f4f8f5; box-shadow: inset 3px 0 0 var(--sage-ink); }
     .nb-item:hover { background: #fbfaf7; }
@@ -352,7 +365,7 @@
     .nb-foot {
       display: block;
       text-align: center;
-      padding: .75rem;
+      padding: .8rem;
       font-weight: 650;
       color: var(--sage-ink);
       text-decoration: none;
@@ -360,6 +373,7 @@
       bottom: 0;
       background: #fff;
       border-top: 1px solid var(--line);
+      z-index: 1;
     }
     .nb-empty { padding: 1.5rem 1rem 1.3rem; text-align: center; color: #57534e; }
     .nb-empty i { display: block; font-size: 1.3rem; color: var(--sage-ink); margin-bottom: .35rem; }
@@ -620,42 +634,83 @@
 <script>
 (function () {
   var feed = "{% url 'notification-feed' %}";
+  var backdrop = null;
+
+  function ensureBackdrop() {
+    if (backdrop) return backdrop;
+    backdrop = document.createElement('button');
+    backdrop.type = 'button';
+    backdrop.className = 'nb-backdrop';
+    backdrop.setAttribute('aria-label', 'Close notifications');
+    backdrop.hidden = true;
+    backdrop.addEventListener('click', function () {
+      document.querySelectorAll('[data-notice].is-open').forEach(closeBox);
+    });
+    document.body.appendChild(backdrop);
+    return backdrop;
+  }
+
+  function panelFor(box) {
+    if (box._nbPanel) return box._nbPanel;
+    return box.querySelector('.nb-panel');
+  }
+
   function place(box) {
     var button = box.querySelector('.nb-btn');
-    var panel = box.querySelector('.nb-panel');
+    var panel = panelFor(box);
+    if (!button || !panel) return;
+    // Host the panel on <body> so sticky sidebar stacking cannot cover it.
+    if (panel.parentElement !== document.body) {
+      document.body.appendChild(panel);
+    }
     var rect = button.getBoundingClientRect();
-    var width = Math.min(352, window.innerWidth - 24);
+    var width = Math.min(360, window.innerWidth - 24);
     panel.style.width = width + 'px';
-    var left = rect.left;
+    var left = rect.right - width;
     if (rect.left < 280) left = rect.right + 10;
-    if (left + width > window.innerWidth - 12) left = Math.max(12, rect.right - width);
+    if (left < 12) left = 12;
+    if (left + width > window.innerWidth - 12) left = Math.max(12, window.innerWidth - width - 12);
+    var top = rect.bottom + 10;
+    var maxTop = Math.max(12, window.innerHeight - 120);
+    if (top > maxTop) top = Math.max(12, rect.top - Math.min(panel.offsetHeight || 320, window.innerHeight - 40) - 10);
     panel.style.left = left + 'px';
-    panel.style.top = Math.min(rect.bottom + 8, window.innerHeight - 80) + 'px';
+    panel.style.top = top + 'px';
   }
+
   function closeBox(box) {
+    var panel = panelFor(box);
     box.classList.remove('is-open');
-    box.querySelector('.nb-panel').hidden = true;
     box.querySelector('.nb-btn').setAttribute('aria-expanded', 'false');
+    if (panel) {
+      panel.hidden = true;
+      if (panel.parentElement === document.body) {
+        box.appendChild(panel);
+      }
+    }
+    if (!document.querySelector('[data-notice].is-open') && backdrop) {
+      backdrop.hidden = true;
+    }
   }
+
   function openBox(box) {
     document.querySelectorAll('[data-notice].is-open').forEach(function (other) {
       if (other !== box) closeBox(other);
     });
-    place(box);
-    box.querySelector('.nb-panel').hidden = false;
+    var panel = panelFor(box);
+    if (!panel) return;
+    box._nbPanel = panel;
+    ensureBackdrop().hidden = false;
+    panel.hidden = false;
     box.classList.add('is-open');
     box.querySelector('.nb-btn').setAttribute('aria-expanded', 'true');
+    place(box);
   }
+
   document.querySelectorAll('[data-notice]').forEach(function (box) {
     box.querySelector('.nb-btn').addEventListener('click', function (event) {
       event.stopPropagation();
       if (box.classList.contains('is-open')) closeBox(box);
       else openBox(box);
-    });
-  });
-  document.addEventListener('click', function (event) {
-    document.querySelectorAll('[data-notice].is-open').forEach(function (box) {
-      if (!box.contains(event.target)) closeBox(box);
     });
   });
   document.addEventListener('keydown', function (event) {
@@ -666,6 +721,9 @@
   window.addEventListener('resize', function () {
     document.querySelectorAll('[data-notice].is-open').forEach(place);
   });
+  window.addEventListener('scroll', function () {
+    document.querySelectorAll('[data-notice].is-open').forEach(place);
+  }, true);
   function paint(count) {
     document.querySelectorAll('[data-notice-count]').forEach(function (el) {
       el.hidden = count < 1;
@@ -684,6 +742,38 @@
 })();
 </script>
 {% endif %}
+{% if request.user.is_authenticated and not portal_chrome and idle_timeout_minutes %}
+<form id="idle-logout-form" method="post" action="{% url 'logout' %}" class="d-none" hidden>{% csrf_token %}</form>
+<script>
+(function () {
+  var minutes = Number({{ idle_timeout_minutes|default:0 }}) || 0;
+  if (minutes < 1) return;
+  var limitMs = minutes * 60 * 1000;
+  var timer = null;
+  var loggingOut = false;
+  function logoutIdle() {
+    if (loggingOut) return;
+    loggingOut = true;
+    var form = document.getElementById('idle-logout-form');
+    if (form) form.submit();
+    else window.location.href = '{% url "login" %}';
+  }
+  function bump() {
+    if (loggingOut) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(logoutIdle, limitMs);
+  }
+  ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel'].forEach(function (name) {
+    window.addEventListener(name, bump, {passive: true});
+  });
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) bump();
+  });
+  bump();
+})();
+</script>
+{% endif %}
 {% block extra_js %}{% endblock %}
 </body>
 </html>
+

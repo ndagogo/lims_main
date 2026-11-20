@@ -80,10 +80,12 @@ def build_radiology_report_pdf(report, *, watermark_text=None):
         'id-value', fontName=bold, fontSize=size, leading=size + 3, textColor=ink,
     )
     heading_style = ParagraphStyle(
-        'sec-head', fontName=bold, fontSize=size, leading=size + 2, textColor=accent, spaceBefore=2,
+        'sec-head', fontName=bold, fontSize=size + 0.5, leading=size + 3, textColor=accent,
+        spaceBefore=2, spaceAfter=1,
     )
     body_style = ParagraphStyle(
-        'sec-body', fontName=font, fontSize=size, leading=size + 4, textColor=ink, spaceAfter=2,
+        'sec-body', fontName=font, fontSize=size, leading=size + 5, textColor=ink,
+        spaceBefore=2, spaceAfter=4,
     )
     banner_style = ParagraphStyle(
         'banner', fontName=bold, fontSize=size, leading=size + 3, textColor=HexColor('#9a3412'), alignment=TA_CENTER,
@@ -128,21 +130,26 @@ def build_radiology_report_pdf(report, *, watermark_text=None):
         ('BACKGROUND', (2, 0), (2, -1), white),
     ]))
     story.append(identity_table)
-    story.append(Spacer(1, 8))
+    story.append(Spacer(1, 14))
 
     header_note = (snap.get('template') or {}).get('report_header') or ''
     if header_note.strip() and header_note.strip() not in (snap.get('findings') or report.findings or ''):
         story.append(Paragraph(_markup(header_note), body_style))
+        story.append(Spacer(1, 8))
 
-    for heading, body in _report_sections(report, snap):
+    section_rows = list(_report_sections(report, snap))
+    for index, (heading, body) in enumerate(section_rows):
         block = []
         if heading:
             block.extend([
                 Paragraph(escape(heading).upper(), heading_style),
-                HRFlowable(width='100%', thickness=0.6, color=accent, spaceBefore=1, spaceAfter=4),
+                HRFlowable(width='100%', thickness=0.7, color=accent, spaceBefore=2, spaceAfter=6),
             ])
-        block.append(Paragraph(_markup(body), body_style))
-        block.append(Spacer(1, 6))
+        for chunk in _body_paragraphs(body):
+            block.append(Paragraph(chunk, body_style))
+        # Clear breathing room between sections (standard clinical report spacing).
+        if index < len(section_rows) - 1:
+            block.append(Spacer(1, 14))
         story.append(KeepTogether(block))
 
     extras = _extra_rows(snap, report)
@@ -158,21 +165,23 @@ def build_radiology_report_pdf(report, *, watermark_text=None):
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('LEFTPADDING', (0, 0), (-1, -1), 0),
             ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-            ('TOPPADDING', (0, 0), (-1, -1), 1),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
         ]))
-        story.append(Spacer(1, 2))
+        story.append(Spacer(1, 6))
         story.append(extra_table)
 
     if fmt.get('show_authenticator_signature', True) and auth:
-        sign_bits = [Spacer(1, 10), HRFlowable(width='100%', thickness=0.4, color=rule, spaceBefore=2, spaceAfter=8)]
+        # Name first, handwritten signature image directly underneath, then credentials.
+        sign_bits = [Spacer(1, 16), HRFlowable(width='100%', thickness=0.4, color=rule, spaceBefore=2, spaceAfter=10)]
         sign_bits.append(Paragraph(escape(fmt.get('signature_label') or 'Reported by'), sign_label))
+        if auth.get('name'):
+            sign_bits.append(Spacer(1, 2))
+            sign_bits.append(Paragraph(escape(auth['name']), sign_name))
         sig_path = auth.get('signature_path') or ''
         if sig_path and _image_readable(os.path.join(settings.MEDIA_ROOT, sig_path)):
-            sign_bits.append(Spacer(1, 2))
+            sign_bits.append(Spacer(1, 3))
             sign_bits.append(Image(os.path.join(settings.MEDIA_ROOT, sig_path), width=42 * mm, height=16 * mm, kind='proportional'))
-        if auth.get('name'):
-            sign_bits.append(Paragraph(escape(auth['name']), sign_name))
         for line in (auth.get('title'), auth.get('qualifications'), auth.get('specialty')):
             if line:
                 sign_bits.append(Paragraph(escape(str(line)), sign_meta))
@@ -184,7 +193,6 @@ def build_radiology_report_pdf(report, *, watermark_text=None):
         released = _when(report.released_at)
         if released:
             sign_bits.append(Paragraph(escape(f'Dispatched {released}'), sign_meta))
-        # Keep the signature with its name so a page break cannot separate them.
         story.append(KeepTogether(sign_bits))
 
     ctx = {
@@ -227,15 +235,41 @@ def _identity_rows(report, snap):
 
 
 def _report_sections(report, snap):
+    """Ordered report body blocks for the PDF."""
+    from radiology.report_sections import normalize_sections
+
+    extras = snap.get('extra_values') if snap.get('extra_values') is not None else report.extra_values
+    extras = extras or {}
+    sequenced = normalize_sections(extras.get('report_sections'))
+    if sequenced:
+        sections = []
+        for row in sequenced:
+            body = _strip_leading_section_label(row.get('html') or '', row.get('label') or '')
+            if not (body or '').strip():
+                continue
+            if not _substantive(body):
+                continue
+            sections.append((row.get('label') or '', body))
+        if sections:
+            addendum = snap.get('addendum') or report.addendum or ''
+            if _substantive(addendum):
+                sections.append(('Addendum', addendum))
+            return sections
+
     findings_raw = snap.get('findings') or report.findings or ''
     impression = snap.get('impression') or report.impression or ''
     recommendations = snap.get('recommendations') or report.recommendations or ''
     addendum = snap.get('addendum') or report.addendum or ''
-    if _html_is_full_report(findings_raw):
+
+    # Prefer splitting a composed rich document into labelled sections.
+    split = _split_composed_sections(findings_raw)
+    if split:
+        sections = [(heading, body) for heading, body in split if _substantive(body)]
+    elif _html_is_full_report(findings_raw):
         sections = [('', findings_raw)]
     else:
         sections = [
-            ('Clinical information', snap.get('indication') or report.indication),
+            ('Clinical Information', snap.get('indication') or report.indication),
             ('Technique', snap.get('technique') or report.technique),
             ('Findings', findings_raw),
         ]
@@ -245,7 +279,10 @@ def _report_sections(report, snap):
             sections.append(('Recommendations', recommendations))
     if _substantive(addendum):
         sections.append(('Addendum', addendum))
-    return [(heading, body) for heading, body in sections if (body or '').strip() and (not heading or _substantive(body))]
+    return [
+        (heading, body) for heading, body in sections
+        if (body or '').strip() and (not heading or _substantive(body))
+    ]
 
 
 def report_can_be_signed(report):
@@ -254,6 +291,10 @@ def report_can_be_signed(report):
     impression = (report.impression or '').strip()
     if findings and impression:
         return True
+    extras = report.extra_values or {}
+    from radiology.report_sections import normalize_sections
+    if any(_substantive(row.get('html')) for row in normalize_sections(extras.get('report_sections'))):
+        return True
     return bool(findings) and _html_is_full_report(findings)
 
 
@@ -261,7 +302,10 @@ def _html_is_full_report(findings):
     if not _looks_like_html(findings):
         return False
     plain = re.sub(r'<[^>]+>', ' ', findings or '').upper()
-    return 'FINDINGS' in plain and ('IMPRESSION' in plain or 'EXAM' in plain)
+    return 'FINDINGS' in plain and (
+        'IMPRESSION' in plain or 'EXAM' in plain or 'CLINICAL INFORMATION' in plain
+        or 'TECHNIQUE' in plain
+    )
 
 
 def _substantive(text):
@@ -272,8 +316,14 @@ def _substantive(text):
     labels = {
         'clinical indication', 'clinical information', 'technique', 'findings',
         'impression', 'recommendations', 'exam', 'comparison', 'report',
+        'conclusion', 'follow-up', 'follow up',
     }
     return plain.lower() not in labels
+
+
+_INTERNAL_EXTRA_KEYS = frozenset({
+    'report_sections', 'sections', 'template_sections', 'body_html',
+})
 
 
 def _extra_rows(snap, report):
@@ -290,18 +340,76 @@ def _extra_rows(snap, report):
         if not isinstance(field, dict):
             continue
         code = field.get('code')
-        if not code or code in seen:
+        if not code or code in seen or code in _INTERNAL_EXTRA_KEYS:
             continue
         seen.add(code)
         raw = values.get(code)
-        if raw in (None, '', [], {}):
+        if raw in (None, '', [], {}) or isinstance(raw, (list, dict)):
             continue
         rows.append((labels.get(code, code), _plain(raw)))
     for code, raw in values.items():
-        if code in seen or raw in (None, '', [], {}):
+        if code in seen or code in _INTERNAL_EXTRA_KEYS or raw in (None, '', [], {}):
+            continue
+        # Structured editor payloads must never dump into the printable extras table.
+        if isinstance(raw, (list, dict)):
             continue
         rows.append((labels.get(code, str(code).replace('_', ' ')), _plain(raw)))
     return rows
+
+
+def _split_composed_sections(html):
+    """Split heading-labelled rich HTML into (label, body) pairs for nicer PDF spacing."""
+    from radiology.report_sections import normalize_sections
+    # Reuse the parser via a tiny shim: sections_from_report needs a report object.
+    # Inline the same heading split used when loading drafts.
+    from radiology import report_sections as rs
+    rows = rs._split_legacy_html(html or '')
+    return [(row['label'], row['html']) for row in normalize_sections(rows)]
+
+
+def _strip_leading_section_label(html, label):
+    """Remove a duplicated section title the radiologist typed into the editor."""
+    body = (html or '').strip()
+    if not body or not label:
+        return body
+    aliases = {
+        'clinical information': ['clinical information', 'clinical indication', 'indication'],
+        'follow-up': ['follow-up', 'follow up', 'recommendations', 'recommendation'],
+        'findings': ['findings', 'exam'],
+    }
+    names = aliases.get(label.strip().lower(), [label.strip()])
+    if label.strip().lower() not in [n.lower() for n in names]:
+        names = [label.strip()] + names
+    for name in names:
+        label_re = re.escape(name).replace(r'\ ', r'\s+')
+        patterns = [
+            rf'(?is)^\s*<p[^>]*>\s*<strong>\s*{label_re}\s*:?\s*</strong>\s*</p>\s*',
+            rf'(?is)^\s*<p[^>]*>\s*<strong>\s*{label_re}\s*:?\s*</strong>\s*',
+            rf'(?is)^\s*<strong>\s*{label_re}\s*:?\s*</strong>\s*',
+            rf'(?is)^\s*{label_re}\s*:\s*',
+        ]
+        for pattern in patterns:
+            updated = re.sub(pattern, '', body, count=1)
+            if updated != body:
+                return updated.strip()
+    return body
+
+
+def _body_paragraphs(text):
+    """Turn section HTML/text into one or more ReportLab-safe paragraph strings."""
+    marked = _markup(text)
+    if not marked:
+        return []
+    # Prefer natural paragraph breaks from the rich editor.
+    parts = re.split(r'(?:<br\s*/?>\s*){2,}', marked, flags=re.I)
+    cleaned = []
+    for part in parts:
+        chunk = part.strip()
+        if not chunk:
+            continue
+        # Single line-breaks inside a paragraph stay as <br/>.
+        cleaned.append(chunk)
+    return cleaned or [marked]
 
 
 def _patient_name(patient):
@@ -320,13 +428,11 @@ def _referring_doctor(visit):
 
 
 def _study_title(report, fmt):
-    order = report.exam.order
-    if order.procedure_id and order.procedure.name:
-        return order.procedure.name
+    """Header title for the PDF letterhead — never the procedure name."""
     custom = (fmt.get('title_radiology') or '').strip()
-    modality = order.modality.get_modality_type_display()
-    if custom and custom.lower() not in ('radiology report',):
+    if custom:
         return custom
+    modality = report.exam.order.modality.get_modality_type_display()
     return f'{modality} report'
 
 

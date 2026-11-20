@@ -1,13 +1,241 @@
 {% extends "base.html" %}
-{% block title %}Inventory{% endblock %}
+{% block title %}Consumables | Inventory{% endblock %}
 {% block content %}
-<div class="container py-4">
-  <h1 class="h4">Reagent inventory</h1>
-  <h2 class="h6 mt-3">Low stock</h2>
-  <ul>{% for s in low_stock %}<li>{{ s.sku_code }} — on hand {{ s.on_hand }} / reorder {{ s.reorder_level }}</li>{% empty %}<li>None</li>{% endfor %}</ul>
-  <h2 class="h6">Expiring soon</h2>
-  <ul>{% for row in expiring %}<li>{{ row.sku.sku_code }} lot {{ row.movement.lot_number }} — {{ row.movement.expires_on }}</li>{% empty %}<li>None</li>{% endfor %}</ul>
-  <h2 class="h6">Catalogue</h2>
-  <ul>{% for s in skus %}<li>{{ s.centre.code }} / {{ s.sku_code }} — {{ s.name }} ({{ s.on_hand }} {{ s.unit }})</li>{% empty %}<li>No SKUs yet</li>{% endfor %}</ul>
+<div class="container-fluid py-3 px-lg-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+    <div>
+      <div class="eyebrow">Stock control</div>
+      <h1 class="h3 mb-1">Consumables dashboard</h1>
+      <p class="muted mb-0">Catalogue, receipts, and usage history by department — Laboratory, Radiology, Phlebotomy, and shared stock.</p>
+    </div>
+    {% if can_manage %}
+    <a class="btn btn-sm btn-outline-dark" href="{% url 'platform-inventory-skus' %}">Platform catalogue</a>
+    {% endif %}
+  </div>
+
+  {% if dept_summary %}
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    <a class="btn btn-sm {% if not department %}btn-dark{% else %}btn-outline-dark{% endif %}" href="?tab={{ tab }}{% if centre_id %}&centre={{ centre_id }}{% endif %}{% if query %}&q={{ query }}{% endif %}">All departments</a>
+    {% for row in dept_summary %}
+    <a class="btn btn-sm {% if department == row.code %}btn-dark{% else %}btn-outline-dark{% endif %}" href="?department={{ row.code }}&tab={{ tab }}{% if centre_id %}&centre={{ centre_id }}{% endif %}{% if query %}&q={{ query }}{% endif %}">{{ row.label }} <span class="muted">({{ row.count }})</span></a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <form method="get" class="row g-2 mb-3 align-items-end">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    {% if department %}<input type="hidden" name="department" value="{{ department }}">{% endif %}
+    <div class="col-md-3">
+      <label class="form-label">Centre</label>
+      <select name="centre" class="form-select form-select-sm">
+        <option value="">All centres</option>
+        {% for c in centres %}<option value="{{ c.pk }}" {% if centre_id == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.code }} — {{ c.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Search</label>
+      <input class="form-control form-control-sm" name="q" value="{{ query }}" placeholder="SKU, name, category">
+    </div>
+    <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" type="submit">Filter</button></div>
+  </form>
+
+  <ul class="nav nav-tabs mb-3">
+    <li class="nav-item"><a class="nav-link {% if tab == 'stock' %}active{% endif %}" href="?tab=stock{% if department %}&department={{ department }}{% endif %}{% if centre_id %}&centre={{ centre_id }}{% endif %}{% if query %}&q={{ query }}{% endif %}">On-hand stock</a></li>
+    <li class="nav-item"><a class="nav-link {% if tab == 'receive' %}active{% endif %}" href="?tab=receive{% if department %}&department={{ department }}{% endif %}{% if centre_id %}&centre={{ centre_id }}{% endif %}">Receive / adjust</a></li>
+    <li class="nav-item"><a class="nav-link {% if tab == 'history' %}active{% endif %}" href="?tab=history{% if department %}&department={{ department }}{% endif %}{% if centre_id %}&centre={{ centre_id }}{% endif %}{% if query %}&q={{ query }}{% endif %}">Movement history</a></li>
+  </ul>
+
+  {% if low_stock %}
+  <div class="alert alert-warning py-2 small">
+    <strong>Low stock:</strong>
+    {% for s in low_stock %}{{ s.sku_code }} ({{ s.on_hand }}/{{ s.reorder_level }}){% if not forloop.last %}, {% endif %}{% endfor %}
+  </div>
+  {% endif %}
+
+  {% if tab == 'stock' %}
+  <div class="row g-4">
+    {% if can_manage %}
+    <div class="col-xl-4">
+      <div class="card border-0 shadow-sm p-3">
+        <h2 class="h6">Add consumable</h2>
+        <form method="post" class="row g-2">
+          {% csrf_token %}<input type="hidden" name="action" value="create_sku">
+          <div class="col-12">
+            <label class="form-label">Centre</label>
+            <select name="centre" class="form-select form-select-sm" required>
+              {% for c in centres %}<option value="{{ c.pk }}">{{ c.code }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Department</label>
+            <select name="department" class="form-select form-select-sm" required>
+              {% for code, label in department_choices %}
+              <option value="{{ code }}" {% if department == code %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6"><label class="form-label">SKU code</label><input name="sku_code" class="form-control form-control-sm" required></div>
+          <div class="col-md-6">
+            <label class="form-label">Unit of measure</label>
+            <input name="unit" class="form-control form-control-sm" value="each" placeholder="each, sheet, ml">
+            <div class="form-text">Not the stock quantity — e.g. each, sheet, ml.</div>
+          </div>
+          <div class="col-12"><label class="form-label">Name</label><input name="name" class="form-control form-control-sm" required></div>
+          <div class="col-12"><label class="form-label">Category</label><input name="category" class="form-control form-control-sm" placeholder="e.g. Contrast, Vacutainer"></div>
+          <div class="col-12"><label class="form-label">Description</label><textarea name="description" class="form-control form-control-sm" rows="2"></textarea></div>
+          <div class="col-md-6"><label class="form-label">Reorder level</label><input name="reorder_level" class="form-control form-control-sm" value="0"></div>
+          <div class="col-md-6">
+            <label class="form-label">Initial quantity</label>
+            <input name="initial_quantity" class="form-control form-control-sm" type="number" min="0" step="0.01" value="0">
+            <div class="form-text">Optional opening stock (posted as a receipt).</div>
+          </div>
+          <div class="col-12"><button class="btn btn-sm btn-primary" type="submit">Create</button></div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+    <div class="{% if can_manage %}col-xl-8{% else %}col-12{% endif %}">
+      <div class="card border-0 shadow-sm p-3">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>SKU</th><th>Department</th><th>Centre</th><th>On hand</th><th>Reorder</th>
+              {% if can_manage %}<th></th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in skus %}
+            <tr class="{% if row.is_low %}table-warning{% endif %}">
+              <td>
+                <div class="fw-semibold">{{ row.sku_code }}</div>
+                <div>{{ row.name }}</div>
+                {% if row.category %}<div class="small muted">{{ row.category }}</div>{% endif %}
+                {% if row.description %}<div class="small muted">{{ row.description|truncatechars:80 }}</div>{% endif %}
+              </td>
+              <td>{{ row.get_department_display }}</td>
+              <td>{{ row.centre.code }}</td>
+              <td>{{ row.on_hand }} <span class="muted small">{{ row.unit }}</span></td>
+              <td>{{ row.reorder_level }}</td>
+              {% if can_manage %}
+              <td>
+                <form method="post">{% csrf_token %}
+                  <input type="hidden" name="action" value="toggle">
+                  <input type="hidden" name="sku" value="{{ row.pk }}">
+                  <button class="btn btn-sm btn-outline-dark" type="submit">{% if row.is_active %}Deactivate{% else %}Activate{% endif %}</button>
+                </form>
+              </td>
+              {% endif %}
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-center muted py-4">No consumables yet. Create SKUs by department to track stock.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% include "includes/pagination.html" with page=skus %}
+      </div>
+      {% if expiring %}
+      <div class="mt-3">
+        <h2 class="h6">Lots expiring within 30 days</h2>
+        <ul class="small mb-0">
+          {% for row in expiring %}
+          <li>{{ row.sku.sku_code }} · lot {{ row.movement.lot_number|default:"—" }} · {{ row.movement.expires_on }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if tab == 'receive' %}
+  <div class="row g-4">
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm p-3">
+        <h2 class="h6">Receive stock</h2>
+        <form method="post" class="row g-2">
+          {% csrf_token %}<input type="hidden" name="action" value="receive">
+          <div class="col-12">
+            <label class="form-label">Consumable</label>
+            <select name="sku" class="form-select form-select-sm" required>
+              <option value="">Select SKU</option>
+              {% for row in skus %}
+              <option value="{{ row.pk }}">{{ row.centre.code }} · {{ row.get_department_display }} · {{ row.sku_code }} — {{ row.name }} ({{ row.on_hand }} {{ row.unit }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4"><label class="form-label">Quantity</label><input name="quantity" class="form-control form-control-sm" type="number" step="0.01" min="0.01" required></div>
+          <div class="col-md-4"><label class="form-label">Lot</label><input name="lot_number" class="form-control form-control-sm"></div>
+          <div class="col-md-4"><label class="form-label">Expires</label><input name="expires_on" class="form-control form-control-sm" type="date"></div>
+          <div class="col-12"><label class="form-label">Note</label><input name="note" class="form-control form-control-sm"></div>
+          <div class="col-12"><button class="btn btn-sm btn-primary" type="submit">Post receipt</button></div>
+        </form>
+      </div>
+    </div>
+    {% if can_manage %}
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm p-3">
+        <h2 class="h6">Adjust / expire / return</h2>
+        <form method="post" class="row g-2">
+          {% csrf_token %}<input type="hidden" name="action" value="adjust">
+          <div class="col-12">
+            <label class="form-label">Consumable</label>
+            <select name="sku" class="form-select form-select-sm" required>
+              <option value="">Select SKU</option>
+              {% for row in skus %}
+              <option value="{{ row.pk }}">{{ row.centre.code }} · {{ row.sku_code }} — {{ row.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Type</label>
+            <select name="movement_type" class="form-select form-select-sm">
+              <option value="ADJUST">Adjustment (+/−)</option>
+              <option value="EXPIRE">Expire / wastage</option>
+              <option value="RETURN">Return to stock</option>
+            </select>
+          </div>
+          <div class="col-md-4"><label class="form-label">Quantity</label><input name="quantity" class="form-control form-control-sm" type="number" step="0.01" required><div class="form-text">Negative reduces stock for Adjust.</div></div>
+          <div class="col-12"><label class="form-label">Note</label><input name="note" class="form-control form-control-sm" required></div>
+          <div class="col-12"><button class="btn btn-sm btn-outline-dark" type="submit">Post adjustment</button></div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if tab == 'history' %}
+  <div class="card border-0 shadow-sm p-3">
+    <h2 class="h6">Movement history</h2>
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          <th>When</th><th>SKU</th><th>Dept</th><th>Type</th><th>Qty</th><th>Lot</th><th>By</th><th>Reference</th><th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for mv in history %}
+        <tr>
+          <td class="small">{{ mv.created_at|date:"Y-m-d H:i" }}</td>
+          <td>
+            <div class="fw-semibold">{{ mv.sku.sku_code }}</div>
+            <div class="small muted">{{ mv.sku.name }} · {{ mv.sku.centre.code }}</div>
+          </td>
+          <td class="small">{{ mv.sku.get_department_display }}</td>
+          <td>{{ mv.get_movement_type_display }}</td>
+          <td class="{% if mv.quantity < 0 %}text-danger{% else %}text-success{% endif %}">{{ mv.quantity }} {{ mv.sku.unit }}</td>
+          <td class="small">{{ mv.lot_number|default:"—" }}{% if mv.expires_on %}<div class="muted">exp {{ mv.expires_on }}</div>{% endif %}</td>
+          <td class="small">{{ mv.recorded_by.get_full_name|default:mv.recorded_by.username|default:"—" }}</td>
+          <td class="small">{% if mv.reference_type %}{{ mv.reference_type }}{% if mv.reference_id %}<div class="muted text-truncate" style="max-width:8rem">{{ mv.reference_id }}</div>{% endif %}{% else %}—{% endif %}</td>
+          <td class="small">{{ mv.note|truncatechars:60 }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9" class="text-center muted py-4">No stock movements yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% include "includes/pagination.html" with page=history %}
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

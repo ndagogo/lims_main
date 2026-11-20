@@ -6,10 +6,51 @@ from django.utils import timezone
 
 from radiology.models import RadiologistAcceptRecord, RadiologyDeskSetting, RadiologyExam
 
+# Fallback labels when the centre has no Radiology consumables catalogue yet.
 SUPPLY_PRESETS = ('Syringe', 'Film', 'CD')
 EXAM_IN_PROCESS = (
     'Sorry you currently have an exam in process. Check your list and complete the exam. Thank You'
 )
+
+
+def radiology_consumables_for_centre(centre):
+    """Active Radiology (and shared General) SKUs for the Items used picker."""
+    if centre is None:
+        return []
+    from inventory.models import ConsumableDepartment, ReagentSku
+    return list(
+        ReagentSku.objects.filter(
+            centre=centre,
+            is_active=True,
+            department__in=[ConsumableDepartment.RADIOLOGY, ConsumableDepartment.GENERAL],
+        ).order_by('name')
+    )
+
+
+SUPPLIES_REQUIRED_MSG = (
+    'Record the quantity of items used before ending the exam and assigning a radiologist.'
+)
+SUPPLIES_CATALOGUE_REQUIRED_MSG = (
+    'No Radiology consumables are set up for this centre. Contact an administrator to create '
+    'them in Consumables / inventory before ending the exam.'
+)
+
+
+def assert_supplies_recorded(supplies, *, centre=None):
+    """End-exam requires at least one inventory consumable with quantity > 0."""
+    from django.core.exceptions import ValidationError
+
+    if centre is not None and not radiology_consumables_for_centre(centre):
+        raise ValidationError(SUPPLIES_CATALOGUE_REQUIRED_MSG)
+    used = [
+        row for row in (supplies or [])
+        if isinstance(row, dict)
+        and int(row.get('quantity') or 0) > 0
+        and (row.get('sku') or row.get('sku_id'))
+    ]
+    if not used:
+        raise ValidationError(SUPPLIES_REQUIRED_MSG)
+    return used
 
 
 def accept_window():
@@ -283,7 +324,10 @@ def performance_export_rows(activity):
 
 
 def parse_supplies(data):
-    """Accept JSON [{name, quantity}] or parallel item_name / quantity lists."""
+    """
+    Accept JSON [{name, quantity, sku?}] or parallel item_name / quantity / item_sku lists.
+    Returns list of dicts: {'name', 'quantity', 'sku_id'}.
+    """
     raw = data.get('supplies') if hasattr(data, 'get') else None
     rows = []
     if isinstance(raw, list):
@@ -292,21 +336,25 @@ def parse_supplies(data):
                 continue
             name = str(item.get('name') or item.get('item_name') or '').strip()
             qty = item.get('quantity') or 0
+            sku_id = item.get('sku') or item.get('sku_id') or ''
             try:
                 qty = int(qty)
             except (TypeError, ValueError):
                 qty = 0
             if name and qty > 0:
-                rows.append((name[:80], qty))
+                rows.append({'name': name[:80], 'quantity': qty, 'sku_id': str(sku_id) if sku_id else ''})
         return rows
     names = data.getlist('item_name') if hasattr(data, 'getlist') else []
     qtys = data.getlist('quantity') if hasattr(data, 'getlist') else []
-    for name, qty in zip(names, qtys):
+    skus = data.getlist('item_sku') if hasattr(data, 'getlist') else []
+    while len(skus) < len(names):
+        skus.append('')
+    for name, qty, sku_id in zip(names, qtys, skus):
         name = (name or '').strip()
         try:
             qty = int(qty or 0)
         except (TypeError, ValueError):
             qty = 0
         if name and qty > 0:
-            rows.append((name[:80], qty))
+            rows.append({'name': name[:80], 'quantity': qty, 'sku_id': str(sku_id or '')})
     return rows

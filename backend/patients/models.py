@@ -2,15 +2,35 @@ import uuid
 from django.db import models, transaction
 from django.conf import settings
 from core.models import TimeStampedModel, Centre, SequenceCounter
+# Legacy constant kept for seeding PatientTitle; runtime choices come from PatientTitle rows.
 TITLE_CHOICES=[('','—'),('Mr','Mr'),('Mrs','Mrs'),('Miss','Miss'),('Ms','Ms'),('Dr','Dr'),('Chief','Chief'),('Alhaji','Alhaji'),('Alhaja','Alhaja'),('Prof','Prof'),('Master','Master')]
 SEX_CHOICES=[('','Not specified'),('Female','Female'),('Male','Male'),('Other','Other')]
 RACE_CHOICES=[('','Not specified'),('BLACK','Black / African'),('WHITE','White'),('ASIAN','Asian'),('MIXED','Mixed'),('OTHER','Other')]
 STATE_CHOICES=[('','—')]+[(name,name) for name in ['Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno','Cross River','Delta','Ebonyi','Edo','Ekiti','Enugu','FCT','Gombe','Imo','Jigawa','Kaduna','Kano','Katsina','Kebbi','Kogi','Kwara','Lagos','Nasarawa','Niger','Ogun','Ondo','Osun','Oyo','Plateau','Rivers','Sokoto','Taraba','Yobe','Zamfara']]
 
+
+class PatientTitle(TimeStampedModel):
+    """Admin-managed honorific titles for patient registration (country-specific)."""
+    code = models.CharField(max_length=20, unique=True)
+    label = models.CharField(max_length=40)
+    is_system = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'label']
+
+    def __str__(self):
+        return self.label
+
+
 class Patient(TimeStampedModel):
     id=models.UUIDField(primary_key=True,default=uuid.uuid4,editable=False)
     uhid=models.CharField(max_length=32,unique=True,editable=False)
-    title=models.CharField(max_length=20,blank=True,default='',choices=TITLE_CHOICES)
+    title=models.CharField(
+        max_length=20, blank=True, default='',
+        help_text='Honorific from PatientTitle catalogue (admin-managed).',
+    )
     first_name=models.CharField(max_length=100)
     last_name=models.CharField(max_length=100)
     other_names=models.CharField(max_length=100,blank=True)

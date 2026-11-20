@@ -46,7 +46,8 @@ from laboratory.api import scoped_samples
 from laboratory.models import Sample, TatPauseReason
 from laboratory.tat import sample_timeline_payload, tat_dashboard_payload
 from patients.demographics import apply_demographic_updates, demographics_form_choices, search_patients_for_demographics
-from patients.models import CHANNEL_CHOICES, HOW_HEARD_CHOICES, OrganisationClient, Patient, PatientDocument, RACE_CHOICES, SEX_CHOICES, STATE_CHOICES, TITLE_CHOICES, Visit
+from patients.models import CHANNEL_CHOICES, HOW_HEARD_CHOICES, OrganisationClient, Patient, PatientDocument, RACE_CHOICES, SEX_CHOICES, STATE_CHOICES, Visit
+from patients.titles import title_choice_tuples
 from referrals.remap import (
     REQUEST_FORM_MESSAGE, SAME_DOCTOR_MESSAGE, attributions_for_patient,
     real_doctors_for_centre, remap_history, remap_referring_doctor,
@@ -620,7 +621,7 @@ def patient_registration(request):
         'selected_patient': selected,
         'doctors': doctors,
         'channel_catalog': channel_catalog,
-        'titles': TITLE_CHOICES,
+        'titles': title_choice_tuples(),
         'sexes': SEX_CHOICES,
         'races': RACE_CHOICES,
         'states': STATE_CHOICES,
@@ -885,13 +886,27 @@ def _store_document(request, visit):
 
 @login_required
 def download_patient_document(request, pk):
+    import mimetypes
+
     document = get_object_or_404(PatientDocument.objects.select_related('visit__centre'), pk=pk)
     allowed = request.user.is_superuser or UserCentreAccess.objects.filter(user=request.user, centre=document.visit.centre, centre__is_active=True, can_view=True).exists()
     if not allowed:
         raise Http404()
     name = document.file.name.rsplit('/', 1)[-1]
-    inline = request.GET.get('inline') == '1'
-    return FileResponse(document.file.open('rb'), as_attachment=not inline, filename=name)
+    # Default to in-browser viewing; ?download=1 forces attachment.
+    inline = request.GET.get('download') != '1'
+    if 'inline' in request.GET:
+        inline = request.GET.get('inline') == '1'
+    content_type, _encoding = mimetypes.guess_type(name)
+    response = FileResponse(
+        document.file.open('rb'),
+        as_attachment=not inline,
+        filename=name,
+        content_type=content_type or 'application/octet-stream',
+    )
+    disposition = 'inline' if inline else 'attachment'
+    response['Content-Disposition'] = f'{disposition}; filename="{name}"'
+    return response
 
 
 @login_required

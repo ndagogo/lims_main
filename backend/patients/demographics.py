@@ -5,8 +5,9 @@ from django.utils.dateparse import parse_date
 
 from core.access import can_modify_patient_data
 from core.models import UserCentreAccess
-from patients.models import Patient, TITLE_CHOICES, SEX_CHOICES, RACE_CHOICES, STATE_CHOICES
+from patients.models import Patient, SEX_CHOICES, RACE_CHOICES, STATE_CHOICES
 from patients.registration import apply_guardian, patient_values, validate_local_phone, validate_optional_email
+from patients.titles import title_choice_tuples
 
 
 DEMOGRAPHIC_FIELDS = (
@@ -112,7 +113,7 @@ def apply_demographic_updates(user, patient, post, request=None):
 
 def demographics_form_choices():
     return {
-        'titles': TITLE_CHOICES,
+        'titles': title_choice_tuples(),
         'sexes': SEX_CHOICES,
         'races': RACE_CHOICES,
         'states': STATE_CHOICES,

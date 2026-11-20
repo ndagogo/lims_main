@@ -26,6 +26,7 @@ from core.enterprise_clients import (
     clients_master as enterprise_clients_master,
     client_types_page as enterprise_client_types,
     channels_page as enterprise_channels,
+    patient_titles_page as enterprise_patient_titles,
 )
 from core.enterprise_tariffs import (
     tariff_master as enterprise_tariff_master,
@@ -72,7 +73,7 @@ from integrations.views import integration_review, integration_review_action
 from referrals.api import ReferralDoctorViewSet, ReferralAttributionViewSet, CommissionLedgerViewSet, WithdrawalRequestViewSet
 from communications.api import NotificationOutboxViewSet, NotificationTemplateViewSet
 from communications.reports import OperationsSummaryView
-from reporting.views import management_dashboard, report_catalogue, report_export
+from reporting.views import management_dashboard, pending_results, report_catalogue, report_export
 from patients.api import PatientDocumentViewSet
 from inventory.views import inventory_workspace
 from laboratory.labels import sample_label, sample_barcode_svg
@@ -113,6 +114,7 @@ urlpatterns=[
     path('catalog/clients/', catalog_clients, name='catalog-clients'),
     path('enterprise/clients/', enterprise_clients_master, name='enterprise-clients'),
     path('enterprise/client-types/', enterprise_client_types, name='enterprise-client-types'),
+    path('enterprise/patient-titles/', enterprise_patient_titles, name='enterprise-patient-titles'),
     path('enterprise/channels/', enterprise_channels, name='enterprise-channels'),
     path('enterprise/tariffs/', enterprise_tariff_master, name='enterprise-tariffs'),
     path('enterprise/tariffs/upload/', enterprise_tariff_upload, name='enterprise-tariff-upload'),
@@ -166,6 +168,7 @@ urlpatterns=[
     path('accounts/receipts/<int:pk>/', payment_receipt, name='payment-receipt'),
     path('accounts/invoices/<uuid:pk>/reprint/', invoice_reprint, name='invoice-reprint'),
     path('reporting/management/', management_dashboard, name='management-dashboard'),
+    path('reporting/pending/', pending_results, name='pending-results'),
     path('reporting/catalogue/', report_catalogue, name='report-catalogue'),
     path('reporting/export/', report_export, name='report-export'),
     path('laboratory/', laboratory_workspace, name='laboratory-workspace'),

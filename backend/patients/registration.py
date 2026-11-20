@@ -9,7 +9,8 @@ from django.db import transaction
 from core.models import SequenceCounter
 from referrals.models import ReferralAttribution, ReferralDoctor, ReferralInstitution
 
-from .models import CHANNEL_CHOICES, HOW_HEARD_CHOICES, OrganisationClient, RACE_CHOICES, SEX_CHOICES, STATE_CHOICES, TITLE_CHOICES
+from .models import CHANNEL_CHOICES, HOW_HEARD_CHOICES, OrganisationClient, RACE_CHOICES, SEX_CHOICES, STATE_CHOICES
+from .titles import is_valid_title
 
 
 PHONE_CODES = ['+234', '+233', '+44', '+1', '+27', '+91']
@@ -124,7 +125,7 @@ def patient_values(post):
         alt = validate_local_phone(alt, field_label='Alternate mobile')
     prefs = notification_prefs(post)
     return {
-        'title': title if title in dict(TITLE_CHOICES) else '',
+        'title': title if is_valid_title(title) else '',
         'other_names': _clean(post.get('other_names'), 100),
         'phone_country_code': code,
         'alt_phone': alt,

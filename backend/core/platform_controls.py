@@ -20,6 +20,7 @@ def platform_control_sections():
                 ('User management', '/users/', 'bi-people', 'Create staff, centre access, password reset'),
                 ('Roles & privileges', '/roles/', 'bi-shield-lock', 'Create roles, set privileges, assign members'),
                 ('MFA setup', '/account/mfa/', 'bi-phone', 'Optional authenticator for platform admins'),
+                ('Session / inactivity logout', '/platform/organization/#idle-timeout', 'bi-hourglass-split', 'Auto sign-out after idle minutes (default 10)'),
                 ('Audit trail', '/platform/audit/', 'bi-shield-check', 'Search and export the enterprise audit trail'),
                 ('Modify demographics', '/patients/demographics/', 'bi-person-gear', 'Permissioned demographic changes with audit'),
             ],
@@ -46,7 +47,7 @@ def platform_control_sections():
                 ('Modality workstations', '/platform/modalities/', 'bi-broadcast-pin', 'AE title, IP, port, and worklist connection'),
                 ('PACS failures', '/platform/pacs-failures/', 'bi-exclamation-diamond', 'Orthanc reconcile queue'),
                 ('Sample code config', '/platform/sample-codes/', 'bi-123', 'Per-centre sample digit'),
-                ('Inventory SKUs', '/platform/inventory-skus/', 'bi-capsule', 'Reagent catalogue'),
+                ('Consumable SKUs', '/platform/inventory-skus/', 'bi-capsule', 'Lab / Radiology / Phlebotomy catalogue'),
             ],
         },
         {
@@ -73,10 +74,11 @@ def platform_control_sections():
             'title': 'Workspaces',
             'items': [
                 ('Management dashboard', '/reporting/management/', 'bi-graph-up-arrow', 'Finance, TAT, and referral KPIs'),
+                ('Pending results', '/reporting/pending/', 'bi-clipboard2-pulse', 'All outstanding lab and radiology results'),
                 ('Laboratory workspace', '/laboratory/', 'bi-droplet', 'Workflow stages, results, and QC'),
                 ('TAT & timelines', '/laboratory/tat/', 'bi-hourglass-split', 'Stage times, overdue, and escalations'),
                 ('Integration review', '/integrations/review/', 'bi-hdd-network', 'Quarantined analyzer messages'),
-                ('Inventory', '/inventory/', 'bi-box-seam', 'Reagents, stock, and expiry alerts'),
+                ('Consumables', '/inventory/', 'bi-box-seam', 'Stock on hand, receipts, and usage history'),
             ],
         },
     ]

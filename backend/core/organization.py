@@ -15,6 +15,7 @@ _DEFAULTS = SimpleNamespace(
     document_prefix='HFDN',
     tagline='LIS · RIS',
     ops_alert_email='',
+    idle_timeout_minutes=10,
     is_fallback=True,
 )
 
@@ -78,3 +79,12 @@ def organization_tagline():
 
 def document_prefix():
     return get_organization_profile().document_prefix or 'ORG'
+
+
+def idle_timeout_minutes():
+    """Staff inactivity logout minutes (0 = disabled). Default 10."""
+    try:
+        value = int(getattr(get_organization_profile(), 'idle_timeout_minutes', 10) or 0)
+    except (TypeError, ValueError):
+        return 10
+    return max(0, min(value, 24 * 60))

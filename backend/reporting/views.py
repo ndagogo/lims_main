@@ -12,6 +12,7 @@ from .catalogue import CATALOGUE_REPORTS, build_catalogue_report
 from .dashboard import build_management_dashboard
 from .detail_reports import MANAGEMENT_SECTIONS, SECTION_KEYS, build_management_detail
 from .exports import log_report_export, management_summary_rows, table_export, tables_export
+from .pending import build_pending_results
 
 
 def _can_view_management(user):
@@ -78,6 +79,55 @@ def report_catalogue(request):
         commission_type=request.GET.get('commission_type') or None,
     )
     return render(request, 'reporting/catalogue.html', context)
+
+
+@login_required
+def pending_results(request):
+    """Admin outstanding patient results across Laboratory and Radiology."""
+    blocked = _guard(request)
+    if blocked:
+        return blocked
+    fmt = (request.GET.get('format') or '').lower()
+    context = build_pending_results(
+        request.user,
+        department=request.GET.get('department') or '',
+        centre_id=request.GET.get('centre') or None,
+        query=request.GET.get('q') or '',
+        status=request.GET.get('status') or '',
+        date_from=request.GET.get('date_from') or '',
+        date_to=request.GET.get('date_to') or '',
+        min_age_hours=request.GET.get('min_age') or '',
+    )
+    if fmt in ('csv', 'xlsx', 'excel', 'pdf'):
+        centre_label = context['selected_centre'].code if context.get('selected_centre') else ''
+        stamp = timezone_stamp()
+        log_report_export(
+            request,
+            report_type='pending_results',
+            fmt=fmt,
+            period_label='outstanding',
+            centre=centre_label,
+            row_count=len(context['table_rows']),
+            include_patient_ids=True,
+        )
+        return table_export(
+            'Pending patient results',
+            context['headers'],
+            context['table_rows'],
+            fmt=fmt,
+            basename=f'hfdn-pending-results-{stamp}',
+            meta_lines=[
+                f"Department: {context['department'] or 'All'}",
+                f"Generated: {context['generated_at']:%Y-%m-%d %H:%M}",
+                f"Rows: {context['summary']['total']}",
+            ],
+        )
+    return render(request, 'reporting/pending_results.html', context)
+
+
+def timezone_stamp():
+    from django.utils import timezone
+    return timezone.localtime().strftime('%Y%m%d-%H%M')
 
 
 @login_required

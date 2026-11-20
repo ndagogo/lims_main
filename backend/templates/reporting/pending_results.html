@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Pending results | {{ org_short_name }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <div class="muted small">ENTERPRISE REPORTING</div>
+    <h1 class="h3 mb-1">Pending results</h1>
+    <p class="muted mb-0">Outstanding laboratory and radiology results not yet released or dispatched to the patient.</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'management-dashboard' %}">Management dashboard</a>
+    <a class="btn btn-outline-dark btn-sm" href="?{% if department %}department={{ department }}&{% endif %}{% if centre_id %}centre={{ centre_id }}&{% endif %}{% if query %}q={{ query }}&{% endif %}{% if status %}status={{ status }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}{% if min_age_hours %}min_age={{ min_age_hours }}&{% endif %}format=csv">CSV</a>
+    <a class="btn btn-outline-dark btn-sm" href="?{% if department %}department={{ department }}&{% endif %}{% if centre_id %}centre={{ centre_id }}&{% endif %}{% if query %}q={{ query }}&{% endif %}{% if status %}status={{ status }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}{% if min_age_hours %}min_age={{ min_age_hours }}&{% endif %}format=xlsx">Excel</a>
+    <a class="btn btn-outline-dark btn-sm" href="?{% if department %}department={{ department }}&{% endif %}{% if centre_id %}centre={{ centre_id }}&{% endif %}{% if query %}q={{ query }}&{% endif %}{% if status %}status={{ status }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}{% if min_age_hours %}min_age={{ min_age_hours }}&{% endif %}format=pdf">PDF</a>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4"><div class="card p-3"><div class="muted small">Total outstanding</div><div class="h3 mb-0">{{ summary.total }}</div></div></div>
+  <div class="col-md-4"><div class="card p-3"><div class="muted small">Laboratory</div><div class="h3 mb-0">{{ summary.laboratory }}</div></div></div>
+  <div class="col-md-4"><div class="card p-3"><div class="muted small">Radiology</div><div class="h3 mb-0">{{ summary.radiology }}</div></div></div>
+</div>
+
+<form method="get" class="card p-4 mb-4">
+  <div class="row g-3 align-items-end">
+    <div class="col-md-2">
+      <label class="form-label">Department</label>
+      <select class="form-select" name="department">
+        {% for value, label in department_choices %}
+        <option value="{{ value }}" {% if department == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Centre</label>
+      <select class="form-select" name="centre">
+        <option value="">All my centres</option>
+        {% for centre in centres %}
+        <option value="{{ centre.pk }}" {% if centre_id == centre.pk|stringformat:"s" %}selected{% endif %}>{{ centre.code }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Status</label>
+      <select class="form-select" name="status">
+        <option value="">Any status</option>
+        {% for code in status_options %}
+        <option value="{{ code }}" {% if status == code %}selected{% endif %}>{{ code }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Updated from</label>
+      <input class="form-control" type="date" name="date_from" value="{{ date_from }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Updated to</label>
+      <input class="form-control" type="date" name="date_to" value="{{ date_to }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Min age (hours)</label>
+      <input class="form-control" type="number" min="0" step="0.5" name="min_age" value="{{ min_age_hours }}" placeholder="e.g. 24">
+    </div>
+    <div class="col-md-8">
+      <label class="form-label">Search</label>
+      <input class="form-control" name="q" value="{{ query }}" placeholder="Visit ID, patient, UHID, test, sample, modality">
+    </div>
+    <div class="col-md-4"><button class="btn btn-primary w-100" type="submit">Search / filter</button></div>
+  </div>
+</form>
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          {% for h in headers %}<th>{{ h }}</th>{% endfor %}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>{{ row.department }}</td>
+          <td>{{ row.centre }}</td>
+          <td>{{ row.visit_id }}</td>
+          <td>{{ row.patient }}</td>
+          <td class="small">{{ row.uhid }}</td>
+          <td>{{ row.item }}</td>
+          <td>{{ row.ref }}</td>
+          <td><span class="badge text-bg-light border">{{ row.status }}</span></td>
+          <td class="small">{{ row.updated_display }}</td>
+          <td>{{ row.age_hours }}</td>
+          <td>{% if row.workspace_url %}<a class="btn btn-sm btn-outline-dark" href="{{ row.workspace_url }}">Open</a>{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="11" class="text-center muted py-4">No pending results match these filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

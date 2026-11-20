@@ -7,7 +7,7 @@ from .access import (
 from .result_control import user_can_open_dispatch
 from portals.support import user_can_handle_support, user_can_manage_support_types
 from .organization import (
-    organization_legal_name, organization_short_name, organization_tagline,
+    idle_timeout_minutes, organization_legal_name, organization_short_name, organization_tagline,
 )
 
 
@@ -28,8 +28,24 @@ def workspace_access(request):
         nav = built
     can_dispatch = authenticated and user_can_open_dispatch(user)
     can_support = authenticated and user_can_handle_support(user)
-    if can_dispatch or can_support:
+    platform_admin = authenticated and is_platform_admin(user)
+    accountant = authenticated and is_accountant(user)
+    show_consumables = authenticated and (
+        'laboratory' in allowed or 'radiology' in allowed
+        or user.is_superuser or platform_admin
+        or user.groups.filter(name__in=('Centre Administrator', 'Lab Manager')).exists()
+    )
+    if can_dispatch or can_support or show_consumables:
         nav = list(nav)
+    if show_consumables:
+        nav.append(('inventory', 'Consumables', '/inventory/', 'bi-box-seam'))
+    show_pending = authenticated and (
+        user.is_superuser or platform_admin or accountant
+        or user.groups.filter(name__in=('Centre Administrator', 'Auditor')).exists()
+    )
+    if show_pending:
+        nav = list(nav)
+        nav.append(('pending', 'Pending results', '/reporting/pending/', 'bi-clipboard2-pulse'))
     if can_dispatch:
         nav.append(('dispatch', 'Result dispatch', '/results/dispatch/', 'bi-send'))
     if can_support:
@@ -43,8 +59,6 @@ def workspace_access(request):
         title = labels[0]
     else:
         title = 'Your workspaces'
-    platform_admin = authenticated and is_platform_admin(user)
-    accountant = authenticated and is_accountant(user)
     active_centre = None
     if authenticated:
         from .models import UserCentreAccess
@@ -79,4 +93,5 @@ def workspace_access(request):
         'org_short_name': short,
         'org_tagline': organization_tagline(),
         'client_business_name': legal,
+        'idle_timeout_minutes': idle_timeout_minutes() if authenticated else 0,
     }

@@ -62,9 +62,12 @@ def handle_radiology_post(request):
             return False, 'Select the radiologist who will report this study.'
         names = post.getlist('item_name')
         qtys = post.getlist('quantity')
+        skus = post.getlist('item_sku')
+        while len(skus) < len(names):
+            skus.append('')
         supplies = [
-            {'name': name, 'quantity': qty}
-            for name, qty in zip(names, qtys)
+            {'name': name, 'quantity': qty, 'sku': sku or None}
+            for name, qty, sku in zip(names, qtys, skus)
         ]
         return _finish(*call_action(RadiologyExamViewSet, 'end', user, post.get('exam'), {
             'acquisition_notes': post.get('acquisition_notes', ''),
@@ -78,6 +81,8 @@ def handle_radiology_post(request):
     if action == 'reconcile_pacs':
         return _finish(*call_action(RadiologyExamViewSet, 'reconcile_pacs', user, post.get('exam'), {}), 'PACS reconcile requested.')
     if action in ('draft', 'update_draft'):
+        from radiology.report_sections import apply_sections_to_report_payload, normalize_sections
+
         payload = {
             'indication': post.get('indication', ''),
             'findings': post.get('findings', ''),
@@ -87,6 +92,9 @@ def handle_radiology_post(request):
                 payload[name] = post.get(name, '')
         if post.get('template'):
             payload['template'] = post.get('template')
+        sections = normalize_sections(post.get('report_sections') or post.get('sections'))
+        if sections:
+            payload = apply_sections_to_report_payload(payload, sections)
         if action == 'update_draft':
             return _finish(
                 *call_update(RadiologyReportViewSet, user, post.get('report'), payload),
@@ -121,7 +129,8 @@ def build_radiology_context(request):
     from django.utils import timezone
     from radiology.desk import (
         SUPPLY_PRESETS, accept_window, exam_duration_label, exam_minutes, is_radiographer, is_reporting_radiologist,
-        performing_radiographer_id, radiographer_active_exam, release_expired_assignments, user_may_reassign,
+        performing_radiographer_id, radiographer_active_exam, radiology_consumables_for_centre,
+        release_expired_assignments, user_may_reassign,
     )
 
     user = request.user
@@ -326,6 +335,9 @@ def build_radiology_context(request):
         'scope': scope,
         'today_label': timezone.localtime().strftime('%A, %d %B %Y').upper(),
         'supply_presets': SUPPLY_PRESETS,
+        'consumables': radiology_consumables_for_centre(
+            selected.visit.centre if selected is not None else None
+        ),
         'accept_minutes': window.accept_minutes,
         'is_radiologist': radiologist,
         'is_radiographer': radiographer or (user.is_superuser and not radiologist),
@@ -333,6 +345,9 @@ def build_radiology_context(request):
         'active_exam': None if radiologist else radiographer_active_exam(user),
         'report_templates': _template_catalog(selected),
         'report_body': _report_body(selected),
+        'report_sections': _report_sections(selected),
+        'report_section_types': _report_section_types(),
+        'reporting_active': _reporting_active(selected, radiologist),
         'show_end_form': request.GET.get('end') == '1',
         'desk': 'report' if radiologist else 'acquire',
         'show_performance': can_access_platform_controls(user),
@@ -431,6 +446,34 @@ def _report_body(order):
         return order.exam.report.findings or ''
     except ObjectDoesNotExist:
         return ''
+
+
+def _report_section_types():
+    from radiology.report_sections import section_type_choices
+    return [{'key': key, 'label': label} for key, label in section_type_choices()]
+
+
+def _report_sections(order):
+    from radiology.report_sections import default_sections, sections_from_report
+    if order is None:
+        return default_sections()
+    try:
+        return sections_from_report(order.exam.report)
+    except ObjectDoesNotExist:
+        return default_sections(indication=getattr(order, 'clinical_history', '') or '')
+
+
+def _reporting_active(order, is_radiologist):
+    if not is_radiologist or order is None:
+        return False
+    exam = getattr(order, 'exam', None)
+    if exam is None or not exam.pacs_uploaded_at or not exam.accepted_at:
+        return False
+    try:
+        report = exam.report
+    except ObjectDoesNotExist:
+        return True
+    return report.status == 'DRAFT'
 
 
 # --- Personal / platform template screens ---------------------------------

@@ -20,8 +20,9 @@ from laboratory.models import Tariff
 from patients.channel_seed import ensure_centre_channels, ensure_default_client_types
 from patients.models import (
     BILLING_TYPE_CHOICES, CLIENT_CATEGORY_CHOICES, ClientType, CreditWalletLedger,
-    INVOICE_FREQUENCY_CHOICES, OrganisationClient, RegistrationChannel,
+    INVOICE_FREQUENCY_CHOICES, OrganisationClient, PatientTitle, RegistrationChannel,
 )
+from patients.titles import ensure_default_titles
 
 
 def _admin_only(request):
@@ -93,6 +94,58 @@ def client_types_page(request):
         return redirect('enterprise-client-types')
     return render(request, 'enterprise/client_types.html', {
         'types': ClientType.objects.order_by('sort_order', 'name'),
+    })
+
+
+@require_http_methods(['GET', 'POST'])
+def patient_titles_page(request):
+    """CRUD for patient honorific titles used on registration."""
+    _admin_only(request)
+    ensure_default_titles()
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        try:
+            if action == 'create':
+                code = _text(request.POST, 'code')
+                label = _text(request.POST, 'label') or code
+                if not code:
+                    raise ValidationError('Title code is required.')
+                if len(code) > 20:
+                    raise ValidationError('Title code must be 20 characters or fewer.')
+                row = PatientTitle(
+                    code=code,
+                    label=label[:40],
+                    sort_order=int(_text(request.POST, 'sort_order') or '0'),
+                    is_active=True,
+                    is_system=False,
+                )
+                row.full_clean()
+                row.save()
+                messages.success(request, f'Title “{row.label}” was created.')
+            elif action == 'update':
+                row = get_object_or_404(PatientTitle, pk=request.POST.get('title'))
+                if not row.is_system:
+                    row.code = _text(request.POST, 'code') or row.code
+                row.label = _text(request.POST, 'label') or row.label
+                row.sort_order = int(_text(request.POST, 'sort_order') or str(row.sort_order) or '0')
+                row.is_active = _checked(request.POST, 'is_active')
+                row.full_clean()
+                row.save()
+                messages.success(request, f'Title “{row.label}” was saved.')
+            elif action == 'delete':
+                row = get_object_or_404(PatientTitle, pk=request.POST.get('title'))
+                if row.is_system:
+                    raise ValidationError('System titles cannot be deleted. Deactivate them instead.')
+                label = row.label
+                row.delete()
+                messages.success(request, f'Title “{label}” was deleted.')
+            else:
+                messages.error(request, 'Choose a title action.')
+        except (ValidationError, IntegrityError, ValueError) as exc:
+            messages.error(request, str(exc))
+        return redirect('enterprise-patient-titles')
+    return render(request, 'enterprise/patient_titles.html', {
+        'titles': PatientTitle.objects.order_by('sort_order', 'label'),
     })
 
 

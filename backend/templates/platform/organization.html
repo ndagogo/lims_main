@@ -45,6 +45,11 @@
         Prefer also setting <code>ERROR_ALERT_EMAIL</code> (and SMTP) in Railway Variables so alerts still work if the database is down.
       </div>
     </div>
+    <div class="col-md-6">
+      <label class="form-label" for="idle-timeout">Inactivity logout (minutes)</label>
+      <input class="form-control" id="idle-timeout" type="number" name="idle_timeout_minutes" min="0" max="1440" value="{{ profile.idle_timeout_minutes|default:10 }}" required>
+      <div class="form-text">Staff are signed out after this many minutes without mouse, keyboard, or touch activity. Default is 10. Use 0 to disable.</div>
+    </div>
     <div class="col-12 d-flex gap-2">
       <button class="btn btn-primary" type="submit">Save business name</button>
       <a class="btn btn-outline-dark" href="{% url 'platform-hub' %}">Back</a>

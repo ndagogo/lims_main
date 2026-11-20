@@ -117,8 +117,16 @@ class RadiologyExam(TimeStampedModel):
 
 
 class ExamSupplyUse(TimeStampedModel):
-    """Consumables recorded when a radiographer ends an exam."""
+    """Consumables recorded when a radiographer ends an exam (linked to inventory when SKU known)."""
     exam = models.ForeignKey(RadiologyExam, on_delete=models.CASCADE, related_name='supplies')
+    sku = models.ForeignKey(
+        'inventory.ReagentSku', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='radiology_supply_uses',
+    )
+    stock_movement = models.ForeignKey(
+        'inventory.StockMovement', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='radiology_supply_uses',
+    )
     item_name = models.CharField(max_length=80)
     quantity = models.PositiveIntegerField()
 

@@ -166,7 +166,7 @@
             </td>
             <td>
               {% for document in visit.documents.all %}
-                <a href="{% url 'patient-document-download' document.pk %}">{{ document.get_document_type_display }}</a>{% if not forloop.last %}, {% endif %}
+                <a href="{% url 'patient-document-download' document.pk %}?inline=1" target="_blank" rel="noopener">View {{ document.get_document_type_display }}</a>{% if not forloop.last %}, {% endif %}
               {% empty %}None{% endfor %}
             </td>
             <td class="text-nowrap">

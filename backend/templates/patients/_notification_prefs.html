@@ -1,17 +1,28 @@
 <div class="col-12">
   <label class="form-label">How should we notify this patient?</label>
-  <div class="border rounded p-3 bg-light">
-    <div class="form-check">
-      <input class="form-check-input" type="checkbox" name="notify_sms" value="1" id="{{ prefix|default:'new' }}-notify-sms" {% if patient.notify_sms or not patient %}checked{% endif %}>
-      <label class="form-check-label" for="{{ prefix|default:'new' }}-notify-sms">SMS</label>
-    </div>
-    <div class="form-check">
-      <input class="form-check-input" type="checkbox" name="notify_email" value="1" id="{{ prefix|default:'new' }}-notify-email" {% if patient.notify_email %}checked{% endif %}>
-      <label class="form-check-label" for="{{ prefix|default:'new' }}-notify-email">Email</label>
-    </div>
-    <div class="form-check">
-      <input class="form-check-input" type="checkbox" name="notify_whatsapp" value="1" id="{{ prefix|default:'new' }}-notify-whatsapp" {% if patient.notify_whatsapp %}checked{% endif %}>
-      <label class="form-check-label" for="{{ prefix|default:'new' }}-notify-whatsapp">WhatsApp</label>
+  <div class="notify-prefs">
+    <div class="notify-prefs-row" role="group" aria-label="Notification channels">
+      <label class="notify-chip" for="{{ prefix|default:'new' }}-notify-sms">
+        <input class="notify-chip-input" type="checkbox" name="notify_sms" value="1" id="{{ prefix|default:'new' }}-notify-sms" {% if patient.notify_sms or not patient %}checked{% endif %}>
+        <span class="notify-chip-face">
+          <i class="bi bi-phone" aria-hidden="true"></i>
+          <span>SMS</span>
+        </span>
+      </label>
+      <label class="notify-chip" for="{{ prefix|default:'new' }}-notify-email">
+        <input class="notify-chip-input" type="checkbox" name="notify_email" value="1" id="{{ prefix|default:'new' }}-notify-email" {% if patient.notify_email %}checked{% endif %}>
+        <span class="notify-chip-face">
+          <i class="bi bi-envelope" aria-hidden="true"></i>
+          <span>Email</span>
+        </span>
+      </label>
+      <label class="notify-chip" for="{{ prefix|default:'new' }}-notify-whatsapp">
+        <input class="notify-chip-input" type="checkbox" name="notify_whatsapp" value="1" id="{{ prefix|default:'new' }}-notify-whatsapp" {% if patient.notify_whatsapp %}checked{% endif %}>
+        <span class="notify-chip-face">
+          <i class="bi bi-whatsapp" aria-hidden="true"></i>
+          <span>WhatsApp</span>
+        </span>
+      </label>
     </div>
     <div class="form-text mt-2 mb-0">
       Used for registration confirmation, result-ready alerts, and similar updates.
@@ -19,3 +30,52 @@
     </div>
   </div>
 </div>
+<style>
+  .notify-prefs {
+    border: 1px solid var(--line, #e7e2d9);
+    border-radius: 14px;
+    background: #fbfaf7;
+    padding: .85rem 1rem;
+  }
+  .notify-prefs-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .65rem;
+  }
+  .notify-chip { margin: 0; cursor: pointer; }
+  .notify-chip-input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .notify-chip-face {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    min-width: 7.5rem;
+    justify-content: center;
+    padding: .55rem .9rem;
+    border-radius: 999px;
+    border: 1px solid #ddd6cb;
+    background: #fff;
+    color: #44403c;
+    font-weight: 600;
+    font-size: .92rem;
+    transition: border-color .15s ease, background .15s ease, color .15s ease, box-shadow .15s ease;
+  }
+  .notify-chip-face i { font-size: 1rem; color: #78716c; }
+  .notify-chip-input:checked + .notify-chip-face {
+    border-color: #1f6b4a;
+    background: #e7f0ea;
+    color: #1f6b4a;
+    box-shadow: inset 0 0 0 1px rgba(31, 107, 74, .25);
+  }
+  .notify-chip-input:checked + .notify-chip-face i { color: #1f6b4a; }
+  .notify-chip-input:focus-visible + .notify-chip-face {
+    outline: 2px solid #1f6b4a;
+    outline-offset: 2px;
+  }
+  @media (max-width: 575.98px) {
+    .notify-chip-face { min-width: calc(33.333% - .45rem); flex: 1 1 auto; }
+  }
+</style>

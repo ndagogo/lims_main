@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Patient titles | {{ org_short_name }}{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="muted small"><a class="text-decoration-none muted" href="{% url 'catalog-hub' %}">Catalog</a> · PATIENT TITLES</div>
+  <h1 class="h3 mb-1">Patient titles</h1>
+  <p class="muted mb-0">Honorifics shown on registration (Mr, Mrs, Chief, Alhaji, and country-specific titles). Active titles appear in the Title dropdown.</p>
+</div>
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card p-4">
+      <table class="table align-middle">
+        <thead><tr><th>Code</th><th>Label</th><th>Order</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {% for row in titles %}
+          <tr>
+            <td class="fw-semibold">{{ row.code }}{% if row.is_system %} <span class="badge badge-soft">System</span>{% endif %}</td>
+            <td>{{ row.label }}</td>
+            <td>{{ row.sort_order }}</td>
+            <td>{% if row.is_active %}<span class="badge badge-soft">Active</span>{% else %}<span class="badge badge-danger-soft">Inactive</span>{% endif %}</td>
+            <td class="text-end">
+              <form method="post" class="row g-1 justify-content-end align-items-center">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="update">
+                <input type="hidden" name="title" value="{{ row.pk }}">
+                {% if not row.is_system %}<div class="col-auto"><input class="form-control form-control-sm" name="code" value="{{ row.code }}" maxlength="20" aria-label="Code"></div>{% endif %}
+                <div class="col-auto"><input class="form-control form-control-sm" name="label" value="{{ row.label }}" maxlength="40" aria-label="Label"></div>
+                <div class="col-auto"><input class="form-control form-control-sm" style="width:4.5rem" name="sort_order" value="{{ row.sort_order }}" aria-label="Sort order"></div>
+                <div class="col-auto form-check mt-1"><input class="form-check-input" type="checkbox" name="is_active" {% if row.is_active %}checked{% endif %} id="title-active-{{ row.pk }}"><label class="form-check-label small" for="title-active-{{ row.pk }}">Active</label></div>
+                <div class="col-auto"><button class="btn btn-sm btn-outline-dark" type="submit">Save</button></div>
+              </form>
+              {% if not row.is_system %}
+              <form method="post" class="mt-1" onsubmit="return confirm('Delete title {{ row.label }}?');">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="title" value="{{ row.pk }}">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="text-center muted py-4">No titles yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card p-4">
+      <h2 class="h5">Add title</h2>
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create">
+        <div class="col-md-5"><label class="form-label">Code</label><input class="form-control" name="code" required maxlength="20" placeholder="Engr"></div>
+        <div class="col-md-7"><label class="form-label">Label</label><input class="form-control" name="label" maxlength="40" placeholder="Engr"></div>
+        <div class="col-md-4"><label class="form-label">Sort order</label><input class="form-control" name="sort_order" value="20" type="number" min="0"></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Create title</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

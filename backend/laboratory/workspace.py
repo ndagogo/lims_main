@@ -497,11 +497,18 @@ def _phlebotomists(centre, user):
 
 
 def _identity(visit, referring_name, invoice_model):
+    from django.urls import reverse
+
     patient = visit.patient
     invoice = invoice_model.objects.filter(visit=visit).exclude(status='CANCELLED').order_by('created_at').first()
     referring = referring_name(visit) or (visit.client_name or '').strip()
     sex = patient.get_sex_display() if patient.sex else ''
     age = _age_text(patient)
+    request_form = (
+        visit.documents.filter(document_type__in=('REGISTRATION', 'REFERRAL'))
+        .order_by('-created_at')
+        .first()
+    )
     return {
         'visit': visit,
         'patient': patient,
@@ -512,6 +519,14 @@ def _identity(visit, referring_name, invoice_model):
         'channel': visit.get_referral_source_display(),
         'bill_date': invoice.created_at if invoice else visit.created_at,
         'centre': visit.centre,
+        'request_form': request_form,
+        'request_form_url': (
+            f"{reverse('patient-document-download', args=[request_form.pk])}?inline=1"
+            if request_form else ''
+        ),
+        'request_form_label': (
+            request_form.get_document_type_display() if request_form else ''
+        ),
     }
 
 

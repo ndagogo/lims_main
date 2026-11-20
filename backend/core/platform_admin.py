@@ -22,7 +22,7 @@ from core.organization import (
 from core.paging import PAGE_SIZES, paginate
 from core.platform_controls import platform_control_sections
 from integrations.models import Analyzer, AnalyzerMessage, AnalyzerTestMapping, GatewayRegistration
-from inventory.models import ReagentSku
+from inventory.models import ConsumableDepartment, ReagentSku
 from django.contrib.auth.models import Group
 
 from laboratory.models import (
@@ -1362,12 +1362,22 @@ def handle_physician_invites_post(request):
 
 def build_inventory_skus_context(request):
     query = _text(request.GET, 'q')
-    rows = ReagentSku.objects.select_related('centre').order_by('centre__code', 'sku_code')
+    department = (_text(request.GET, 'department') or '').upper()
+    rows = ReagentSku.objects.select_related('centre').order_by('centre__code', 'department', 'sku_code')
+    if department and department in dict(ConsumableDepartment.CHOICES):
+        rows = rows.filter(department=department)
+    else:
+        department = ''
     if query:
-        rows = rows.filter(Q(sku_code__icontains=query) | Q(name__icontains=query))
+        rows = rows.filter(
+            Q(sku_code__icontains=query) | Q(name__icontains=query)
+            | Q(category__icontains=query) | Q(description__icontains=query)
+        )
     return {
         'directory': paginate(request, rows, 'page'),
         'query': query,
+        'department': department,
+        'department_choices': ConsumableDepartment.CHOICES,
         'centres': Centre.objects.filter(is_active=True).order_by('code'),
         'page_sizes': PAGE_SIZES,
     }
@@ -1379,25 +1389,47 @@ def handle_inventory_skus_post(request):
         centre = get_object_or_404(Centre, pk=request.POST.get('centre'))
         code = _text(request.POST, 'sku_code')
         name = _text(request.POST, 'name')
+        department = (_text(request.POST, 'department') or '').upper()
+        if department not in dict(ConsumableDepartment.CHOICES):
+            department = ConsumableDepartment.LABORATORY
         if not code or not name:
             messages.error(request, 'SKU code and name are required.')
             return redirect('platform-inventory-skus')
         try:
             reorder = Decimal(_text(request.POST, 'reorder_level') or '0')
+            initial_qty = Decimal(_text(request.POST, 'initial_quantity') or '0')
         except InvalidOperation:
-            messages.error(request, 'Reorder level must be a number.')
+            messages.error(request, 'Reorder level and initial quantity must be numbers.')
+            return redirect('platform-inventory-skus')
+        if initial_qty < 0:
+            messages.error(request, 'Initial quantity cannot be negative.')
             return redirect('platform-inventory-skus')
         try:
             row = ReagentSku.objects.create(
                 centre=centre, sku_code=code, name=name,
-                unit=_text(request.POST, 'unit') or 'unit',
+                department=department,
+                description=_text(request.POST, 'description'),
+                category=_text(request.POST, 'category')[:80],
+                unit=_text(request.POST, 'unit') or 'each',
                 reorder_level=reorder, is_active=True,
             )
         except IntegrityError:
             messages.error(request, 'That SKU already exists at this centre.')
             return redirect('platform-inventory-skus')
-        _audit(request, 'REAGENT_SKU_CREATED', row, {'sku': code}, centre=centre)
-        messages.success(request, f'SKU {code} created.')
+        if initial_qty > 0:
+            from inventory.services import receive_stock
+            receive_stock(
+                sku=row, quantity=initial_qty, user=request.user,
+                note=f'Opening stock for {row.sku_code}',
+            )
+        _audit(request, 'CONSUMABLE_SKU_CREATED', row, {
+            'sku': code, 'department': department, 'initial_quantity': str(initial_qty),
+        }, centre=centre)
+        messages.success(
+            request,
+            f'Consumable {code} created for {row.get_department_display()}'
+            + (f' with opening stock {initial_qty}.' if initial_qty else '.'),
+        )
         return redirect('platform-inventory-skus')
     if action == 'toggle':
         row = get_object_or_404(ReagentSku, pk=request.POST.get('sku'))
@@ -1507,12 +1539,19 @@ def build_organization_context(request):
 
 
 def handle_organization_post(request):
+    raw_idle = (request.POST.get('idle_timeout_minutes') or '10').strip()
+    try:
+        idle_minutes = int(raw_idle)
+    except (TypeError, ValueError):
+        messages.error(request, 'Inactivity logout must be a whole number of minutes (0 disables).')
+        return redirect('platform-organization')
     fields = {
         'legal_name': (request.POST.get('legal_name') or '').strip(),
         'short_name': (request.POST.get('short_name') or '').strip(),
         'document_prefix': (request.POST.get('document_prefix') or '').strip(),
         'tagline': (request.POST.get('tagline') or '').strip(),
         'ops_alert_email': (request.POST.get('ops_alert_email') or '').strip(),
+        'idle_timeout_minutes': idle_minutes,
     }
     try:
         profile = save_organization_profile(**fields)
@@ -1541,6 +1580,7 @@ def handle_organization_post(request):
             'legal_name': profile.legal_name,
             'short_name': profile.short_name,
             'document_prefix': profile.document_prefix,
+            'idle_timeout_minutes': profile.idle_timeout_minutes,
         },
     )
     messages.success(

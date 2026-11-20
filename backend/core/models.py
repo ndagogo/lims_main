@@ -377,6 +377,10 @@ class OrganizationProfile(TimeStampedModel):
         default='',
         help_text='Optional vendor email for critical server errors. Railway ERROR_ALERT_EMAIL is preferred and always included when set.',
     )
+    idle_timeout_minutes = models.PositiveIntegerField(
+        default=10,
+        help_text='Minutes of staff inactivity before automatic sign-out. Set 0 to disable.',
+    )
 
     class Meta:
         verbose_name = 'Organization profile'
@@ -399,6 +403,16 @@ class OrganizationProfile(TimeStampedModel):
         if not prefix:
             raise ValidationError({'document_prefix': 'Enter a document prefix (letters or numbers).'})
         self.document_prefix = prefix
+        minutes = self.idle_timeout_minutes
+        if minutes is None:
+            minutes = 10
+        try:
+            minutes = int(minutes)
+        except (TypeError, ValueError):
+            raise ValidationError({'idle_timeout_minutes': 'Enter a whole number of minutes.'})
+        if minutes < 0 or minutes > 24 * 60:
+            raise ValidationError({'idle_timeout_minutes': 'Use 0 to disable, or 1–1440 minutes.'})
+        self.idle_timeout_minutes = minutes
 
     def save(self, *args, **kwargs):
         self.pk = 1

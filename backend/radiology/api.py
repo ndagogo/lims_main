@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.http import HttpResponse
 from django.utils import timezone
@@ -376,17 +377,25 @@ class RadiologyExamViewSet(viewsets.ReadOnlyModelViewSet):
         self._require_radiographer(request, exam)
         if exam.status != 'IN_PROGRESS':
             raise ValidationError('Only an in-progress exam can be ended.')
-        from radiology.desk import parse_supplies
+        from inventory.models import ConsumableDepartment
+        from inventory.usage import apply_supply_deductions
+        from radiology.desk import assert_supplies_recorded, parse_supplies
         from radiology.models import ExamSupplyUse
         supplies = parse_supplies(request.data)
+        centre = exam.order.visit.centre
+        try:
+            assert_supplies_recorded(supplies, centre=centre)
+        except DjangoValidationError as exc:
+            detail = '; '.join(getattr(exc, 'messages', None) or [str(exc)])
+            raise ValidationError({'supplies': detail}) from exc
         radiologist_id = request.data.get('radiologist')
-        staff = None
-        if radiologist_id:
-            staff = _active_staff(radiologist_id, exam.order.visit.centre, capability='can_approve')
-            if not staff:
-                staff = _active_staff(radiologist_id, exam.order.visit.centre, capability='can_edit')
-            if not staff or not staff.groups.filter(name='Radiologist').exists():
-                raise ValidationError({'radiologist': 'Select a radiologist.'})
+        if not radiologist_id:
+            raise ValidationError({'radiologist': 'Select a radiologist.'})
+        staff = _active_staff(radiologist_id, centre, capability='can_approve')
+        if not staff:
+            staff = _active_staff(radiologist_id, centre, capability='can_edit')
+        if not staff or not staff.groups.filter(name='Radiologist').exists():
+            raise ValidationError({'radiologist': 'Select a radiologist.'})
         from_status = exam.status
         now = timezone.now()
         with transaction.atomic():
@@ -397,8 +406,32 @@ class RadiologyExamViewSet(viewsets.ReadOnlyModelViewSet):
             exam.mwl_status = 'COMPLETED'
             exam.save(update_fields=['status', 'ended_at', 'ended_by', 'acquisition_notes', 'mwl_status', 'updated_at'])
             exam.supplies.all().delete()
+            try:
+                deducted = apply_supply_deductions(
+                    centre=centre,
+                    department=ConsumableDepartment.RADIOLOGY,
+                    supplies=supplies,
+                    user=request.user,
+                    reference_type='radiology.ExamSupplyUse',
+                    reference_id=exam.pk,
+                    require_sku=True,
+                )
+            except DjangoValidationError as exc:
+                detail = '; '.join(getattr(exc, 'messages', None) or [str(exc)])
+                raise ValidationError({'supplies': detail}) from exc
+            if not deducted:
+                raise ValidationError({'supplies': (
+                    'Record the quantity of items used before ending the exam and assigning a radiologist.'
+                )})
             ExamSupplyUse.objects.bulk_create([
-                ExamSupplyUse(exam=exam, item_name=name, quantity=qty) for name, qty in supplies
+                ExamSupplyUse(
+                    exam=exam,
+                    item_name=name,
+                    quantity=qty,
+                    sku=sku,
+                    stock_movement=movement,
+                )
+                for sku, name, qty, movement in deducted
             ])
             if staff is not None:
                 from radiology.desk import can_reassign_radiologist
@@ -419,7 +452,11 @@ class RadiologyExamViewSet(viewsets.ReadOnlyModelViewSet):
                 if staff.pk != request.user.pk:
                     from communications.inbox import announce, record_study_assigned
                     announce(lambda: record_study_assigned(exam, staff))
-        used = ', '.join(f'{name} x{qty}' for name, qty in supplies)
+        used = ', '.join(
+            f"{row.get('name')} x{row.get('quantity')}"
+            for row in supplies
+            if isinstance(row, dict) and row.get('name') and row.get('quantity')
+        )
         record_exam_activity(
             exam, action='END_EXAM', user=request.user,
             from_status=from_status, to_status='ACQUIRED',

@@ -16,7 +16,7 @@ from laboratory.models import (
     Tariff, Test, TestParameter, TestPrice,
 )
 from laboratory.stat_catalog import clean_stat_color
-from patients.models import OrganisationClient
+from patients.models import ClientType, OrganisationClient, PatientTitle, RegistrationChannel
 from radiology.models import ImagingModality, ImagingPrice, ImagingProcedure
 from referrals.models import ReferralDoctor, ReferralInstitution
 
@@ -107,7 +107,6 @@ def _try_delete(request, obj, redirect_name, label):
 # --- Hub -----------------------------------------------------------------
 
 def build_hub_context(request):
-    from patients.models import ClientType, RegistrationChannel
     counts = {
         'tariffs': Tariff.objects.count(),
         'tests': Test.objects.count(),
@@ -119,6 +118,7 @@ def build_hub_context(request):
         'clients': OrganisationClient.objects.count(),
         'channels': RegistrationChannel.objects.count(),
         'client_types': ClientType.objects.count(),
+        'patient_titles': PatientTitle.objects.count(),
     }
     entities = (
         ('Bulk upload', 'enterprise-bulk-upload', 'tests', 'bi-cloud-upload', 'CSV/Excel templates for tests, doctors, clients, tariffs'),
@@ -126,6 +126,7 @@ def build_hub_context(request):
         ('Clients master', 'enterprise-clients', 'clients', 'bi-briefcase', 'Credit / on-payment clients, wallets, receipts'),
         ('Channels', 'enterprise-channels', 'channels', 'bi-signpost-2', 'Self, doctors, credit & on-payment channel tariffs'),
         ('Client types', 'enterprise-client-types', 'client_types', 'bi-diagram-2', 'Credit, On Payment, Default, and custom types'),
+        ('Patient titles', 'enterprise-patient-titles', 'patient_titles', 'bi-person-vcard', 'Mr, Mrs, Chief, Alhaji, and country-specific honorifics'),
         ('Laboratory tests', 'catalog-tests', 'tests', 'bi-droplet', 'Auto codes, departments, and parameters'),
         ('Service groups', 'catalog-service-groups', 'service_groups', 'bi-diagram-3', 'Sample ID group digits'),
         ('Referral business', 'enterprise-referrals', 'doctors', 'bi-people', 'Commission due, visits, payouts, and exports'),
