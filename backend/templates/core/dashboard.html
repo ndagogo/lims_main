@@ -193,12 +193,12 @@
           <a class="open-link" href="{% url 'catalog-hub' %}">Open catalog</a>
         </div>
         <div class="catalog-grid">
-          <a class="catalog-tile text-decoration-none d-block" href="{% url 'catalog-tariffs' %}"><div class="kpi-label">Tariffs</div><div class="kpi-value text-body">{{ catalog_counts.tariffs }}</div></a>
+          <a class="catalog-tile text-decoration-none d-block" href="{% url 'enterprise-tariffs' %}"><div class="kpi-label">Tariffs</div><div class="kpi-value text-body">{{ catalog_counts.tariffs }}</div></a>
           <a class="catalog-tile text-decoration-none d-block" href="{% url 'catalog-tests' %}"><div class="kpi-label">Tests</div><div class="kpi-value text-body">{{ catalog_counts.tests }}</div></a>
           <a class="catalog-tile text-decoration-none d-block" href="{% url 'catalog-service-groups' %}"><div class="kpi-label">Service groups</div><div class="kpi-value text-body">{{ catalog_counts.service_groups }}</div></a>
           <a class="catalog-tile text-decoration-none d-block" href="{% url 'catalog-doctors' %}"><div class="kpi-label">Doctors</div><div class="kpi-value text-body">{{ catalog_counts.doctors }}</div></a>
           <a class="catalog-tile text-decoration-none d-block" href="{% url 'catalog-imaging' %}"><div class="kpi-label">Procedures</div><div class="kpi-value text-body">{{ catalog_counts.procedures }}</div></a>
-          <a class="catalog-tile text-decoration-none d-block" href="{% url 'catalog-clients' %}"><div class="kpi-label">Clients</div><div class="kpi-value text-body">{{ catalog_counts.clients }}</div></a>
+          <a class="catalog-tile text-decoration-none d-block" href="{% url 'enterprise-clients' %}"><div class="kpi-label">Clients</div><div class="kpi-value text-body">{{ catalog_counts.clients }}</div></a>
         </div>
       </section>
       {% endif %}

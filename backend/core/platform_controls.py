@@ -11,7 +11,7 @@ def platform_control_sections():
                 ('Catalog & pricing', '/catalog/', 'bi-journal-bookmark', 'Tariffs, tests, service groups, imaging, centres, clients'),
                 ('Centres & result formatting', '/catalog/centres/', 'bi-building', 'Sites, logos, sample digits, lab/radiology print layout'),
                 ('Referral doctors', '/catalog/doctors/', 'bi-person-badge', 'Doctors, institutions, commission setup'),
-                ('Organisation clients', '/catalog/clients/', 'bi-briefcase', 'HMO and corporate accounts'),
+                ('Organisation clients', '/enterprise/clients/', 'bi-briefcase', 'HMO and corporate accounts'),
             ],
         },
         {

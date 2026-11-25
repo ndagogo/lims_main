@@ -13,11 +13,11 @@ from core.paging import PAGE_SIZES, paginate
 from laboratory.collection_catalog import refresh_tests_for_container, refresh_tests_for_specimen, sync_test_collection_labels
 from laboratory.models import (
     ContainerType, ReferenceRange, ResultTemplate, SampleCodeConfig, ServiceGroup, SpecimenType, StatType,
-    Tariff, Test, TestParameter, TestPrice,
+    Tariff, Test, TestParameter,
 )
 from laboratory.stat_catalog import clean_stat_color
 from patients.models import ClientType, OrganisationClient, PatientTitle, RegistrationChannel
-from radiology.models import ImagingModality, ImagingPrice, ImagingProcedure
+from radiology.models import ImagingModality, ImagingProcedure
 from referrals.models import ReferralDoctor, ReferralInstitution
 
 
@@ -137,8 +137,6 @@ def build_hub_context(request):
         ('Referral doctors', 'catalog-doctors', 'doctors', 'bi-person-badge', 'Doctor master data and institutions'),
         ('Imaging', 'catalog-imaging', 'procedures', 'bi-radioactive', 'Procedures and centre modalities'),
         ('Centres', 'catalog-centres', 'centres', 'bi-building', 'Sites and sample digits'),
-        ('Legacy tariff list', 'catalog-tariffs', 'tariffs', 'bi-list-ul', 'Simple tariff list (legacy)'),
-        ('Legacy clients', 'catalog-clients', 'clients', 'bi-folder', 'Simple organisation client list (legacy)'),
     )
     return {
         'counts': counts,
@@ -147,177 +145,6 @@ def build_hub_context(request):
             for label, url_name, count_key, icon, blurb in entities
         ],
     }
-
-
-# --- Tariffs -------------------------------------------------------------
-
-def build_tariffs_context(request):
-    query = _text(request.GET, 'q')
-    status = request.GET.get('status') or 'all'
-    rows = Tariff.objects.annotate(
-        lab_price_count=Count('testprice', distinct=True),
-        imaging_price_count=Count('imagingprice', distinct=True),
-    ).order_by('name')
-    if query:
-        rows = rows.filter(name__icontains=query)
-    rows = _active_filter(rows, status)
-    return {
-        'directory': paginate(request, rows, 'page'),
-        'page_sizes': PAGE_SIZES,
-        'query': query,
-        'status': status,
-    }
-
-
-def handle_tariffs_post(request):
-    action = request.POST.get('action')
-    if action == 'create':
-        name = _text(request.POST, 'name')
-        if not name:
-            messages.error(request, 'Tariff name is required.')
-            return redirect('catalog-tariffs')
-        is_active = _checked(request.POST, 'is_active') if request.POST.get('is_active_submitted') else True
-        try:
-            tariff = Tariff.objects.create(name=name, is_active=is_active)
-        except IntegrityError:
-            messages.error(request, 'A tariff with that name already exists.')
-            return redirect('catalog-tariffs')
-        _audit(request, 'TARIFF_CREATED', tariff, {'name': tariff.name})
-        messages.success(request, f'Tariff {tariff.name} was created.')
-        return redirect('catalog-tariff-detail', pk=tariff.pk)
-    tariff = get_object_or_404(Tariff, pk=request.POST.get('tariff'))
-    if action == 'update':
-        name = _text(request.POST, 'name')
-        if not name:
-            messages.error(request, 'Tariff name is required.')
-            return redirect('catalog-tariff-detail', pk=tariff.pk)
-        tariff.name = name
-        tariff.is_active = _checked(request.POST, 'is_active')
-        try:
-            tariff.save()
-        except IntegrityError:
-            messages.error(request, 'A tariff with that name already exists.')
-            return redirect('catalog-tariff-detail', pk=tariff.pk)
-        _audit(request, 'TARIFF_UPDATED', tariff, {'name': tariff.name, 'is_active': tariff.is_active})
-        messages.success(request, f'Tariff {tariff.name} was saved.')
-        return redirect('catalog-tariff-detail', pk=tariff.pk)
-    if action == 'deactivate':
-        tariff.is_active = False
-        tariff.save(update_fields=['is_active'])
-        _audit(request, 'TARIFF_DEACTIVATED', tariff, {'name': tariff.name})
-        messages.success(request, f'Tariff {tariff.name} is inactive.')
-        return redirect('catalog-tariffs')
-    if action == 'activate':
-        tariff.is_active = True
-        tariff.save(update_fields=['is_active'])
-        _audit(request, 'TARIFF_ACTIVATED', tariff, {'name': tariff.name})
-        messages.success(request, f'Tariff {tariff.name} is active again.')
-        return redirect('catalog-tariffs')
-    if action == 'delete':
-        return _try_delete(request, tariff, 'catalog-tariffs', tariff.name)
-    messages.error(request, 'Choose a tariff action.')
-    return redirect('catalog-tariffs')
-
-
-def build_tariff_detail_context(request, pk):
-    tariff = get_object_or_404(Tariff, pk=pk)
-    lab_prices = TestPrice.objects.filter(tariff=tariff).select_related('test').order_by('test__name')
-    imaging_prices = ImagingPrice.objects.filter(tariff=tariff).select_related('procedure').order_by('procedure__name')
-    priced_tests = lab_prices.values_list('test_id', flat=True)
-    priced_procedures = imaging_prices.values_list('procedure_id', flat=True)
-    return {
-        'tariff': tariff,
-        'lab_prices': paginate(request, lab_prices, 'lpage'),
-        'imaging_prices': paginate(request, imaging_prices, 'ipage'),
-        'page_sizes': PAGE_SIZES,
-        'available_tests': Test.objects.filter(is_active=True).exclude(pk__in=priced_tests).order_by('name'),
-        'available_procedures': ImagingProcedure.objects.filter(is_active=True).exclude(pk__in=priced_procedures).order_by('name'),
-    }
-
-
-def handle_tariff_detail_post(request, pk):
-    tariff = get_object_or_404(Tariff, pk=pk)
-    action = request.POST.get('action')
-    try:
-        if action == 'update_tariff':
-            name = _text(request.POST, 'name')
-            if not name:
-                messages.error(request, 'Tariff name is required.')
-                return redirect('catalog-tariff-detail', pk=tariff.pk)
-            tariff.name = name
-            tariff.is_active = _checked(request.POST, 'is_active')
-            try:
-                tariff.save()
-            except IntegrityError:
-                messages.error(request, 'A tariff with that name already exists.')
-                return redirect('catalog-tariff-detail', pk=tariff.pk)
-            _audit(request, 'TARIFF_UPDATED', tariff, {'name': tariff.name, 'is_active': tariff.is_active})
-            messages.success(request, f'Tariff {tariff.name} was saved.')
-            return redirect('catalog-tariff-detail', pk=tariff.pk)
-        if action == 'save_lab_price':
-            return _save_lab_price(request, tariff)
-        if action == 'delete_lab_price':
-            price = get_object_or_404(TestPrice, pk=request.POST.get('price'), tariff=tariff)
-            label = f'{price.test.code} @ {tariff.name}'
-            price.delete()
-            _audit(request, 'TEST_PRICE_DELETED', tariff, {'test': label})
-            messages.success(request, f'Lab price for {label} was removed.')
-            return redirect('catalog-tariff-detail', pk=tariff.pk)
-        if action == 'save_imaging_price':
-            return _save_imaging_price(request, tariff)
-        if action == 'delete_imaging_price':
-            price = get_object_or_404(ImagingPrice, pk=request.POST.get('price'), tariff=tariff)
-            label = f'{price.procedure.code} @ {tariff.name}'
-            price.delete()
-            _audit(request, 'IMAGING_PRICE_DELETED', tariff, {'procedure': label})
-            messages.success(request, f'Imaging price for {label} was removed.')
-            return redirect('catalog-tariff-detail', pk=tariff.pk)
-    except ValidationError as exc:
-        messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
-        return redirect('catalog-tariff-detail', pk=tariff.pk)
-    messages.error(request, 'Choose a tariff price action.')
-    return redirect('catalog-tariff-detail', pk=tariff.pk)
-
-
-def _save_lab_price(request, tariff):
-    test = get_object_or_404(Test, pk=request.POST.get('test'))
-    price_value = _decimal(request.POST, 'price')
-    outsource = _decimal(request.POST, 'outsource_price', '0')
-    price_id = request.POST.get('price_id')
-    if price_id:
-        row = get_object_or_404(TestPrice, pk=price_id, tariff=tariff)
-        row.price = price_value
-        row.outsource_price = outsource
-        row.save()
-        action = 'TEST_PRICE_UPDATED'
-    else:
-        row, created = TestPrice.objects.update_or_create(
-            tariff=tariff, test=test,
-            defaults={'price': price_value, 'outsource_price': outsource},
-        )
-        action = 'TEST_PRICE_CREATED' if created else 'TEST_PRICE_UPDATED'
-    _audit(request, action, row, {'tariff': tariff.name, 'test': test.code, 'price': str(price_value)})
-    messages.success(request, f'Lab price for {test.code} was saved.')
-    return redirect('catalog-tariff-detail', pk=tariff.pk)
-
-
-def _save_imaging_price(request, tariff):
-    procedure = get_object_or_404(ImagingProcedure, pk=request.POST.get('procedure'))
-    price_value = _decimal(request.POST, 'price')
-    price_id = request.POST.get('price_id')
-    if price_id:
-        row = get_object_or_404(ImagingPrice, pk=price_id, tariff=tariff)
-        row.price = price_value
-        row.save()
-        action = 'IMAGING_PRICE_UPDATED'
-    else:
-        row, created = ImagingPrice.objects.update_or_create(
-            tariff=tariff, procedure=procedure, defaults={'price': price_value},
-        )
-        action = 'IMAGING_PRICE_CREATED' if created else 'IMAGING_PRICE_UPDATED'
-    _audit(request, action, row, {'tariff': tariff.name, 'procedure': procedure.code, 'price': str(price_value)})
-    messages.success(request, f'Imaging price for {procedure.code} was saved.')
-    return redirect('catalog-tariff-detail', pk=tariff.pk)
 
 
 # --- Laboratory tests ----------------------------------------------------
@@ -1559,95 +1386,3 @@ def _save_report_format(request, centre):
     messages.success(request, f'Result formatting for {centre.code} was saved.')
     return redirect(f'/catalog/centres/?centre={centre.pk}#report-format')
 
-
-# --- Organisation clients ------------------------------------------------
-
-def build_clients_context(request):
-    query = _text(request.GET, 'q')
-    status = request.GET.get('status') or 'all'
-    centre_id = request.GET.get('centre') or ''
-    kind = request.GET.get('kind') or ''
-    rows = OrganisationClient.objects.select_related('centre').order_by('name')
-    if query:
-        rows = rows.filter(Q(name__icontains=query) | Q(code__icontains=query))
-    if centre_id:
-        rows = rows.filter(centre_id=centre_id)
-    if kind:
-        rows = rows.filter(kind=kind)
-    rows = _active_filter(rows, status)
-    selected = None
-    selected_id = request.GET.get('client')
-    if selected_id:
-        selected = OrganisationClient.objects.select_related('centre').filter(pk=selected_id).first()
-    return {
-        'directory': paginate(request, rows, 'page'),
-        'page_sizes': PAGE_SIZES,
-        'query': query,
-        'status': status,
-        'centre_id': centre_id,
-        'kind': kind,
-        'selected': selected,
-        'centres': Centre.objects.filter(is_active=True).order_by('name'),
-        'kinds': OrganisationClient.KINDS,
-    }
-
-
-def handle_clients_post(request):
-    action = request.POST.get('action')
-    try:
-        if action == 'create':
-            return _save_client(request, None)
-        client = get_object_or_404(OrganisationClient, pk=request.POST.get('client'))
-        if action == 'update':
-            return _save_client(request, client)
-        if action == 'deactivate':
-            client.is_active = False
-            client.save(update_fields=['is_active'])
-            _audit(request, 'ORGANISATION_CLIENT_DEACTIVATED', client, {'name': client.name}, centre=client.centre)
-            messages.success(request, f'{client.name} is inactive.')
-            return redirect('catalog-clients')
-        if action == 'activate':
-            client.is_active = True
-            client.save(update_fields=['is_active'])
-            _audit(request, 'ORGANISATION_CLIENT_ACTIVATED', client, {'name': client.name}, centre=client.centre)
-            messages.success(request, f'{client.name} is active again.')
-            return redirect(f'/catalog/clients/?client={client.pk}')
-        if action == 'delete':
-            return _try_delete(request, client, 'catalog-clients', client.name)
-    except ValidationError as exc:
-        messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
-        target = request.POST.get('client')
-        return redirect(f'/catalog/clients/?client={target}' if target else 'catalog-clients')
-    messages.error(request, 'Choose an organisation client action.')
-    return redirect('catalog-clients')
-
-
-def _save_client(request, client):
-    centre = get_object_or_404(Centre, pk=request.POST.get('centre'))
-    kind = _text(request.POST, 'kind')
-    name = _text(request.POST, 'name')
-    if not kind or not name:
-        raise ValidationError('Client kind and name are required.')
-    if kind not in dict(OrganisationClient.KINDS):
-        raise ValidationError('Choose HMO or corporate.')
-    code = _text(request.POST, 'code')
-    is_active = _checked(request.POST, 'is_active') if client or request.POST.get('is_active_submitted') else True
-    if client is None:
-        if OrganisationClient.objects.filter(centre=centre, kind=kind, name__iexact=name).exists():
-            raise ValidationError('That client already exists at this centre.')
-        client = OrganisationClient(centre=centre, kind=kind, name=name, code=code, is_active=is_active)
-        client.save()
-        _audit(request, 'ORGANISATION_CLIENT_CREATED', client, {'name': client.name, 'kind': client.kind}, centre=centre)
-        messages.success(request, f'{client.name} was created.')
-    else:
-        if OrganisationClient.objects.filter(centre=centre, kind=kind, name__iexact=name).exclude(pk=client.pk).exists():
-            raise ValidationError('That client already exists at this centre.')
-        client.centre = centre
-        client.kind = kind
-        client.name = name
-        client.code = code
-        client.is_active = _checked(request.POST, 'is_active')
-        client.save()
-        _audit(request, 'ORGANISATION_CLIENT_UPDATED', client, {'name': client.name, 'kind': client.kind}, centre=client.centre)
-        messages.success(request, f'{client.name} was saved.')
-    return redirect(f'/catalog/clients/?client={client.pk}')

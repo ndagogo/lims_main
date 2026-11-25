@@ -568,7 +568,7 @@ class StaffWorkspaceTests(TestCase):
             return screen
         for role, username in (('Front Desk', 'desk.catalog'), ('Accounts', 'accounts.catalog')):
             screen = person(username, role)
-            for path in ('/catalog/', '/catalog/tariffs/', '/catalog/tests/', '/catalog/doctors/'):
+            for path in ('/catalog/', '/enterprise/tariffs/', '/enterprise/clients/', '/catalog/tests/', '/catalog/doctors/'):
                 self.assertEqual(screen.get(path).status_code, 403, msg=f'{role} should not open {path}')
             home = screen.get('/')
             self.assertNotContains(home, 'Catalog & pricing')
@@ -592,13 +592,12 @@ class StaffWorkspaceTests(TestCase):
         home = screen.get('/')
         self.assertContains(home, 'Open catalog')
         self.assertContains(home, 'Catalog setup')
-        created_tariff = screen.post('/catalog/tariffs/', {'action': 'create', 'name': 'Walk-in 2026', 'is_active': 'on', 'is_active_submitted': '1'})
+        created_tariff = screen.post('/enterprise/tariffs/', {'action': 'create', 'name': 'Walk-in 2026'})
         self.assertEqual(created_tariff.status_code, 302)
         tariff = Tariff.objects.get(name='Walk-in 2026')
-        self.assertTrue(tariff.is_active)
-        detail = screen.get(f'/catalog/tariffs/{tariff.pk}/')
+        detail = screen.get(f'/enterprise/tariffs/{tariff.pk}/')
         self.assertEqual(detail.status_code, 200)
-        self.assertContains(detail, 'Laboratory prices')
+        self.assertContains(detail, 'Laboratory')
         group = ServiceGroup.objects.create(name='Haematology', code='1', is_active=True)
         created_test = screen.post('/catalog/tests/', {
             'action': 'create', 'name': 'Full blood count', 'department': 'HAEMATOLOGY',

@@ -31,11 +31,11 @@ from core.access import (
 from core.administration import build_role_context, build_user_context, handle_role_post, handle_user_post, superuser_only
 from core.auth_services import attempt_login
 from core.catalog import (
-    build_centres_context, build_clients_context, build_doctors_context, build_hub_context,
-    build_imaging_context, build_service_groups_context, build_tariff_detail_context,
-    build_tariffs_context, build_tests_context, handle_centres_post, handle_clients_post,
+    build_centres_context, build_doctors_context, build_hub_context,
+    build_imaging_context, build_service_groups_context,
+    build_tests_context, handle_centres_post,
     handle_doctors_post, handle_imaging_post, handle_service_groups_post,
-    handle_tariff_detail_post, handle_tariffs_post, handle_tests_post, platform_admin_only,
+    handle_tests_post, platform_admin_only,
 )
 from core.lab_configuration import (
     build_formats_context, build_parameters_context, handle_formats_post, handle_parameters_post,
@@ -285,22 +285,6 @@ def catalog_hub(request):
 
 
 @login_required
-def catalog_tariffs(request):
-    platform_admin_only(request)
-    if request.method == 'POST':
-        return handle_tariffs_post(request)
-    return render(request, 'catalog/tariffs.html', build_tariffs_context(request))
-
-
-@login_required
-def catalog_tariff_detail(request, pk):
-    platform_admin_only(request)
-    if request.method == 'POST':
-        return handle_tariff_detail_post(request, pk)
-    return render(request, 'catalog/tariff_detail.html', build_tariff_detail_context(request, pk))
-
-
-@login_required
 def catalog_tests(request):
     platform_admin_only(request)
     if request.method == 'POST':
@@ -354,14 +338,6 @@ def catalog_centres(request):
     if request.method == 'POST':
         return handle_centres_post(request)
     return render(request, 'catalog/centres.html', build_centres_context(request))
-
-
-@login_required
-def catalog_clients(request):
-    platform_admin_only(request)
-    if request.method == 'POST':
-        return handle_clients_post(request)
-    return render(request, 'catalog/clients.html', build_clients_context(request))
 
 
 def _test_catalog():

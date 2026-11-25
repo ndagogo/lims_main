@@ -18,9 +18,8 @@ from core.views import (
     payment_receipt, invoice_reprint, laboratory_workspace, laboratory_tat, batch_report, sample_timeline,
     phlebotomy_workspace, radiology_workspace, radiology_performance, radiology_templates, radiology_template_builder, healthz,
     login_page, logout_page, password_change, account_profile, account_signature, download_patient_document, download_settlement_proof,
-    user_management, role_management, catalog_hub, catalog_tariffs, catalog_tariff_detail,
+    user_management, role_management, catalog_hub,
     catalog_tests, catalog_parameters, catalog_formats, catalog_service_groups, catalog_doctors, catalog_imaging, catalog_centres,
-    catalog_clients,
 )
 from core.enterprise_clients import (
     clients_master as enterprise_clients_master,
@@ -104,8 +103,6 @@ urlpatterns=[
     path('users/', user_management, name='user-management'),
     path('roles/', role_management, name='role-management'),
     path('catalog/', catalog_hub, name='catalog-hub'),
-    path('catalog/tariffs/', catalog_tariffs, name='catalog-tariffs'),
-    path('catalog/tariffs/<int:pk>/', catalog_tariff_detail, name='catalog-tariff-detail'),
     path('catalog/tests/', catalog_tests, name='catalog-tests'),
     path('catalog/parameters/', catalog_parameters, name='catalog-parameters'),
     path('catalog/formats/', catalog_formats, name='catalog-formats'),
@@ -113,7 +110,6 @@ urlpatterns=[
     path('catalog/doctors/', catalog_doctors, name='catalog-doctors'),
     path('catalog/imaging/', catalog_imaging, name='catalog-imaging'),
     path('catalog/centres/', catalog_centres, name='catalog-centres'),
-    path('catalog/clients/', catalog_clients, name='catalog-clients'),
     path('enterprise/clients/', enterprise_clients_master, name='enterprise-clients'),
     path('enterprise/client-types/', enterprise_client_types, name='enterprise-client-types'),
     path('enterprise/patient-titles/', enterprise_patient_titles, name='enterprise-patient-titles'),
