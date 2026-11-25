@@ -219,6 +219,11 @@ class BillAmendmentViewSet(viewsets.ModelViewSet):
         invoice = serializer.validated_data['invoice']
         if invoice.status == 'CANCELLED':
             raise ValidationError('Cannot amend a cancelled invoice.')
+        item = serializer.validated_data.get('invoice_item')
+        if item is not None:
+            from billing.adjustments import RESULTED_BILL_MESSAGE, item_is_resulted
+            if item_is_resulted(item):
+                raise ValidationError(RESULTED_BILL_MESSAGE)
         amendment = serializer.save(authorised_by=self.request.user)
         visit = invoice.visit
         record_audit(
@@ -261,6 +266,11 @@ class RefundViewSet(viewsets.ModelViewSet):
             raise ValidationError('A payment or invoice is required.')
         if payment is not None and payment.status != 'CONFIRMED':
             raise ValidationError('Only confirmed payments can be refunded.')
+        item = serializer.validated_data.get('invoice_item')
+        if item is not None:
+            from billing.adjustments import RESULTED_REFUND_MESSAGE, item_is_resulted
+            if item_is_resulted(item):
+                raise ValidationError(RESULTED_REFUND_MESSAGE)
         centre = (payment.invoice.visit.centre if payment else invoice.visit.centre)
         refund = serializer.save(authorised_by=self.request.user, status='COMPLETED', completed_at=timezone.now())
         from referrals.services import sync_commission

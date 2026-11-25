@@ -38,6 +38,42 @@ def invoice_balance(invoice):
     return _money(_money(invoice.total) - invoice_net_paid(invoice))
 
 
+RESULTED_BILL_MESSAGE = 'This bill cannot be edited. The bill has been resulted already.'
+RESULTED_REFUND_MESSAGE = 'This test cannot be cancelled or refunded. The bill has been resulted already.'
+
+_LAB_RESULTED_SAMPLE_STATUSES = ('RESULT_ENTERED', 'UNDER_REVIEW', 'AUTHENTICATED', 'RELEASED')
+_LAB_RESULTED_RESULT_STATUSES = ('SUBMITTED', 'REVIEWED', 'AUTHENTICATED', 'RELEASED', 'AMENDED')
+_RAD_RESULTED_REPORT_STATUSES = ('FINAL', 'APPROVED', 'RELEASED', 'AMENDED')
+
+
+def item_is_resulted(item):
+    """True once the test on this line has a result past draft (lab) or a signed report (radiology)."""
+    if item.lab_order_id:
+        order = item.lab_order
+        if order.status == 'COMPLETED':
+            return True
+        samples = order.samples.all()
+        if samples.filter(status__in=_LAB_RESULTED_SAMPLE_STATUSES).exists():
+            return True
+        if samples.filter(result__status__in=_LAB_RESULTED_RESULT_STATUSES).exists():
+            return True
+    if item.imaging_order_id:
+        order = item.imaging_order
+        if order.status == 'COMPLETED':
+            return True
+        from radiology.models import RadiologyReport
+        if RadiologyReport.objects.filter(
+            exam__order=order, status__in=_RAD_RESULTED_REPORT_STATUSES,
+        ).exists():
+            return True
+    return False
+
+
+def assert_item_not_resulted(item, message=RESULTED_BILL_MESSAGE):
+    if item_is_resulted(item):
+        raise ValidationError(message)
+
+
 def _cancel_linked_order(item):
     if item.lab_order_id:
         order = item.lab_order
@@ -81,6 +117,7 @@ def cancel_or_refund_item(*, user, invoice_item_id, mode, reason):
         invoice = Invoice.objects.select_for_update().get(pk=item.invoice_id)
         if invoice.status == 'CANCELLED':
             raise ValidationError('Cannot adjust a cancelled invoice.')
+        assert_item_not_resulted(item, RESULTED_REFUND_MESSAGE)
         if Refund.objects.filter(invoice_item=item, status='COMPLETED').exists():
             raise ValidationError('This test has already been refunded.')
 
@@ -193,6 +230,7 @@ def replace_invoice_item(*, user, invoice_item_id, replacement_kind, replacement
         invoice = Invoice.objects.select_for_update().get(pk=item.invoice_id)
         if invoice.status == 'CANCELLED':
             raise ValidationError('Cannot edit a cancelled invoice.')
+        assert_item_not_resulted(item)
         if Refund.objects.filter(invoice_item=item, status='COMPLETED').exists():
             raise ValidationError('A refunded line cannot be replaced.')
 

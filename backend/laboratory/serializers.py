@@ -50,6 +50,7 @@ class SampleActivitySerializer(serializers.ModelSerializer):
 class SampleBatchSerializer(serializers.ModelSerializer):
     sample_ids=serializers.ListField(child=serializers.CharField(max_length=8),write_only=True,required=False)
     samples=serializers.SerializerMethodField()
+    department=serializers.CharField(required=False,allow_blank=True,max_length=80)
     class Meta:
         model=SampleBatch
         fields=[

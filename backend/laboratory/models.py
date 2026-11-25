@@ -354,7 +354,10 @@ class SampleBatch(TimeStampedModel):
     id=models.UUIDField(primary_key=True,default=uuid.uuid4,editable=False)
     batch_code=models.CharField(max_length=32,unique=True,editable=False)
     centre=models.ForeignKey(Centre,on_delete=models.PROTECT,related_name='sample_batches')
-    department=models.CharField(max_length=80)
+    department=models.CharField(
+        max_length=80, blank=True, default='',
+        help_text='Derived label (single department or MIXED). Batches are scoped by centre, not department.',
+    )
     status=models.CharField(max_length=12,choices=STATUS_CHOICES,default='OPEN')
     created_by=models.ForeignKey(settings.AUTH_USER_MODEL,null=True,on_delete=models.SET_NULL,related_name='batches_created')
     dispatched_at=models.DateTimeField(null=True,blank=True)

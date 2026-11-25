@@ -31,7 +31,10 @@
         {% for visit in matches %}
           <tr>
             <td class="fw-semibold">{{ visit.visit_id }}</td>
-            <td>{{ visit.patient.uhid }} · {{ visit.patient.first_name }} {{ visit.patient.last_name }}</td>
+            <td>
+              <div class="fw-semibold">{{ visit.patient.first_name }} {{ visit.patient.last_name }}</div>
+              <div class="small muted">{{ visit.patient.uhid }}</div>
+            </td>
             <td>{{ visit.patient.phone_number }}</td>
             <td>{{ visit.centre.code }}</td>
             <td><a class="btn btn-sm btn-primary" href="?q={{ query|urlencode }}&visit={{ visit.pk }}">Open</a></td>
@@ -58,7 +61,20 @@
     <div class="border rounded p-3 mb-3">
       <div class="fw-semibold mb-1">{{ invoice.invoice_number }} · {{ invoice.get_status_display }}</div>
       <div class="small muted mb-2">Total ₦{{ invoice.total|floatformat:2 }} · Net paid ₦{{ invoice.amount_paid|floatformat:2 }} · Balance ₦{{ invoice.balance|floatformat:2 }}</div>
-      {% for item in invoice.items.all %}
+      {% for item in invoice.active_items %}
+        {% if item.is_resulted %}
+        <div class="row g-2 align-items-center border-top pt-2 mt-2">
+          <div class="col-md-4">
+            <div class="fw-semibold">{{ item.description }}</div>
+            <div class="small muted">₦{{ item.line_total|floatformat:2 }}</div>
+          </div>
+          <div class="col-md-8">
+            <div class="alert alert-danger py-2 small mb-0" role="alert">
+              <i class="bi bi-lock-fill me-1"></i>This test cannot be cancelled or refunded. The bill has been resulted already.
+            </div>
+          </div>
+        </div>
+        {% else %}
         <form method="post" class="row g-2 align-items-end border-top pt-2 mt-2">
           {% csrf_token %}
           <input type="hidden" name="action" value="cancel_refund_item">
@@ -82,6 +98,7 @@
           </div>
           <div class="col-md-2"><button class="btn btn-sm btn-outline-danger w-100" type="submit">Apply</button></div>
         </form>
+        {% endif %}
       {% empty %}
         <p class="muted small mb-0">No active tests on this invoice.</p>
       {% endfor %}
@@ -96,16 +113,27 @@
   <h2 class="h5">Refund history</h2>
   <div class="table-responsive">
     <table class="table align-middle">
-      <thead><tr><th>When</th><th>Patient / invoice</th><th>Test</th><th>Mode</th><th>Amount</th><th>By</th><th>Reason</th></tr></thead>
+      <thead><tr><th>When</th><th>Patient</th><th>Invoice</th><th>Test</th><th>Mode</th><th>Amount</th><th>By</th><th>Reason</th></tr></thead>
       <tbody>
         {% for row in refund_history %}
           <tr>
             <td class="small">{{ row.created_at }}</td>
             <td>
               {% if row.invoice %}
-                {{ row.invoice.visit.patient.uhid }} · {{ row.invoice.invoice_number }}
+                <div class="fw-semibold">{{ row.invoice.visit.patient.first_name }} {{ row.invoice.visit.patient.last_name }}</div>
+                <div class="small muted">{{ row.invoice.visit.patient.uhid }}</div>
               {% elif row.payment %}
-                {{ row.payment.invoice.visit.patient.uhid }} · {{ row.payment.invoice.invoice_number }}
+                <div class="fw-semibold">{{ row.payment.invoice.visit.patient.first_name }} {{ row.payment.invoice.visit.patient.last_name }}</div>
+                <div class="small muted">{{ row.payment.invoice.visit.patient.uhid }}</div>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if row.invoice %}
+                {{ row.invoice.invoice_number }}
+                <div class="small muted">{{ row.invoice.visit.visit_id }}</div>
+              {% elif row.payment %}
+                {{ row.payment.invoice.invoice_number }}
+                <div class="small muted">{{ row.payment.invoice.visit.visit_id }}</div>
               {% else %}—{% endif %}
             </td>
             <td>{{ row.item_description|default:'—' }}</td>
@@ -115,7 +143,7 @@
             <td class="small">{{ row.reason }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="7" class="muted py-3 text-center">No refunds recorded yet.</td></tr>
+          <tr><td colspan="8" class="muted py-3 text-center">No refunds recorded yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

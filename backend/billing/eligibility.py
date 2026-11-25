@@ -1,8 +1,16 @@
 """Shared release-eligibility checks (documents, payment, workflow)."""
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 
 from billing.models import InvoiceItem
+
+PREVIEW_BLOCKED_MESSAGE = 'Contact the admin, there maybe pending issues. Thanks'
+UNPAID_DISPATCH_MESSAGE = (
+    'This bill is not fully paid. Results cannot be dispatched until payment is complete. '
+    'Contact the admin, there maybe pending issues. Thanks'
+)
 
 
 class ReleaseBlocker:
@@ -14,6 +22,28 @@ class ReleaseBlocker:
         return {'code': self.code, 'message': self.message}
 
 
+def visit_invoices_fully_paid(visit):
+    """True when every non-cancelled linked invoice is PAID with no outstanding balance."""
+    from billing.adjustments import invoice_balance
+
+    linked = InvoiceItem.objects.filter(
+        Q(lab_order__visit=visit) | Q(imaging_order__visit=visit),
+    ).select_related('invoice')
+    invoices = {
+        item.invoice_id: item.invoice
+        for item in linked
+        if item.invoice_id and item.invoice.status != 'CANCELLED'
+    }
+    if not invoices:
+        return True
+    for invoice in invoices.values():
+        if invoice.status != 'PAID':
+            return False
+        if invoice_balance(invoice) > Decimal('0.01'):
+            return False
+    return True
+
+
 def check_visit_release(visit, *, check_workflow=True):
     blockers = []
     if not visit.documents.filter(document_type__in=['REFERRAL', 'REGISTRATION']).exists():
@@ -22,13 +52,8 @@ def check_visit_release(visit, *, check_workflow=True):
             'A referral or registration form must be uploaded before result release.',
         ))
     linked = InvoiceItem.objects.filter(Q(lab_order__visit=visit) | Q(imaging_order__visit=visit))
-    if linked.exists():
-        statuses = set(linked.values_list('invoice__status', flat=True))
-        if statuses - {'PAID'}:
-            blockers.append(ReleaseBlocker(
-                'unpaid_invoice',
-                'Outstanding financial restrictions must be resolved before release.',
-            ))
+    if linked.exists() and not visit_invoices_fully_paid(visit):
+        blockers.append(ReleaseBlocker('unpaid_invoice', UNPAID_DISPATCH_MESSAGE))
     if check_workflow:
         try:
             from workflows.services import workflow_blocks_release

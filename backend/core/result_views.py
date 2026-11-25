@@ -115,9 +115,12 @@ def result_dispatch(request):
                 outcome = compose_dispatch(request.user, request.POST, request=request, files=request.FILES)
                 count = outcome['recipient_count']
                 queued = len(outcome['queued'])
+                n = outcome.get('dispatched_count') or 1
+                tests = outcome.get('selection_summary') or 'result'
                 messages.success(
                     request,
-                    f"Result dispatched to {count} recipient{'s' if count != 1 else ''}"
+                    f"Dispatched {n} result{'s' if n != 1 else ''} ({tests}) to "
+                    f"{count} recipient{'s' if count != 1 else ''}"
                     f"{f' · {queued} message(s) queued' if queued else ''}.",
                 )
                 return redirect(f"{reverse('result-dispatch')}?item={outcome['item_key']}&tab=ready")
@@ -241,6 +244,13 @@ def radiology_report_preview(request, pk):
         raise Http404()
     if report.status not in ('FINAL', 'APPROVED', 'RELEASED', 'AMENDED'):
         raise Http404()
+    # Dispatch-ready reports: unpaid / missing forms must not be previewable (same as dispatch).
+    # FINAL (pre-approval) previews stay available for radiologists on the workspace.
+    if report.status in ('APPROVED', 'RELEASED', 'AMENDED'):
+        from billing.eligibility import PREVIEW_BLOCKED_MESSAGE, check_visit_release
+        blockers = check_visit_release(report.exam.order.visit, check_workflow=False)
+        if blockers:
+            return HttpResponse(PREVIEW_BLOCKED_MESSAGE, status=403, content_type='text/plain; charset=utf-8')
     from radiology.reports import build_radiology_report_pdf
     payload = build_radiology_report_pdf(report)
     visit_id = report.exam.order.visit.visit_id

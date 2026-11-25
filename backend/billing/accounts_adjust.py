@@ -4,8 +4,8 @@ from django.db import transaction
 from django.db.models import Prefetch, Q
 
 from billing.adjustments import (
-    _cancel_linked_order, _money, cancel_or_refund_item, invoice_balance,
-    invoice_net_paid, replace_invoice_item,
+    _cancel_linked_order, _money, assert_item_not_resulted, cancel_or_refund_item, invoice_balance,
+    invoice_net_paid, item_is_resulted, replace_invoice_item,
 )
 from billing.models import BillAmendment, Invoice, InvoiceItem, Refund
 from core.access import can_edit_bill, can_refund_payment
@@ -61,6 +61,8 @@ def _decorate_visit(visit):
         invoice.amount_paid = paid
         invoice.balance = invoice_balance(invoice)
         invoice.active_items = [item for item in invoice.items.all()]
+        for item in invoice.active_items:
+            item.is_resulted = item_is_resulted(item)
     return visit
 
 
@@ -157,6 +159,7 @@ def _remove_bill_item(user, invoice_item_id, reason):
         invoice = Invoice.objects.select_for_update().get(pk=item.invoice_id)
         if invoice.status == 'CANCELLED':
             raise ValidationError('Cannot edit a cancelled invoice.')
+        assert_item_not_resulted(item)
         line_total = _money(item.line_total)
         description = item.description or (item.test.name if item.test_id else str(item.pk))
         _cancel_linked_order(item)

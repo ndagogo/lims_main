@@ -37,6 +37,19 @@ class BillingRoadmapTests(TestCase):
         codes = [b.code for b in blockers]
         self.assertIn('missing_document', codes)
 
+    def test_release_blocked_when_invoice_not_fully_paid(self):
+        from patients.models import PatientDocument
+        from django.core.files.base import ContentFile
+
+        PatientDocument.objects.create(
+            visit=self.visit, document_type='REGISTRATION',
+            file=ContentFile(b'%PDF-1.4\n', name='form.pdf'), uploaded_by=self.user,
+        )
+        blockers = check_visit_release(self.visit, check_workflow=False)
+        codes = [b.code for b in blockers]
+        self.assertIn('unpaid_invoice', codes)
+        self.assertTrue(any('not fully paid' in b.message for b in blockers))
+
     def test_bill_amendment_and_refund_models(self):
         payment = Payment.objects.create(invoice=self.invoice, amount=self.invoice.total, method='CASH', received_by=self.user)
         amendment = BillAmendment.objects.create(

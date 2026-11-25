@@ -59,25 +59,69 @@ class SampleCentreIsolationTests(TestCase):
         self.assertEqual(response.data['count'],1)
 
 class SampleBatchCreateTests(TestCase):
-    def test_batch_can_be_created_and_dispatched(self):
+    def setUp(self):
         from django.contrib.auth.models import Group
-        user=User.objects.create_user(username='batchstaff', email='batch@example.test', password='Strong-test-password-2026!')
-        user.groups.add(Group.objects.get_or_create(name='Laboratory Scientist')[0])
-        centre=Centre.objects.create(code='NWS', name='NOWAS')
-        UserCentreAccess.objects.create(user=user, centre=centre, can_view=True, can_edit=True)
-        SampleCodeConfig.objects.create(centre=centre, numeric_code='2')
-        patient=Patient.objects.create(first_name='Batch', last_name='Patient', phone_number='08000000009')
-        visit=Visit.objects.create(patient=patient, centre=centre, registered_by=user)
-        group=ServiceGroup.objects.create(name='Haematology', code='1')
-        test=Test.objects.create(code='CBC', name='Complete Blood Count', department='HAEMATOLOGY', department_code='1', service_group=group)
-        order=LabOrder.objects.create(visit=visit, test=test, price='5500')
-        sample=Sample.objects.create(order=order, centre=centre, status='COLLECTED')
-        client=APIClient(); client.force_authenticate(user)
-        created=client.post('/api/sample-batches/', {'centre': str(centre.pk), 'department': 'HAEMATOLOGY', 'sample_ids': [sample.sample_id]}, format='json')
+        self.user=User.objects.create_user(username='batchstaff', email='batch@example.test', password='Strong-test-password-2026!')
+        self.user.groups.add(Group.objects.get_or_create(name='Laboratory Scientist')[0])
+        self.centre=Centre.objects.create(code='NWS', name='NOWAS')
+        self.other=Centre.objects.create(code='IND', name='Independence')
+        UserCentreAccess.objects.create(user=self.user, centre=self.centre, can_view=True, can_edit=True)
+        UserCentreAccess.objects.create(user=self.user, centre=self.other, can_view=True, can_edit=True)
+        SampleCodeConfig.objects.create(centre=self.centre, numeric_code='2')
+        SampleCodeConfig.objects.create(centre=self.other, numeric_code='3')
+        self.patient=Patient.objects.create(first_name='Batch', last_name='Patient', phone_number='08000000009')
+        self.visit=Visit.objects.create(patient=self.patient, centre=self.centre, registered_by=self.user)
+        self.group=ServiceGroup.objects.create(name='Haematology', code='1')
+        self.chem=ServiceGroup.objects.create(name='Chemistry', code='2')
+        self.cbc=Test.objects.create(code='CBC', name='Complete Blood Count', department='HAEMATOLOGY', department_code='1', service_group=self.group)
+        self.lft=Test.objects.create(code='LFT', name='Liver Function', department='CHEMISTRY', department_code='2', service_group=self.chem)
+        self.client=APIClient(); self.client.force_authenticate(self.user)
+
+    def test_batch_can_be_created_and_dispatched(self):
+        order=LabOrder.objects.create(visit=self.visit, test=self.cbc, price='5500')
+        sample=Sample.objects.create(order=order, centre=self.centre, status='COLLECTED')
+        created=self.client.post('/api/sample-batches/', {'centre': str(self.centre.pk), 'sample_ids': [sample.sample_id]}, format='json')
         self.assertEqual(created.status_code, 201)
-        sent=client.post(f"/api/sample-batches/{created.data['id']}/dispatch/", {}, format='json')
+        self.assertEqual(created.data['department'], 'HAEMATOLOGY')
+        sent=self.client.post(f"/api/sample-batches/{created.data['id']}/dispatch/", {}, format='json')
         self.assertEqual(sent.status_code, 200)
         self.assertEqual(sent.data['status'], 'DISPATCHED')
+
+    def test_batch_allows_mixed_departments_same_centre(self):
+        s1=Sample.objects.create(
+            order=LabOrder.objects.create(visit=self.visit, test=self.cbc, price='5500'),
+            centre=self.centre, status='COLLECTED',
+        )
+        s2=Sample.objects.create(
+            order=LabOrder.objects.create(visit=self.visit, test=self.lft, price='7000'),
+            centre=self.centre, status='COLLECTED',
+        )
+        created=self.client.post(
+            '/api/sample-batches/',
+            {'centre': str(self.centre.pk), 'sample_ids': [s1.sample_id, s2.sample_id]},
+            format='json',
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data['department'], 'MIXED')
+        self.assertCountEqual(created.data['samples'], [s1.sample_id, s2.sample_id])
+
+    def test_batch_rejects_samples_from_another_centre(self):
+        local=Sample.objects.create(
+            order=LabOrder.objects.create(visit=self.visit, test=self.cbc, price='5500'),
+            centre=self.centre, status='COLLECTED',
+        )
+        other_visit=Visit.objects.create(patient=self.patient, centre=self.other, registered_by=self.user)
+        foreign=Sample.objects.create(
+            order=LabOrder.objects.create(visit=other_visit, test=self.cbc, price='5500'),
+            centre=self.other, status='COLLECTED',
+        )
+        refused=self.client.post(
+            '/api/sample-batches/',
+            {'centre': str(self.centre.pk), 'sample_ids': [local.sample_id, foreign.sample_id]},
+            format='json',
+        )
+        self.assertEqual(refused.status_code, 400)
+        self.assertIn('centre', str(refused.data).lower())
 
 
 class ResultControlTests(TestCase):
@@ -158,14 +202,50 @@ class CollectionHistoryTests(TestCase):
         )
         screen = Client()
         screen.force_login(user)
-        page = screen.get('/phlebotomy/')
+        page = screen.get('/phlebotomy/', {'view': 'history'})
         self.assertContains(page, 'Collection history')
         self.assertContains(page, handed.sample_id)
         self.assertContains(page, still_here.sample_id)
         self.assertContains(page, 'Released')
         self.assertNotContains(page, waiting.sample_id)
         self.assertNotContains(page, hidden.sample_id)
-        narrowed = screen.get('/phlebotomy/', {'hq': handed.sample_id})
+        narrowed = screen.get('/phlebotomy/', {'view': 'history', 'hq': handed.sample_id})
         self.assertContains(narrowed, handed.sample_id)
         self.assertContains(narrowed, '1–1 of 1')
         self.assertEqual(narrowed.content.count(still_here.sample_id.encode()), 1)
+
+    def test_phlebotomy_pending_is_scoped_to_accessible_centres(self):
+        from django.contrib.auth.models import Group
+        from django.test import Client
+        from billing.models import Invoice, InvoiceItem, Payment
+        user = User.objects.create_user(username='phleb.centres', email='phleb.centres@example.test', password='A-long-unique-password-2026!')
+        user.groups.add(Group.objects.get_or_create(name='Phlebotomist')[0])
+        home = Centre.objects.create(code='HOM', name='Home Centre')
+        branch = Centre.objects.create(code='BRN', name='Branch Centre')
+        locked = Centre.objects.create(code='LCK', name='Locked Centre')
+        UserCentreAccess.objects.create(user=user, centre=home, can_view=True, can_edit=True, is_default=True)
+        UserCentreAccess.objects.create(user=user, centre=branch, can_view=True, can_edit=True)
+        SampleCodeConfig.objects.create(centre=home, numeric_code='4')
+        SampleCodeConfig.objects.create(centre=branch, numeric_code='5')
+        SampleCodeConfig.objects.create(centre=locked, numeric_code='6')
+        group = ServiceGroup.objects.create(name='Haematology Centre', code='3')
+        test = Test.objects.create(code='CBC2', name='CBC Centre Scope', department='PATHOLOGY', department_code='1', service_group=group)
+
+        def paid_order(centre, first, phone):
+            patient = Patient.objects.create(first_name=first, last_name='Scope', phone_number=phone)
+            visit = Visit.objects.create(patient=patient, centre=centre, registered_by=user)
+            order = LabOrder.objects.create(visit=visit, test=test, price='1000')
+            invoice = Invoice.objects.create(visit=visit, payer_name=first, status='UNPAID', created_by=user)
+            InvoiceItem.objects.create(invoice=invoice, test=test, lab_order=order, unit_price='1000')
+            Payment.objects.create(invoice=invoice, amount=invoice.total or '1000', method='CASH', received_by=user)
+            return order
+
+        home_order = paid_order(home, 'Home', '08055550001')
+        branch_order = paid_order(branch, 'Branch', '08055550002')
+        locked_order = paid_order(locked, 'Locked', '08055550003')
+        screen = Client()
+        screen.force_login(user)
+        page = screen.get('/phlebotomy/', {'queue': 'pending'})
+        self.assertContains(page, home_order.visit.visit_id)
+        self.assertContains(page, branch_order.visit.visit_id)
+        self.assertNotContains(page, locked_order.visit.visit_id)

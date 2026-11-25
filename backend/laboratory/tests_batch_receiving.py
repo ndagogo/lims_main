@@ -55,7 +55,7 @@ class BatchReceivingDeskTests(TestCase):
     def test_receive_desk_renders_and_saves_accept_with_temperature(self):
         page = self.screen.get(f'/laboratory/?stage=receive&batch={self.batch_id}')
         self.assertEqual(page.status_code, 200)
-        self.assertContains(page, 'Batch receiving')
+        self.assertContains(page, 'Batch Receiving')
         self.assertContains(page, self.sample_a.sample_id)
         self.assertContains(page, 'Yellow Gel Tube')
         self.assertContains(page, 'Pending vacutainer')

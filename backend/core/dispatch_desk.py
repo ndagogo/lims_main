@@ -9,7 +9,7 @@ from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
 
-from billing.eligibility import check_visit_release
+from billing.eligibility import PREVIEW_BLOCKED_MESSAGE, check_visit_release
 from communications.messaging import (
     EVENT_RESULT_READY,
     build_patient_context,
@@ -29,6 +29,18 @@ from core.paging import PAGE_SIZES, paginate
 from radiology.models import RadiologyReport
 
 
+RECIPIENT_MODES = [
+    ('self', 'Self'),
+    ('third_party', 'Third-party'),
+]
+
+THIRD_PARTY_KINDS = [
+    ('family', 'Family / Guardian'),
+    ('hmo', 'HMO'),
+    ('corporate', 'Corporate'),
+]
+
+# Kept for older posts / tests that still send recipients[] chips.
 RECIPIENT_CHIPS = [
     ('self', 'Self'),
     ('family', 'Family/Guardian'),
@@ -145,8 +157,9 @@ def _ready_radiology(user, centre_ids):
         blockers = check_visit_release(visit, check_workflow=False)
         procedure = report.exam.order.procedure.name if report.exam.order.procedure_id else report.exam.order.modality.name
         sent_before = report.status in ('RELEASED', 'AMENDED')
+        ready = not blockers
         if blockers:
-            label = blockers[0].message[:42]
+            label = blockers[0].message[:48]
         elif sent_before:
             label = 'Ready · sent before'
         else:
@@ -160,11 +173,14 @@ def _ready_radiology(user, centre_ids):
             'patient_name': _patient_label(visit.patient),
             'test_label': f'{report.exam.order.modality.get_modality_type_display()} · {procedure}',
             'status_label': label,
-            'ready': not blockers,
+            'ready': ready,
             'already_sent': sent_before,
             'blockers': blockers,
             'when': report.released_at or report.approved_at,
-            'preview_url': reverse('radiology-report-preview', args=[report.pk]),
+            # Unpaid / incomplete bills must not offer a report preview — same as missing forms.
+            'preview_url': reverse('radiology-report-preview', args=[report.pk]) if ready else '',
+            'preview_blocked': not ready,
+            'preview_blocked_message': PREVIEW_BLOCKED_MESSAGE if not ready else '',
             'object': report,
         })
     return items
@@ -186,8 +202,9 @@ def _ready_laboratory(user, centre_ids):
         visit = result.sample.order.visit
         blockers = check_visit_release(visit)
         sent_before = result.status in ('RELEASED', 'AMENDED')
+        ready = not blockers
         if blockers:
-            label = blockers[0].message[:42]
+            label = blockers[0].message[:48]
         elif sent_before:
             label = 'Ready · sent before'
         else:
@@ -201,11 +218,13 @@ def _ready_laboratory(user, centre_ids):
             'patient_name': _patient_label(visit.patient),
             'test_label': result.sample.order.test.name,
             'status_label': label,
-            'ready': not blockers,
+            'ready': ready,
             'already_sent': sent_before,
             'blockers': blockers,
             'when': result.released_at or result.authenticated_at,
             'preview_url': '',
+            'preview_blocked': not ready,
+            'preview_blocked_message': PREVIEW_BLOCKED_MESSAGE if not ready else '',
             'object': result,
         })
     return items
@@ -229,14 +248,78 @@ def _queue_recipient(*, centre, visit, channel, recipient, label, user, context,
     )
 
 
-def _recipient_targets(visit, selected_chips, post):
+def _resolve_recipient_mode(post):
+    """Map Self / Third-party (+ kind) into the internal chip list used by delivery targeting."""
+    from django.core.exceptions import ValidationError
+
+    mode = (post.get('recipient_mode') or '').strip().lower()
+    kind = (post.get('third_party_kind') or '').strip().lower()
+    legacy = [c for c in post.getlist('recipients') if c in dict(RECIPIENT_CHIPS)]
+    if mode == 'self' or (not mode and ('self' in legacy or not legacy)):
+        return 'self', '', ['self']
+    if mode == 'third_party' or any(c in legacy for c in ('third_party', 'family', 'hmo', 'corporate')):
+        if not kind:
+            if 'family' in legacy or 'third_party' in legacy:
+                kind = 'family'
+            elif 'hmo' in legacy:
+                kind = 'hmo'
+            elif 'corporate' in legacy:
+                kind = 'corporate'
+            else:
+                kind = 'family'
+        if kind not in dict(THIRD_PARTY_KINDS):
+            raise ValidationError('Choose Family/Guardian, HMO, or Corporate for third-party dispatch.')
+        chip = 'family' if kind == 'family' else kind
+        return 'third_party', kind, [chip]
+    raise ValidationError('Choose Self or Third-party.')
+
+
+def _client_email(client):
+    return (getattr(client, 'report_email', '') or getattr(client, 'comm_email', '') or '').strip()
+
+
+def _client_phone(client):
+    return (
+        getattr(client, 'contact_phone', '')
+        or getattr(client, 'contact_mobile_1', '')
+        or getattr(client, 'phone', '')
+        or ''
+    ).strip()
+
+
+def _organisation_clients(kind):
+    from patients.models import OrganisationClient
+    kind = (kind or '').upper()
+    rows = []
+    for client in (
+        OrganisationClient.objects.filter(is_active=True)
+        .filter(Q(kind=kind) | Q(category=kind))
+        .order_by('name')
+    ):
+        rows.append({
+            'id': str(client.pk),
+            'name': client.name,
+            'email': _client_email(client),
+            'phone': _client_phone(client),
+            'kind': client.kind,
+            'client_type_code': client.client_type_code,
+        })
+    return rows
+
+
+def _recipient_targets(visit, selected_chips, post, *, third_party_kind='', organisation_client=None):
     """Build (chip, label, channel, recipient) rows from the compose form."""
     patient = visit.patient
     doctor = _doctor(visit)
     targets = []
     for chip in selected_chips:
         channels = [c.strip().upper() for c in post.getlist(f'channels_{chip}') if c.strip()]
+        # Legacy compose forms posted channels_third_party for Family/Guardian collection.
+        if chip == 'family' and not channels:
+            channels = [c.strip().upper() for c in post.getlist('channels_third_party') if c.strip()]
         if chip == 'self':
+            if not channels:
+                channels = ['SMS', 'PORTAL', 'HARDCOPY']
             for channel in channels:
                 if channel == 'EMAIL':
                     targets.append((chip, 'Patient — Self', channel, (patient.email or '').strip()))
@@ -255,10 +338,16 @@ def _recipient_targets(visit, selected_chips, post):
                     if channel in ('SMS', 'WHATSAPP'):
                         targets.append((chip, 'Alternative phone', channel, alt if alt.startswith('+') else alt))
         elif chip == 'family':
-            phone = (patient.guardian_phone or '').strip()
-            name = (patient.guardian_name or 'Family/Guardian').strip()
+            # Family / Guardian third-party collection — desk form supplies the person collecting.
+            phone = (post.get('third_party_phone') or patient.guardian_phone or '').strip()
+            name = (post.get('third_party_name') or patient.guardian_name or 'Family/Guardian').strip()
+            email = (post.get('third_party_email') or '').strip()
+            if not channels:
+                channels = ['HARDCOPY']
             for channel in channels:
-                if channel in ('SMS', 'WHATSAPP') and phone:
+                if channel == 'EMAIL' and email:
+                    targets.append((chip, name, channel, email))
+                elif channel in ('SMS', 'WHATSAPP') and phone:
                     targets.append((chip, name, channel, phone))
                 elif channel == 'HARDCOPY':
                     targets.append((chip, name, channel, 'HARDCOPY'))
@@ -266,6 +355,8 @@ def _recipient_targets(visit, selected_chips, post):
             phone = (post.get('third_party_phone') or '').strip()
             email = (post.get('third_party_email') or '').strip()
             name = (post.get('third_party_name') or 'Third party').strip()
+            if not channels:
+                channels = ['HARDCOPY']
             for channel in channels:
                 if channel == 'EMAIL' and email:
                     targets.append((chip, name, channel, email))
@@ -274,15 +365,25 @@ def _recipient_targets(visit, selected_chips, post):
                 elif channel == 'HARDCOPY':
                     targets.append((chip, name, channel, 'HARDCOPY'))
         elif chip in ('corporate', 'hmo'):
-            name = visit.client.name if visit.client_id else (visit.client_name or chip.title())
+            if organisation_client:
+                name = organisation_client.get('name') or chip.title()
+                email = (organisation_client.get('email') or '').strip()
+                phone = (organisation_client.get('phone') or '').strip()
+            else:
+                name = visit.client.name if visit.client_id else (visit.client_name or chip.title())
+                email = (post.get(f'{chip}_email') or '').strip()
+                phone = (post.get(f'{chip}_phone') or '').strip()
+            if not channels:
+                channels = ['HARDCOPY']
+                if email:
+                    channels.append('EMAIL')
             for channel in channels:
                 if channel == 'HARDCOPY':
                     targets.append((chip, name, channel, 'HARDCOPY'))
-                elif channel == 'EMAIL' and (post.get(f'{chip}_email') or '').strip():
-                    targets.append((chip, name, channel, post.get(f'{chip}_email').strip()))
-                elif channel in ('SMS', 'WHATSAPP') and (post.get(f'{chip}_phone') or '').strip():
-                    targets.append((chip, name, channel, post.get(f'{chip}_phone').strip()))
-        # Referring physician always available alongside self when checked via channels_physician
+                elif channel == 'EMAIL' and email:
+                    targets.append((chip, name, channel, email))
+                elif channel in ('SMS', 'WHATSAPP') and phone:
+                    targets.append((chip, name, channel, phone))
     physician_channels = [c.strip().upper() for c in post.getlist('channels_physician') if c.strip()]
     if doctor and physician_channels:
         for channel in physician_channels:
@@ -292,7 +393,6 @@ def _recipient_targets(visit, selected_chips, post):
                 targets.append(('physician', f'Referring physician — {doctor}', channel, doctor.phone.strip()))
             elif channel == 'HARDCOPY':
                 targets.append(('physician', f'Referring physician — {doctor}', channel, 'HARDCOPY'))
-    # Dedupe by channel+recipient
     seen = set()
     unique = []
     for row in targets:
@@ -304,9 +404,9 @@ def _recipient_targets(visit, selected_chips, post):
     return unique
 
 
-def _third_party_collection(post, selected_chips, upload=None):
-    """Identity of the person collecting a result on the patient's behalf."""
-    if 'third_party' not in selected_chips:
+def _third_party_collection(post, *, require=False, upload=None):
+    """Identity of the person collecting a result on the patient's behalf (Family/Guardian)."""
+    if not require:
         return '', None
     from django.core.exceptions import ValidationError
     name = (post.get('third_party_name') or '').strip()
@@ -334,24 +434,46 @@ def _third_party_collection(post, selected_chips, upload=None):
     from core.uploads import validate_upload
     validate_upload(upload)
     note = (
-        f'Third party: {name}. ID: {means[id_type]} {id_number}. '
+        f'Third party (Family/Guardian): {name}. ID: {means[id_type]} {id_number}. '
         f'Address: {address}. Phone: {phone}. Authorisation: {auth}. '
         'Identification copy filed.'
     )
     return note, upload
 
 
-def _stamp_collector(service, object_id, note, upload=None):
-    if not note and not upload:
-        return
+def _resolve_organisation_client(post, kind):
+    from django.core.exceptions import ValidationError
+    from patients.models import OrganisationClient
+
+    client_id = (post.get('organisation_client') or post.get(f'{kind}_client') or '').strip()
+    if not client_id:
+        raise ValidationError(f'Select an {kind.upper()} from the list before dispatching.')
+    client = OrganisationClient.objects.filter(pk=client_id, is_active=True).first()
+    if client is None:
+        raise ValidationError(f'That {kind.upper()} account was not found.')
+    return {
+        'id': str(client.pk),
+        'name': client.name,
+        'email': _client_email(client),
+        'phone': _client_phone(client),
+        'kind': client.kind,
+        'client_type_code': client.client_type_code,
+    }
+
+
+def _stamp_collector(service, object_id, note, upload=None, extra_reason='', summary=''):
     row = ResultLedger.objects.filter(
         kind='DISPATCH', service=service, object_id=str(object_id),
     ).order_by('-created_at').first()
     if row is None:
         return
     fields = []
-    if note:
-        row.reason = note[:4000]
+    if summary:
+        row.summary = summary[:200]
+        fields.append('summary')
+    combined = ' | '.join(part for part in (note, extra_reason) if part)
+    if combined:
+        row.reason = combined[:4000]
         fields.append('reason')
     if upload:
         row.collector_id = upload
@@ -360,52 +482,121 @@ def _stamp_collector(service, object_id, note, upload=None):
         row.save(update_fields=fields)
 
 
-def compose_dispatch(user, post, request=None, files=None):
-    """Clinical release + queued notifications for the compose form."""
-    item_key = (post.get('item') or '').strip()
-    selected_chips = [c for c in post.getlist('recipients') if c in dict(RECIPIENT_CHIPS)]
-    uploaded = files.get('third_party_id_file') if files is not None else None
-    collector_note, collector_file = _third_party_collection(post, selected_chips, uploaded)
-    comment = (post.get('comment') or '').strip()
-    hours = int(post.get('link_expiry') or '7')
-    if item_key.startswith('rad:'):
+def _load_dispatch_item(item_key):
+    from django.core.exceptions import ValidationError
+    from laboratory.models import LabResult
+
+    key = (item_key or '').strip()
+    if key.startswith('rad:'):
         report = get_object_or_404(
             RadiologyReport.objects.select_related(
                 'exam__order__visit__patient', 'exam__order__visit__centre', 'exam__order__visit__client',
+                'exam__order__modality', 'exam__order__procedure',
             ),
-            pk=item_key.split(':', 1)[1],
+            pk=key.split(':', 1)[1],
         )
         visit = report.exam.order.visit
-        dispatch_radiology_report(user, report, request=request)
-        object_id = str(report.pk)
-        service = 'RADIOLOGY'
-        _stamp_collector(service, object_id, collector_note, collector_file)
-    elif item_key.startswith('lab:'):
-        from laboratory.models import LabResult
+        procedure = report.exam.order.procedure.name if report.exam.order.procedure_id else report.exam.order.modality.name
+        label = f'{report.exam.order.modality.get_modality_type_display()} · {procedure}'
+        return {
+            'key': key, 'service': 'RADIOLOGY', 'visit': visit, 'object': report,
+            'object_type': 'RadiologyReport', 'object_id': str(report.pk), 'label': label,
+        }
+    if key.startswith('lab:'):
         result = get_object_or_404(
             LabResult.objects.select_related(
                 'sample__order__visit__patient', 'sample__order__visit__centre', 'sample__order__visit__client',
                 'sample__order__test',
             ),
-            pk=item_key.split(':', 1)[1],
+            pk=key.split(':', 1)[1],
         )
         visit = result.sample.order.visit
-        dispatch_laboratory_result(user, result, request=request)
-        object_id = str(result.pk)
-        service = 'LABORATORY'
-        _stamp_collector(service, object_id, collector_note, collector_file)
-    else:
-        from django.core.exceptions import ValidationError
-        raise ValidationError('Select a result to dispatch.')
+        return {
+            'key': key, 'service': 'LABORATORY', 'visit': visit, 'object': result,
+            'object_type': 'LabResult', 'object_id': str(result.pk),
+            'label': result.sample.order.test.name,
+        }
+    raise ValidationError('Select at least one result to dispatch.')
+
+
+def compose_dispatch(user, post, request=None, files=None):
+    """Clinical release + queued notifications for one or more selected results on a visit."""
+    from django.core.exceptions import ValidationError
+    from django.db import transaction
+
+    item_keys = [k.strip() for k in post.getlist('items') if k.strip()]
+    if not item_keys:
+        single = (post.get('item') or '').strip()
+        if single:
+            item_keys = [single]
+    if not item_keys:
+        raise ValidationError('Select at least one result to dispatch.')
+
+    loaded = [_load_dispatch_item(key) for key in item_keys]
+    visit_ids = {row['visit'].pk for row in loaded}
+    if len(visit_ids) != 1:
+        raise ValidationError('All selected results must belong to the same visit.')
+    visit = loaded[0]['visit']
+
+    # Payment / document / workflow gate — same bar as missing registration forms.
+    blockers = check_visit_release(visit, check_workflow=any(row['service'] == 'LABORATORY' for row in loaded))
+    if blockers:
+        raise ValidationError(blockers[0].message)
+
+    recipient_mode, third_party_kind, selected_chips = _resolve_recipient_mode(post)
+    organisation_client = None
+    if recipient_mode == 'third_party' and third_party_kind in ('hmo', 'corporate'):
+        organisation_client = _resolve_organisation_client(post, third_party_kind)
+
+    uploaded = files.get('third_party_id_file') if files is not None else None
+    collector_note, collector_file = _third_party_collection(
+        post, require=(recipient_mode == 'third_party' and third_party_kind == 'family'), upload=uploaded,
+    )
+    comment = (post.get('comment') or '').strip()
+    hours = int(post.get('link_expiry') or '7')
+    selection_summary = ', '.join(row['label'] for row in loaded)
+    recipient_desc = 'Self'
+    if recipient_mode == 'third_party':
+        if third_party_kind == 'family':
+            recipient_desc = 'Third-party · Family/Guardian'
+        elif organisation_client:
+            recipient_desc = f'Third-party · {third_party_kind.upper()} · {organisation_client["name"]}'
+        else:
+            recipient_desc = f'Third-party · {third_party_kind}'
+
+    dispatched = []
+    with transaction.atomic():
+        for row in loaded:
+            if row['service'] == 'RADIOLOGY':
+                dispatch_radiology_report(user, row['object'], request=request)
+            else:
+                dispatch_laboratory_result(user, row['object'], request=request)
+            audit_note = (
+                f'Dispatch selection ({len(loaded)}): {selection_summary}. '
+                f'Recipient: {recipient_desc}.'
+            )
+            if comment:
+                audit_note = f'{audit_note} Comment: {comment}'
+            ledger_summary = f"{visit.visit_id} · {row['label']} → {recipient_desc}"
+            _stamp_collector(
+                row['service'], row['object_id'], collector_note, collector_file,
+                extra_reason=audit_note, summary=ledger_summary,
+            )
+            dispatched.append(row)
 
     context = build_patient_context(visit, {
         'result_link': _issue_result_link(visit.patient, hours=hours),
         'comment': comment,
+        'tests': selection_summary,
     })
     if comment:
         context['reason'] = comment
-    targets = _recipient_targets(visit, selected_chips or ['self'], post)
-    idem = f'dispatch:{service}:{object_id}:{timezone.now().strftime("%Y%m%d%H%M%S")}'
+    targets = _recipient_targets(
+        visit, selected_chips, post,
+        third_party_kind=third_party_kind, organisation_client=organisation_client,
+    )
+    stamp = timezone.now().strftime('%Y%m%d%H%M%S')
+    idem = f'dispatch:visit:{visit.pk}:{stamp}'
     queued = []
     local_only = 0
     for _chip, label, channel, recipient in targets:
@@ -417,19 +608,44 @@ def compose_dispatch(user, post, request=None, files=None):
             local_only += 1
         elif note:
             queued.append(note)
-    # Ensure at least patient consented channels fire when no explicit electronic channel was chosen
-    if not queued and not local_only:
+    if not queued and not local_only and recipient_mode == 'self':
         from communications.messaging import notify_patient
         queued = notify_patient(
             event_key=EVENT_RESULT_READY, visit=visit, user=user,
             idempotency_key=idem, extra={'result_link': context['result_link']},
         )
+
+    from core.audit import record_audit
+    record_audit(
+        actor=user, action='RESULT_DISPATCH_BATCH', object_type='Visit', object_id=str(visit.pk),
+        request=request, centre=visit.centre, visit_ref=visit.visit_id,
+        reason=comment or recipient_desc,
+        new_values={
+            'recipient_mode': recipient_mode,
+            'third_party_kind': third_party_kind,
+            'organisation_client': organisation_client,
+            'items': [row['key'] for row in dispatched],
+            'tests': [row['label'] for row in dispatched],
+            'channels': [{'chip': t[0], 'label': t[1], 'channel': t[2], 'recipient': t[3]} for t in targets],
+        },
+        detail={
+            'selection_count': len(dispatched),
+            'selection_summary': selection_summary,
+            'recipient': recipient_desc,
+            'queued_messages': len(queued),
+        },
+        category='CLINICAL',
+    )
+
     recipient_labels = {(t[0], t[1]) for t in targets} if targets else {('self', 'Patient — Self')}
     return {
         'visit': visit,
         'queued': queued,
         'recipient_count': max(len(recipient_labels), local_only, 1 if queued else 0),
-        'item_key': item_key,
+        'item_key': dispatched[0]['key'],
+        'item_keys': [row['key'] for row in dispatched],
+        'selection_summary': selection_summary,
+        'dispatched_count': len(dispatched),
     }
 
 
@@ -581,16 +797,21 @@ def build_dispatch_context(request):
         selected_key = selected['key']
 
     patient_panel = None
+    visit_results = []
     delivery_log = paginate(request, [], 'dpage')
     message_preview = ''
     preview_url = ''
+    preview_blocked = False
+    preview_blocked_message = ''
     rules = [
         'A finished laboratory or radiology result stays here so it can be dispatched again. Each send is kept in history.',
-        'Results can only be dispatched after the scanned document is attached.',
-        'Third-party collection requires a means of identification, an uploaded copy of that identification, an address, a personal phone number, and an authorisation note.',
-        'Sharing with external health providers requires consent.',
-        'Access and retrieval links are logged.',
+        'Results can only be dispatched after the scanned referral/registration form is attached and the bill is fully paid.',
+        'Choose Self or Third-party. Family/Guardian third-party collection needs identification, an uploaded ID copy, address, phone, and an authorisation note. HMO and Corporate need a selected account.',
+        'Select one or more ready results for the same visit before dispatching. Every selection is audited.',
+        'Sharing with external health providers requires consent. Access and retrieval links are logged.',
     ]
+    default_recipient_mode = 'self'
+    default_third_party_kind = 'family'
     if selected and selected.get('visit'):
         visit = selected['visit']
         patient = visit.patient
@@ -604,6 +825,11 @@ def build_dispatch_context(request):
                 (today_d.month, today_d.day) < (patient.date_of_birth.month, patient.date_of_birth.day)
             )
             age = f'{years} yrs'
+        visit_results = [
+            row for row in ready_items
+            if row.get('visit') and row['visit'].pk == visit.pk
+        ]
+        ready_count = sum(1 for row in visit_results if row.get('ready'))
         patient_panel = {
             'name': _patient_label(patient),
             'age_sex': ' · '.join(part for part in (age, patient.sex) if part),
@@ -626,9 +852,14 @@ def build_dispatch_context(request):
             'client_kind': visit.client.kind if visit.client_id else '',
             'blockers': selected.get('blockers') or [],
             'comment': visit.comments,
-            'approved_label': 'approved 1/1 tests' if selected.get('ready') else 'blocked',
+            'approved_label': (
+                f'{ready_count}/{len(visit_results)} ready'
+                if visit_results else ('ready' if selected.get('ready') else 'blocked')
+            ),
         }
         preview_url = selected.get('preview_url') or ''
+        preview_blocked = bool(selected.get('preview_blocked'))
+        preview_blocked_message = selected.get('preview_blocked_message') or PREVIEW_BLOCKED_MESSAGE
         delivery_log = paginate(
             request,
             NotificationOutbox.objects.filter(visit=visit).order_by('-created_at'),
@@ -638,14 +869,14 @@ def build_dispatch_context(request):
             'result_link': '{{result_link}}',
         })
         _subject, message_preview = render_event_message(EVENT_RESULT_READY, 'SMS', context)
-
-    default_recipients = ['self']
-    if selected and selected.get('visit'):
-        source = selected['visit'].referral_source
-        if source == 'CORPORATE':
-            default_recipients.append('corporate')
-        elif source == 'HMO':
-            default_recipients.append('hmo')
+        source = (visit.referral_source or '').upper()
+        client_kind = (visit.client.kind if visit.client_id else '').upper()
+        if source == 'HMO' or client_kind == 'HMO':
+            default_recipient_mode = 'third_party'
+            default_third_party_kind = 'hmo'
+        elif source == 'CORPORATE' or client_kind == 'CORPORATE':
+            default_recipient_mode = 'third_party'
+            default_third_party_kind = 'corporate'
 
     history = paginate(request, history_qs, 'hpage')
 
@@ -671,16 +902,26 @@ def build_dispatch_context(request):
         'query': query,
         'selected': selected,
         'selected_key': selected_key,
+        'visit_results': visit_results,
+        'visit_has_ready': any(row.get('ready') for row in visit_results),
         'patient_panel': patient_panel,
         'delivery_log': delivery_log,
         'message_preview': message_preview,
         'preview_url': preview_url,
+        'preview_blocked': preview_blocked,
+        'preview_blocked_message': preview_blocked_message,
         'rules': rules,
+        'recipient_modes': RECIPIENT_MODES,
+        'third_party_kinds': THIRD_PARTY_KINDS,
         'recipient_chips': RECIPIENT_CHIPS,
         'id_means': ID_MEANS,
         'channel_options': CHANNEL_OPTIONS,
         'link_expiry_choices': LINK_EXPIRY_CHOICES,
-        'default_recipients': default_recipients,
+        'default_recipient_mode': default_recipient_mode,
+        'default_third_party_kind': default_third_party_kind,
+        'default_recipients': ['self'] if default_recipient_mode == 'self' else [default_third_party_kind],
+        'hmo_clients': _organisation_clients('HMO'),
+        'corporate_clients': _organisation_clients('CORPORATE'),
         'history': history,
         'history_q': history_q,
         'history_service': history_service,

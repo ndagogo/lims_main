@@ -12,11 +12,11 @@ from laboratory.models import LabOrder, LabResult, Sample, SampleActivity, Sampl
 
 
 LAB_STAGES = [
-    ('batch', 'Batch', 'Create and dispatch sample batches'),
-    ('receive', 'Batch receiving', 'Scan, accept, missing, or reject tubes at department receiving'),
-    ('process', 'Process', 'Processing and activity logging'),
-    ('entry', 'Results', 'Result entry'),
-    ('review', 'Review', 'First review / validation'),
+    ('batch', 'Batch Generation', 'Create and dispatch sample batches'),
+    ('receive', 'Batch Receiving', 'Scan, accept, missing, or reject tubes at department receiving'),
+    ('process', 'Department Receiving', 'Processing and activity logging'),
+    ('entry', 'Result Entry', 'Result entry'),
+    ('review', 'First Review', 'First review / validation'),
     ('auth', 'Authenticate', 'Result authentication'),
     ('release', 'Release', 'Controlled result release'),
     ('overview', 'Overview', 'Counts, TAT, QC, analyzers'),
@@ -121,9 +121,10 @@ def handle_laboratory_post(request):
             'corrective_action': post.get('corrective_action', ''),
         }), 'Sample rejected.')
     if action == 'batch':
-        return _finish(*call_create(SampleBatchViewSet, user, {
-            'centre': post.get('centre'), 'department': post.get('department'), 'sample_ids': post.getlist('sample_ids'),
-        }), 'Batch created.')
+        payload = {'centre': post.get('centre'), 'sample_ids': post.getlist('sample_ids')}
+        if (post.get('department') or '').strip():
+            payload['department'] = post.get('department').strip()
+        return _finish(*call_create(SampleBatchViewSet, user, payload), 'Batch created.')
     if action == 'dispatch':
         status, body = call_action(SampleBatchViewSet, 'dispatch_batch', user, post.get('batch'), {})
         if 200 <= status < 300 and isinstance(body, dict) and body.get('id'):
@@ -335,19 +336,22 @@ def build_phlebotomy_context(request):
         .select_related('sample_code_config')
         .order_by('name')
     )
+    # Collection desk is scoped by registration centre. Users only see visits/samples for
+    # centres they can access; multi-centre staff see every centre they are granted.
     if user.is_superuser:
         centres = list(Centre.objects.filter(is_active=True).order_by('name'))
     else:
         centre_ids = list(user.centre_access.filter(can_view=True, centre__is_active=True).values_list('centre_id', flat=True))
         orders = orders.filter(visit__centre_id__in=centre_ids)
-        # Keep recollection / history visible from the registration centre as well as the processing centre.
         samples = samples.filter(
             Q(centre_id__in=centre_ids) | Q(order__visit__centre_id__in=centre_ids)
         ).distinct()
         centres = list(Centre.objects.filter(pk__in=centre_ids, is_active=True).order_by('name'))
     if centre_filter:
         orders = orders.filter(visit__centre_id=centre_filter)
-        samples = samples.filter(centre_id=centre_filter)
+        samples = samples.filter(
+            Q(centre_id=centre_filter) | Q(order__visit__centre_id=centre_filter)
+        ).distinct()
     if query:
         orders = orders.filter(_visit_search(query, 'visit__') | Q(test__name__icontains=query))
         samples = samples.filter(
@@ -634,7 +638,8 @@ def build_laboratory_context(request):
     centre_ids = user.centre_access.filter(can_view=True, centre__is_active=True).values_list('centre_id', flat=True)
     samples = settled(
         Sample.objects.select_related(
-            'centre', 'order__test', 'order__stat', 'order__test__default_template', 'order__visit__patient', 'collected_by',
+            'centre', 'order__test', 'order__test__service_group', 'order__stat',
+            'order__test__default_template', 'order__visit__patient', 'order__visit__centre', 'collected_by',
         ).prefetch_related(
             'order__test__parameters__reference_ranges',
             'order__test__default_template__fields__parameter',
@@ -659,13 +664,18 @@ def build_laboratory_context(request):
         messages = messages.filter(analyzer__centre_id__in=centre_ids)
 
     collected = samples.filter(status='COLLECTED').order_by('-collected_at')
-    departments = sorted({department for department in collected.values_list('order__test__department', flat=True) if department})
     centres = UserCentreAccess.objects.filter(user=user, can_edit=True, centre__is_active=True).select_related('centre')
     if user.is_superuser:
         from core.models import Centre
-        centre_rows = Centre.objects.filter(is_active=True)
+        centre_rows = list(Centre.objects.filter(is_active=True).order_by('name'))
     else:
         centre_rows = [row.centre for row in centres]
+    batch_centre = (request.GET.get('centre') or '').strip()
+    if batch_centre:
+        collected = collected.filter(centre_id=batch_centre)
+    elif centre_rows:
+        batch_centre = str(centre_rows[0].pk)
+        collected = collected.filter(centre_id=batch_centre)
 
     from laboratory.models import QcMaterial, QcRun
     from laboratory.tat import tat_dashboard_payload
@@ -695,7 +705,7 @@ def build_laboratory_context(request):
         'stage_counts': stage_counts,
         'sample_counts': sample_counts,
         'batch_centres': centre_rows,
-        'departments': departments,
+        'batch_centre': batch_centre,
         'tat_summary': tat_dashboard_payload(user, scan=False),
         'qc_materials': qc_materials[:30],
         'recent_qc_runs': recent_qc,
@@ -703,8 +713,7 @@ def build_laboratory_context(request):
     }
 
     if stage == 'batch':
-        ctx['collected_samples'] = paginate(request, collected, 'cpage')
-        ctx['recent_batches'] = paginate(request, batches.order_by('-created_at'), 'bpage')
+        ctx.update(_build_batch_generation_context(request, collected, batches, centre_rows, batch_centre))
     elif stage == 'receive':
         ctx.update(_build_batch_receiving_context(request, batches))
     elif stage == 'process':
@@ -772,6 +781,142 @@ def _vacutainer_tone(name):
     if any(token in text for token in ('grey', 'gray', 'fluoride')):
         return 'grey'
     return ''
+
+
+def _preview_batch_code(centre):
+    from core.models import SequenceCounter
+    if centre is None:
+        return ''
+    counter = SequenceCounter.objects.filter(key=f'batch-{centre.code}').first()
+    next_value = (counter.value + 1) if counter else 1
+    return f'{centre.code}-B{next_value:07d}'
+
+
+def _build_batch_generation_context(request, collected, batches, centre_rows, batch_centre):
+    """Desk context for Batch Generation — collected samples ready to batch at one centre."""
+    from urllib.parse import urlencode
+
+    from django.db.models import Q
+    from django.utils import timezone
+    from django.utils.dateparse import parse_date
+
+    from laboratory.models import ServiceGroup
+
+    query = (request.GET.get('q') or request.GET.get('sample_id') or '').strip()
+    visit_id = (request.GET.get('vid') or '').strip()
+    date_from = (request.GET.get('from') or '').strip()
+    date_to = (request.GET.get('to') or '').strip()
+    service_group = (request.GET.get('service_group') or '').strip()
+    view = (request.GET.get('view') or '').strip().lower()
+    if view not in ('', 'grid'):
+        view = ''
+    start = parse_date(date_from)
+    end = parse_date(date_to)
+
+    queue = collected.select_related(
+        'centre',
+        'order__test__service_group',
+        'order__stat',
+        'order__visit__patient',
+        'order__visit__centre',
+        'collected_by',
+    )
+    if query:
+        queue = queue.filter(
+            Q(sample_id__icontains=query)
+            | Q(order__visit__visit_id__icontains=query)
+            | Q(order__visit__patient__first_name__icontains=query)
+            | Q(order__visit__patient__last_name__icontains=query)
+            | Q(order__visit__patient__uhid__icontains=query)
+            | Q(order__test__name__icontains=query)
+            | Q(order__test__code__icontains=query)
+        )
+    if visit_id:
+        queue = queue.filter(order__visit__visit_id__icontains=visit_id)
+    if start:
+        queue = queue.filter(collected_at__date__gte=start)
+    if end:
+        queue = queue.filter(collected_at__date__lte=end)
+    if service_group:
+        queue = queue.filter(
+            Q(order__test__service_group__name__icontains=service_group)
+            | Q(order__test__department__icontains=service_group)
+        )
+
+    selected_centre = None
+    if batch_centre:
+        selected_centre = next((c for c in centre_rows if str(c.pk) == str(batch_centre)), None)
+    if selected_centre is None and len(centre_rows) == 1:
+        selected_centre = centre_rows[0]
+        batch_centre = str(selected_centre.pk)
+
+    filters = {}
+    if query:
+        filters['q'] = query
+    if visit_id:
+        filters['vid'] = visit_id
+    if date_from:
+        filters['from'] = date_from
+    if date_to:
+        filters['to'] = date_to
+    if service_group:
+        filters['service_group'] = service_group
+    if batch_centre:
+        filters['centre'] = batch_centre
+    filter_qs = urlencode(filters)
+    clear_params = {'stage': 'batch'}
+    grid_params = {'stage': 'batch', 'view': 'grid', **filters}
+
+    pending_count = queue.count()
+    collected_page = paginate(request, queue.order_by('-collected_at', 'sample_id'), 'cpage')
+    desk_rows = []
+    for sample in collected_page:
+        order = sample.order
+        _decorate_order(order)
+        patient = order.visit.patient
+        desk_rows.append({
+            'sample': sample,
+            'order': order,
+            'patient_name': f'{patient.first_name} {patient.last_name}'.strip().upper(),
+            'age': _age_text(patient),
+            'sex': (patient.sex or '').strip(),
+            'uhid': patient.uhid or '',
+            'visit_id': order.visit.visit_id,
+            'vacutainer': order.desk_vacutainer,
+            'vac_tone': _vacutainer_tone(order.desk_vacutainer),
+            'specimen': sample.specimen_type or order.desk_specimen or '',
+            'group': order.desk_group or (order.test.department or ''),
+            'collected_at': sample.collected_at,
+            'is_recollection': bool(sample.recollection_of_id),
+            'centre': sample.centre,
+        })
+
+    service_groups = list(
+        ServiceGroup.objects.filter(is_active=True).order_by('name').values_list('name', flat=True)
+    )
+    open_batches = batches.filter(status='OPEN').order_by('-created_at')
+    return {
+        'batch_desk': True,
+        'desk_rows': desk_rows,
+        'collected_samples': collected_page,
+        'recent_batches': paginate(request, batches.order_by('-created_at'), 'bpage'),
+        'open_batches': paginate(request, open_batches, 'opage'),
+        'pending_vac_count': pending_count,
+        'batch_preview_code': _preview_batch_code(selected_centre),
+        'batch_date': timezone.localdate(),
+        'selected_centre': selected_centre,
+        'batch_centre': batch_centre,
+        'search_query': query,
+        'visit_filter': visit_id,
+        'date_from': date_from,
+        'date_to': date_to,
+        'service_group': service_group,
+        'service_groups': service_groups,
+        'desk_view': view,
+        'filter_qs': filter_qs,
+        'clear_href': '?' + urlencode(clear_params),
+        'grid_href': '?' + urlencode(grid_params),
+    }
 
 
 def _build_batch_receiving_context(request, batches):

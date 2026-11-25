@@ -1,0 +1,343 @@
+{% comment %}Enterprise batch generation desk — included from laboratory workspace batch stage.{% endcomment %}
+<style>
+  .bg-desk { background: #fff; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .bg-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; padding: .85rem 1rem; border-bottom: 1px solid var(--line); background: #fbfaf7; }
+  .bg-title { font-family: Newsreader, Georgia, serif; font-size: 1.35rem; line-height: 1.1; margin: 0; }
+  .bg-centre { font-weight: 650; color: var(--sage-ink); }
+  .bg-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem; padding: .55rem .85rem; border-bottom: 1px solid var(--line); }
+  .bg-pills { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .bg-pill { display: inline-flex; align-items: center; gap: .45rem; border-radius: 999px; padding: .32rem .85rem; font-size: .86rem; font-weight: 650; border: 1px solid transparent; }
+  .bg-pill-pending { background: #fdecec; color: var(--danger); border-color: #f3c7c4; }
+  .bg-pill-selected { background: var(--sage); color: var(--sage-ink); border-color: #cfe0d4; }
+  .bg-pill-open { background: #ecfdf5; color: #065f46; border-color: #a7f3d0; }
+  .bg-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+  .bg-body { padding: .85rem; }
+  .bg-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .55rem .7rem; }
+  .bg-field label { display: block; font-size: .72rem; font-weight: 650; letter-spacing: .02em; color: #57534e; margin-bottom: .15rem; }
+  .bg-field .form-control, .bg-field .form-select { width: 100%; height: 2rem; min-height: 2rem; font-size: .86rem; background: #fff; }
+  .bg-field textarea.form-control { height: auto; min-height: 2.6rem; }
+  .bg-field .is-readonly { background: #fafaf9; }
+  .bg-span-2 { grid-column: span 2; }
+  .bg-span-4 { grid-column: span 4; }
+  .bg-vid { display: flex; gap: .4rem; align-items: center; }
+  .bg-vid .form-control { flex: 1 1 auto; min-width: 0; }
+  .bg-tests { margin-top: .95rem; }
+  .bg-tests h2 { font-size: .95rem; margin: 0 0 .4rem; }
+  .bg-grid { font-size: .8rem; min-width: 1480px; }
+  .bg-grid th { white-space: nowrap; font-size: .72rem; letter-spacing: .01em; color: #44403c; background: #fafaf9; position: sticky; top: 0; z-index: 1; }
+  .bg-grid td { vertical-align: middle; }
+  .bg-sample { background: #1e3a5f; color: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 650; padding: .2rem .45rem; border-radius: 6px; display: inline-block; }
+  .bg-vac { font-weight: 650; padding: .18rem .45rem; border-radius: 6px; display: inline-block; }
+  .bg-vac-yellow { background: #fde047; color: #422006; }
+  .bg-vac-lavender { background: #ddd6fe; color: #4c1d95; }
+  .bg-vac-blue { background: #bfdbfe; color: #1e3a8a; }
+  .bg-vac-green { background: #bbf7d0; color: #14532d; }
+  .bg-vac-red { background: #fecaca; color: #7f1d1d; }
+  .bg-vac-grey { background: #e7e5e4; color: #1c1917; }
+  .bg-test-hot { color: #1d4ed8; font-weight: 650; }
+  .bg-queue { margin-top: 1rem; }
+  .bg-empty { padding: 1.4rem .2rem; color: var(--muted); }
+  .bg-filter { width: 100%; min-width: 4.5rem; height: 1.7rem; min-height: 1.7rem; font-size: .72rem; margin-top: .2rem; }
+  .bg-hint { color: var(--danger); font-size: .78rem; font-weight: 650; }
+  @media (max-width: 1100px) {
+    .bg-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .bg-span-2, .bg-span-4 { grid-column: span 2; }
+  }
+</style>
+
+<section class="bg-desk" data-batch-generation>
+  <div class="bg-top">
+    <div>
+      <h1 class="bg-title">Batch Generation</h1>
+      <div class="small muted">Select collected samples from one centre. Any department may share a batch.</div>
+    </div>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      {% if selected_centre %}<span class="bg-centre">{{ selected_centre.name }}</span>{% endif %}
+      <form method="get" class="d-flex flex-wrap gap-2 align-items-center">
+        <input type="hidden" name="stage" value="batch">
+        {% if batch_centre %}<input type="hidden" name="centre" value="{{ batch_centre }}">{% endif %}
+        {% if date_from %}<input type="hidden" name="from" value="{{ date_from }}">{% endif %}
+        {% if date_to %}<input type="hidden" name="to" value="{{ date_to }}">{% endif %}
+        {% if service_group %}<input type="hidden" name="service_group" value="{{ service_group }}">{% endif %}
+        {% if visit_filter %}<input type="hidden" name="vid" value="{{ visit_filter }}">{% endif %}
+        <input class="form-control form-control-sm" style="min-width:14rem" name="q" value="{{ search_query }}" placeholder="Sample ID, patient, UHID, test" aria-label="Search samples">
+        <button class="btn btn-sm btn-dark" type="submit">Search</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="bg-bar">
+    <div class="bg-pills">
+      <span class="bg-pill bg-pill-pending">{{ pending_vac_count }} Pending vacutainer{% if pending_vac_count != 1 %}s{% endif %}</span>
+      <span class="bg-pill bg-pill-selected" data-selected-pill>0 Selected</span>
+      <span class="bg-pill bg-pill-open">{{ open_batches.paginator.count }} Open batch{% if open_batches.paginator.count != 1 %}es{% endif %}</span>
+    </div>
+    <div class="bg-actions">
+      <span class="bg-hint">Select samples, then Save</span>
+      {% if desk_rows and batch_centres %}
+      <button class="btn btn-sm btn-primary" type="submit" form="bg-create"><i class="bi bi-floppy"></i> Save</button>
+      {% endif %}
+      <a class="btn btn-sm btn-outline-dark" href="{{ clear_href }}"><i class="bi bi-x-circle"></i> Clear</a>
+      <a class="btn btn-sm btn-outline-dark" href="{{ grid_href }}"><i class="bi bi-grid"></i> Gridview</a>
+    </div>
+  </div>
+
+  <div class="bg-body">
+    <form id="bg-filters" method="get" class="bg-meta mb-3">
+      <input type="hidden" name="stage" value="batch">
+      <div class="bg-field">
+        <label for="bg-sample">Sample Id</label>
+        <input id="bg-sample" class="form-control" name="q" value="{{ search_query }}" placeholder="Sample ID">
+      </div>
+      <div class="bg-field">
+        <label for="bg-vid">VID#</label>
+        <div class="bg-vid">
+          <input id="bg-vid" class="form-control" name="vid" value="{{ visit_filter }}" placeholder="Visit ID">
+          <button class="btn btn-sm btn-primary" type="submit">Show</button>
+        </div>
+      </div>
+      <div class="bg-field">
+        <label for="bg-group">Service Group</label>
+        <select id="bg-group" class="form-select" name="service_group">
+          <option value="">All groups</option>
+          {% for name in service_groups %}
+          <option value="{{ name }}" {% if service_group == name %}selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="bg-field">
+        <label for="bg-centre">Processing Lab</label>
+        <select id="bg-centre" class="form-select" name="centre">
+          {% for centre in batch_centres %}
+          <option value="{{ centre.pk }}" {% if batch_centre == centre.pk|stringformat:"s" %}selected{% endif %}>{{ centre.name }}</option>
+          {% empty %}
+          <option value="">No centres available</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="bg-field">
+        <label for="bg-batch">Batch No</label>
+        <input id="bg-batch" class="form-control is-readonly font-monospace" value="{{ batch_preview_code|default:'Assigned on save' }}" readonly>
+      </div>
+      <div class="bg-field">
+        <label for="bg-batch-date">Batch Date</label>
+        <input id="bg-batch-date" class="form-control is-readonly" value="{{ batch_date|date:'d-M-Y' }}" readonly>
+      </div>
+      <div class="bg-field">
+        <label for="bg-from">From Date</label>
+        <input id="bg-from" class="form-control" type="date" name="from" value="{{ date_from }}">
+      </div>
+      <div class="bg-field">
+        <label for="bg-to">To Date</label>
+        <input id="bg-to" class="form-control" type="date" name="to" value="{{ date_to }}">
+      </div>
+      <div class="bg-field bg-span-4">
+        <label for="bg-comments">Comments</label>
+        <textarea id="bg-comments" class="form-control" form="bg-create" name="comments" rows="2" placeholder="Optional note for this batch (not stored on the batch record yet)"></textarea>
+      </div>
+    </form>
+
+    <form id="bg-create" method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="batch">
+      <input type="hidden" name="stage" value="batch">
+      <input type="hidden" name="centre" value="{{ batch_centre }}" id="bg-create-centre">
+
+      <div class="bg-tests">
+        <h2>Collected samples</h2>
+        <div class="table-responsive" style="max-height: 32rem;">
+          <table class="table table-sm table-hover bg-grid mb-0" id="bg-grid">
+            <thead>
+              <tr>
+                <th><input class="form-check-input" type="checkbox" id="bg-all" aria-label="Select all" {% if not desk_rows %}disabled{% endif %}></th>
+                <th>Sample Id</th>
+                <th>VID#</th>
+                <th>Collected Date</th>
+                <th>Customer Name</th>
+                <th>Age</th>
+                <th>Gender</th>
+                <th>Test Name</th>
+                <th>Service Group</th>
+                <th>Vacc. Name</th>
+                <th>UHID#</th>
+                <th>Test Code</th>
+                <th>Processing Lab</th>
+                <th>Remarks</th>
+                <th>Recoll</th>
+                <th>Specimen Name</th>
+              </tr>
+              <tr class="bg-filters">
+                <th></th>
+                <th><input class="form-control bg-filter" data-col="1" placeholder="Search…"></th>
+                <th><input class="form-control bg-filter" data-col="2" placeholder="Search…"></th>
+                <th><input class="form-control bg-filter" data-col="3" placeholder="Search…"></th>
+                <th><input class="form-control bg-filter" data-col="4" placeholder="Search…"></th>
+                <th><input class="form-control bg-filter" data-col="5" placeholder="Search…"></th>
+                <th><input class="form-control bg-filter" data-col="6" placeholder="Search…"></th>
+                <th><input class="form-control bg-filter" data-col="7" placeholder="Search…"></th>
+                <th><input class="form-control bg-filter" data-col="8" placeholder="Search…"></th>
+                <th><input class="form-control bg-filter" data-col="9" placeholder="Search…"></th>
+                <th><input class="form-control bg-filter" data-col="10" placeholder="Search…"></th>
+                <th><input class="form-control bg-filter" data-col="11" placeholder="Search…"></th>
+                <th><input class="form-control bg-filter" data-col="12" placeholder="Search…"></th>
+                <th></th>
+                <th></th>
+                <th><input class="form-control bg-filter" data-col="15" placeholder="Search…"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in desk_rows %}
+              <tr data-row>
+                <td>
+                  <input class="form-check-input bg-pick" type="checkbox" name="sample_ids" value="{{ row.sample.sample_id }}" id="bg-{{ row.sample.pk }}" aria-label="Select {{ row.sample.sample_id }}">
+                </td>
+                <td>
+                  <span class="bg-sample">{{ row.sample.sample_id }}</span>
+                  <a class="open-link ms-1" href="{% url 'sample-label' row.sample.pk %}" target="_blank" rel="noopener">label</a>
+                </td>
+                <td class="small font-monospace">{{ row.visit_id }}</td>
+                <td class="small">{% if row.collected_at %}{{ row.collected_at|date:'d-M-Y H:i' }}{% else %}—{% endif %}</td>
+                <td class="fw-semibold">{{ row.patient_name }}</td>
+                <td class="small">{{ row.age|default:'—' }}</td>
+                <td class="small">{{ row.sex|default:'—' }}</td>
+                <td class="{% if row.order.stat and row.order.stat.code != 'ROUTINE' %}bg-test-hot{% endif %}">
+                  {{ row.order.test.name }} {% include "includes/stat_badge.html" with stat=row.order.stat %}
+                </td>
+                <td class="small">{{ row.group|default:'—' }}</td>
+                <td>{% if row.vacutainer %}<span class="bg-vac {% if row.vac_tone %}bg-vac-{{ row.vac_tone }}{% endif %}">{{ row.vacutainer }}</span>{% else %}—{% endif %}</td>
+                <td class="small font-monospace">{{ row.uhid|default:'—' }}</td>
+                <td class="small font-monospace">{{ row.order.test.code }}</td>
+                <td class="small">{{ row.centre.name }}</td>
+                <td>
+                  <input class="form-control form-control-sm" name="remarks-{{ row.sample.sample_id }}" maxlength="255" placeholder="—" aria-label="Remarks {{ row.sample.sample_id }}">
+                </td>
+                <td class="text-center">
+                  <input class="form-check-input" type="checkbox" {% if row.is_recollection %}checked{% endif %} disabled aria-label="Recollection {{ row.sample.sample_id }}">
+                </td>
+                <td class="small">{{ row.specimen|default:'—' }}</td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="16" class="muted">
+                  No collected samples ready to batch{% if selected_centre %} at {{ selected_centre.name }}{% endif %}.
+                  Collect on <a href="{% url 'phlebotomy-workspace' %}">Phlebotomy</a>.
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% include "includes/pagination.html" with page=collected_samples %}
+      </div>
+    </form>
+
+    {% if desk_view == 'grid' or open_batches %}
+    <div class="bg-queue">
+      <h2 class="h6 mb-2">Batches</h2>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th>Batch code</th>
+              <th>Centre</th>
+              <th>Departments</th>
+              <th>Status</th>
+              <th>Samples</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for batch in recent_batches %}
+            <tr>
+              <td class="font-monospace fw-semibold">{{ batch.batch_code }}</td>
+              <td>{{ batch.centre.code }} — {{ batch.centre.name }}</td>
+              <td>{{ batch.department|default:'—' }}</td>
+              <td><span class="badge badge-soft">{{ batch.get_status_display }}</span></td>
+              <td>{{ batch.items.count }}</td>
+              <td class="small muted">{{ batch.created_at|date:'d-M-Y H:i' }}</td>
+              <td class="text-end">
+                {% if batch.status != 'OPEN' %}
+                <a class="btn btn-sm btn-outline-dark" href="{% url 'batch-report' batch.pk %}" target="_blank" rel="noopener">Report</a>
+                {% endif %}
+                {% if batch.status == 'OPEN' %}
+                <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="dispatch"><input type="hidden" name="stage" value="batch"><input type="hidden" name="batch" value="{{ batch.pk }}"><button class="btn btn-sm btn-outline-dark" type="submit">Dispatch</button></form>
+                {% endif %}
+                {% if batch.status == 'DISPATCHED' %}
+                <a class="btn btn-sm btn-outline-dark" href="?stage=receive&amp;batch={{ batch.pk }}">Receive</a>
+                {% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" class="muted">No batches yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% include "includes/pagination.html" with page=recent_batches %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<script>
+(function () {
+  var desk = document.querySelector('[data-batch-generation]');
+  if (!desk) return;
+  var all = document.getElementById('bg-all');
+  var picks = Array.prototype.slice.call(desk.querySelectorAll('.bg-pick'));
+  var pill = desk.querySelector('[data-selected-pill]');
+  var centre = document.getElementById('bg-centre');
+  var createCentre = document.getElementById('bg-create-centre');
+  var filters = document.getElementById('bg-filters');
+
+  function refreshCount() {
+    var n = picks.filter(function (el) { return el.checked && el.closest('tr').style.display !== 'none'; }).length;
+    if (pill) pill.textContent = n + ' Selected';
+    if (all) {
+      var visible = picks.filter(function (el) { return el.closest('tr').style.display !== 'none'; });
+      all.checked = visible.length > 0 && visible.every(function (el) { return el.checked; });
+      all.indeterminate = visible.some(function (el) { return el.checked; }) && !all.checked;
+    }
+  }
+
+  if (all) {
+    all.addEventListener('change', function () {
+      picks.forEach(function (el) {
+        if (el.closest('tr').style.display !== 'none') el.checked = all.checked;
+      });
+      refreshCount();
+    });
+  }
+  picks.forEach(function (el) { el.addEventListener('change', refreshCount); });
+  refreshCount();
+
+  if (centre && createCentre) {
+    centre.addEventListener('change', function () {
+      createCentre.value = centre.value;
+      if (filters) filters.submit();
+    });
+  }
+
+  desk.querySelectorAll('.bg-filter').forEach(function (input) {
+    input.addEventListener('input', function () {
+      var filtersMap = {};
+      desk.querySelectorAll('.bg-filter').forEach(function (el) {
+        var col = el.getAttribute('data-col');
+        if (col && el.value.trim()) filtersMap[col] = el.value.trim().toLowerCase();
+      });
+      desk.querySelectorAll('#bg-grid tbody tr[data-row]').forEach(function (row) {
+        var cells = row.children;
+        var show = true;
+        Object.keys(filtersMap).forEach(function (col) {
+          var cell = cells[Number(col)];
+          var text = (cell ? cell.textContent : '').toLowerCase();
+          if (text.indexOf(filtersMap[col]) === -1) show = false;
+        });
+        row.style.display = show ? '' : 'none';
+      });
+      refreshCount();
+    });
+  });
+})();
+</script>

@@ -84,6 +84,50 @@ class AdjustmentScreenTests(TestCase):
         edit = self.client.get('/accounts/bill-edit/')
         self.assertEqual(edit.status_code, 200)
 
+    def test_resulted_line_cannot_be_edited(self):
+        from django.core.exceptions import ValidationError
+        from billing.adjustments import RESULTED_BILL_MESSAGE
+        self.order_mp.status = 'COMPLETED'
+        self.order_mp.save(update_fields=['status'])
+        with self.assertRaisesMessage(ValidationError, RESULTED_BILL_MESSAGE):
+            replace_invoice_item(
+                user=self.user, invoice_item_id=self.item_mp.pk, replacement_kind='laboratory',
+                replacement_id=str(self.cbc.pk), tariff_id=str(self.tariff.pk), reason='Change',
+            )
+        self.client.login(username='acct.adjust', password='A-long-unique-password-2026!')
+        response = self.client.post('/accounts/bill-edit/', {
+            'action': 'remove_item', 'invoice_item': str(self.item_mp.pk),
+            'visit': str(self.visit.pk), 'reason': 'Change',
+        }, follow=True)
+        self.assertContains(response, 'The bill has been resulted already.')
+        self.assertTrue(InvoiceItem.objects.filter(pk=self.item_mp.pk).exists())
+        page = self.client.get('/accounts/bill-edit/', {'q': self.visit.visit_id, 'visit': str(self.visit.pk)})
+        self.assertContains(page, 'This bill cannot be edited. The bill has been resulted already.', count=1)
+        self.assertContains(page, 'Replace test', count=1)
+
+    def test_resulted_line_cannot_be_cancelled_or_refunded(self):
+        from django.core.exceptions import ValidationError
+        from billing.adjustments import RESULTED_REFUND_MESSAGE
+        Payment.objects.create(invoice=self.invoice, amount=self.invoice.total, method='CASH', received_by=self.user)
+        self.order_mp.status = 'COMPLETED'
+        self.order_mp.save(update_fields=['status'])
+        with self.assertRaisesMessage(ValidationError, RESULTED_REFUND_MESSAGE):
+            cancel_or_refund_item(
+                user=self.user, invoice_item_id=self.item_mp.pk,
+                mode='CANCEL_AND_REFUND', reason='Patient request',
+            )
+        self.client.login(username='acct.adjust', password='A-long-unique-password-2026!')
+        response = self.client.post('/accounts/refunds/', {
+            'action': 'cancel_refund_item', 'invoice_item': str(self.item_mp.pk), 'mode': 'CANCEL_ONLY',
+            'visit': str(self.visit.pk), 'reason': 'Patient request',
+        }, follow=True)
+        self.assertContains(response, 'The bill has been resulted already.')
+        self.assertTrue(InvoiceItem.objects.filter(pk=self.item_mp.pk).exists())
+        self.assertFalse(Refund.objects.filter(invoice=self.invoice).exists())
+        page = self.client.get('/accounts/refunds/', {'q': self.visit.visit_id, 'visit': str(self.visit.pk)})
+        self.assertContains(page, RESULTED_REFUND_MESSAGE, count=1)
+        self.assertContains(page, 'value="cancel_refund_item"', count=1)
+
     def test_phone_lookup_and_demographics_screens(self):
         desk = User.objects.create_user(
             username='desk.adjust', email='desk.adjust@example.test',

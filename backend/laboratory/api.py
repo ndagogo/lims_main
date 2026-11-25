@@ -492,10 +492,20 @@ class SampleBatchViewSet(viewsets.ModelViewSet):
         centre=serializer.validated_data['centre']; require(self.request.user,centre,'can_edit')
         ids=serializer.validated_data.pop('sample_ids', self.request.data.get('sample_ids', []))
         if not ids: raise ValidationError({'sample_ids':'Add at least one sample to a batch.'})
-        samples=list(scoped_samples(self.request.user).filter(sample_id__in=ids,centre=centre))
-        if len(samples)!=len(set(ids)): raise ValidationError('One or more samples are unavailable at this centre.')
+        samples=list(
+            scoped_samples(self.request.user)
+            .filter(sample_id__in=ids)
+            .select_related('order__test', 'centre')
+        )
+        if len(samples)!=len(set(ids)): raise ValidationError('One or more samples are unavailable.')
         if any(s.status!='COLLECTED' for s in samples): raise ValidationError('Only collected samples can be batched.')
-        if any(s.order.test.department != serializer.validated_data['department'] for s in samples): raise ValidationError('All samples in a batch must belong to the selected department.')
+        # Batches are centre-scoped, not department-scoped — any departments may share a batch.
+        sample_centres = {s.centre_id for s in samples}
+        if len(sample_centres) != 1 or next(iter(sample_centres)) != centre.pk:
+            raise ValidationError('All samples in a batch must belong to the selected centre.')
+        departments = sorted({(s.order.test.department or '').strip() for s in samples if (s.order.test.department or '').strip()})
+        if not serializer.validated_data.get('department'):
+            serializer.validated_data['department'] = departments[0] if len(departments) == 1 else ('MIXED' if departments else '')
         with transaction.atomic():
             batch=serializer.save(created_by=self.request.user)
             for sample in samples:

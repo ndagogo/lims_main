@@ -31,7 +31,10 @@
         {% for visit in matches %}
           <tr>
             <td class="fw-semibold">{{ visit.visit_id }}</td>
-            <td>{{ visit.patient.uhid }} · {{ visit.patient.first_name }} {{ visit.patient.last_name }}</td>
+            <td>
+              <div class="fw-semibold">{{ visit.patient.first_name }} {{ visit.patient.last_name }}</div>
+              <div class="small muted">{{ visit.patient.uhid }}</div>
+            </td>
             <td>{{ visit.patient.phone_number }}</td>
             <td>{{ visit.centre.code }}</td>
             <td><a class="btn btn-sm btn-primary" href="?q={{ query|urlencode }}&visit={{ visit.pk }}">Open</a></td>
@@ -57,9 +60,14 @@
     <div class="border rounded p-3 mb-3">
       <div class="fw-semibold">{{ invoice.invoice_number }} · {{ invoice.get_status_display }}</div>
       <div class="small muted mb-3">Total ₦{{ invoice.total|floatformat:2 }} · Net paid ₦{{ invoice.amount_paid|floatformat:2 }} · Balance ₦{{ invoice.balance|floatformat:2 }}</div>
-      {% for item in invoice.items.all %}
+      {% for item in invoice.active_items %}
         <div class="border-top pt-3 mt-3">
           <div class="fw-semibold">{{ item.description }} — ₦{{ item.line_total|floatformat:2 }}</div>
+          {% if item.is_resulted %}
+          <div class="alert alert-danger py-2 small mt-2 mb-0" role="alert">
+            <i class="bi bi-lock-fill me-1"></i>This bill cannot be edited. The bill has been resulted already.
+          </div>
+          {% else %}
           <div class="row g-3 mt-1">
             <div class="col-lg-4">
               <form method="post">
@@ -108,6 +116,7 @@
               </form>
             </div>
           </div>
+          {% endif %}
         </div>
       {% empty %}
         <p class="muted small mb-0">No active tests on this invoice.</p>
@@ -123,12 +132,16 @@
   <h2 class="h5">Bill modification history</h2>
   <div class="table-responsive">
     <table class="table align-middle">
-      <thead><tr><th>When</th><th>Invoice</th><th>Action</th><th>Change</th><th>Δ Amount</th><th>By</th><th>Reason</th></tr></thead>
+      <thead><tr><th>When</th><th>Invoice</th><th>Patient</th><th>Action</th><th>Change</th><th>Δ Amount</th><th>By</th><th>Reason</th></tr></thead>
       <tbody>
         {% for row in amendment_history %}
           <tr>
             <td class="small">{{ row.created_at }}</td>
-            <td>{{ row.invoice.invoice_number }}<div class="small muted">{{ row.invoice.visit.patient.uhid }}</div></td>
+            <td>{{ row.invoice.invoice_number }}<div class="small muted">{{ row.invoice.visit.visit_id }}</div></td>
+            <td>
+              <div class="fw-semibold">{{ row.invoice.visit.patient.first_name }} {{ row.invoice.visit.patient.last_name }}</div>
+              <div class="small muted">{{ row.invoice.visit.patient.uhid }}</div>
+            </td>
             <td>{{ row.get_action_display }}</td>
             <td class="small">
               {% if row.removed_description %}− {{ row.removed_description }}{% endif %}
@@ -140,7 +153,7 @@
             <td class="small">{{ row.reason }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="7" class="muted py-3 text-center">No bill modifications recorded yet.</td></tr>
+          <tr><td colspan="8" class="muted py-3 text-center">No bill modifications recorded yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
