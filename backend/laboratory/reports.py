@@ -118,42 +118,84 @@ def build_result_pdf(result):
         pdf.drawString(margin, y, line[:110])
         y -= 14
     y -= 8
-    pdf.setFont(bold, size)
-    pdf.drawString(margin, y, 'Parameter')
-    pdf.drawString(260, y, 'Value')
-    pdf.drawString(360, y, 'Flag')
-    pdf.drawString(450, y, 'Range')
-    y -= 8
-    pdf.line(margin, y, width - margin, y)
-    y -= 16
-    snap_params = {p.get('parameter_id'): p for p in snap.get('parameters') or []}
-    if snap.get('template'):
+    tpl = snap.get('template') if isinstance(snap.get('template'), dict) else {}
+    if tpl:
         pdf.setFont(font, 8)
-        tpl = snap['template']
-        pdf.drawString(margin, y, f"Template: {tpl.get('name', '')} v{tpl.get('version', '')} (frozen at authentication)")
+        label = tpl.get('format_code') or tpl.get('name') or ''
+        pdf.drawString(margin, y, f"Format: {label} v{tpl.get('version', '')}".strip()[:110])
         y -= 14
-    if isinstance(snap.get('template'), dict) and snap['template'].get('report_header'):
+    if tpl.get('report_header'):
         pdf.setFont(f'{font}-Oblique' if font == 'Helvetica' else font, max(8, size - 1))
-        for chunk in _wrap(snap['template']['report_header'], 95):
+        for chunk in _wrap(tpl['report_header'], 95):
             if y < margin + 72:
                 pdf.showPage()
                 y = height - margin
             pdf.drawString(margin, y, chunk)
             y -= 12
         y -= 4
+    captions = (
+        tpl.get('column_caption_1') or 'Test',
+        tpl.get('column_caption_2') or 'Result',
+        tpl.get('column_caption_3') or 'Units',
+        tpl.get('column_caption_4') or 'Biological Reference Interval',
+    )
+    report_title = (tpl.get('report_title') or '').strip()
+    if report_title:
+        pdf.setFont(bold, size + 1)
+        pdf.drawString(margin, y, report_title[:90])
+        y -= 16
+    pdf.setFont(bold, max(8, size - 1))
+    value_x = margin + 190
+    unit_x = margin + 300
+    range_x = margin + 360
+    pdf.drawString(margin, y, captions[0][:24])
+    pdf.drawString(value_x, y, captions[1][:16])
+    pdf.drawString(unit_x, y, captions[2][:12])
+    pdf.drawString(range_x, y, captions[3][:28])
+    y -= 8
+    pdf.line(margin, y, width - margin, y)
+    y -= 16
     pdf.setFont(font, size)
-    for row in result.values.select_related('parameter'):
+    for row_snap, row in _ordered_result_rows(result, snap):
+        if row_snap.get('include_in_report') is False:
+            continue
         if y < margin + 72:
             pdf.showPage()
             y = height - margin
             pdf.setFont(font, size)
-        row_snap = snap_params.get(row.parameter_id) or {}
-        range_text = row.reference_display or row_snap.get('matched_display') or row.parameter.reference_range or ''
-        pdf.drawString(margin, y, (row_snap.get('name') or row.parameter.name)[:32])
-        pdf.drawString(260, y, (row.value or '')[:18])
-        pdf.drawString(360, y, (row.flag or '')[:16])
-        pdf.drawString(450, y, range_text[:18])
+        subtitle = (row_snap.get('section_label') or '').strip()
+        if subtitle:
+            pdf.setFont(bold, size)
+            pdf.drawString(margin, y, subtitle[:80])
+            y -= 14
+            pdf.setFont(font, size)
+        name = row_snap.get('name') or (row.parameter.name if row else '')
+        value = (row.value if row else row_snap.get('value')) or ''
+        flag = (row.flag if row else row_snap.get('flag')) or ''
+        unit = row_snap.get('unit') or (row.parameter.unit if row else '')
+        range_text = ''
+        if row_snap.get('show_reference_range', True):
+            range_text = (row.reference_display if row else '') or row_snap.get('matched_display') or ''
+        name_font = bold if row_snap.get('parameter_in_bold') else font
+        name_size = size + (1 if row_snap.get('text_size') == 'BIG' else -1 if row_snap.get('text_size') == 'SMALL' else 0)
+        pdf.setFont(name_font, max(8, name_size))
+        pdf.drawString(margin, y, name[:28])
+        pdf.setFont(font, size)
+        shown = value[:16] + (f' {flag}' if flag else '')
+        pdf.drawString(value_x, y, shown[:18])
+        pdf.drawString(unit_x, y, (unit or '')[:12])
+        pdf.drawString(range_x, y, range_text[:28])
         y -= 14
+    interpretation = (tpl.get('interpretation') or '').strip()
+    if interpretation:
+        y -= 8
+        pdf.setFont(font, max(8, size - 1))
+        for chunk in _wrap(interpretation, 95):
+            if y < margin + 72:
+                pdf.showPage()
+                y = height - margin
+            pdf.drawString(margin, y, chunk)
+            y -= 12
     if result.narrative:
         y -= 10
         pdf.setFont(f'{font}-Oblique' if font == 'Helvetica' else font, size)
@@ -206,6 +248,54 @@ def build_result_pdf(result):
     pdf.save()
     from core.report_stationery import apply_pdf_stationery
     return apply_pdf_stationery(buffer.getvalue(), fmt)
+
+
+def result_table(result):
+    """Column captions and ordered rows from the test format frozen on the result."""
+    snap = result.configuration_snapshot or {}
+    tpl = snap.get('template') if isinstance(snap.get('template'), dict) else {}
+    rows = []
+    for item, row in _ordered_result_rows(result, snap):
+        rows.append({
+            'subtitle': (item.get('section_label') or '').strip(),
+            'name': item.get('name') or (row.parameter.name if row else ''),
+            'value': (row.value if row else item.get('value')) or '',
+            'flag': (row.flag if row else item.get('flag')) or '',
+            'unit': item.get('unit') or (row.parameter.unit if row else ''),
+            'reference': ((row.reference_display if row else '') or item.get('matched_display') or ''),
+            'bold': bool(item.get('parameter_in_bold')),
+        })
+    test_name = result.sample.order.test.name
+    return {
+        'title': (tpl.get('report_title') or '').strip() or test_name,
+        'captions': [
+            tpl.get('column_caption_1') or 'Test',
+            tpl.get('column_caption_2') or 'Result',
+            tpl.get('column_caption_3') or 'Units',
+            tpl.get('column_caption_4') or 'Biological Reference Interval',
+        ],
+        'header': tpl.get('report_header') or '',
+        'footer': tpl.get('report_footer') or '',
+        'interpretation': tpl.get('interpretation') or '',
+        'rows': rows,
+    }
+
+
+def _ordered_result_rows(result, snap):
+    """Print in the mapped format sequence. Values outside that format follow."""
+    values = {row.parameter_id: row for row in result.values.select_related('parameter')}
+    ordered = []
+    seen = set()
+    for item in snap.get('parameters') or []:
+        parameter_id = item.get('parameter_id')
+        seen.add(parameter_id)
+        if item.get('include_in_report') is False:
+            continue
+        ordered.append((item, values.get(parameter_id)))
+    for row in result.values.select_related('parameter'):
+        if row.parameter_id not in seen:
+            ordered.append(({}, row))
+    return ordered
 
 
 def _bold_font(font):

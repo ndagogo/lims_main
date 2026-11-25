@@ -37,6 +37,9 @@ from core.catalog import (
     handle_doctors_post, handle_imaging_post, handle_service_groups_post,
     handle_tariff_detail_post, handle_tariffs_post, handle_tests_post, platform_admin_only,
 )
+from core.lab_configuration import (
+    build_formats_context, build_parameters_context, handle_formats_post, handle_parameters_post,
+)
 from core.models import AuditEvent, Centre, UserCentreAccess
 from core.paging import PAGE_SIZES, paginate
 from core.uploads import validate_upload
@@ -303,6 +306,22 @@ def catalog_tests(request):
     if request.method == 'POST':
         return handle_tests_post(request)
     return render(request, 'catalog/tests.html', build_tests_context(request))
+
+
+@login_required
+def catalog_parameters(request):
+    platform_admin_only(request)
+    if request.method == 'POST':
+        return handle_parameters_post(request)
+    return render(request, 'catalog/parameters.html', build_parameters_context(request))
+
+
+@login_required
+def catalog_formats(request):
+    platform_admin_only(request)
+    if request.method == 'POST':
+        return handle_formats_post(request)
+    return render(request, 'catalog/formats.html', build_formats_context(request))
 
 
 @login_required

@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Test formats | {{ org_short_name }}{% endblock %}
+{% block content %}
+{% include "catalog/_page_header.html" with eyebrow="LABORATORY" title="Test formats" subtitle="A format decides how a test’s parameters, units, and reference interval are arranged on the patient result. Every test should have one format mapped to it." %}
+<div class="row g-4">
+  <div class="col-xl-7">
+    <div class="card p-4 mb-4">
+      <h2 class="h5">Format setup{% if template %} · {{ template.format_code }}{% endif %}</h2>
+      <p class="small muted">{% if unmapped_tests %}{{ unmapped_tests }} active test{{ unmapped_tests|pluralize }} still have no mapped format.{% else %}Every active test has a mapped format.{% endif %}</p>
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="save_format">
+        {% if template %}<input type="hidden" name="format" value="{{ template.pk }}">{% endif %}
+        <div class="row g-2">
+          <div class="col-md-6">
+            <label class="form-label">Test name</label>
+            <select class="form-select" name="test" required onchange="window.location='?test='+this.value">
+              <option value="">Select a test</option>
+              {% for test in tests %}
+              <option value="{{ test.pk }}" {% if selected_test and selected_test.pk == test.pk %}selected{% endif %}>{{ test.code }} — {{ test.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Format</label>
+            <input class="form-control" value="{{ template.format_code|default:'Assigned on save' }}" readonly>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Service group</label>
+            <input class="form-control" value="{% if selected_test and selected_test.service_group %}{{ selected_test.service_group.name }}{% endif %}" readonly>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Report title</label>
+            <input class="form-control" name="report_title" value="{% if template and template.report_title %}{{ template.report_title }}{% elif selected_test %}{{ selected_test.name }}{% endif %}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Specimen</label>
+            <input class="form-control" value="{% if selected_test %}{{ selected_test.specimen|default:'—' }}{% endif %}" readonly>
+          </div>
+          <div class="col-md-3"><label class="form-label">Column caption 1</label><input class="form-control" name="column_caption_1" value="{{ template.column_caption_1|default:'Test' }}"></div>
+          <div class="col-md-3"><label class="form-label">Column caption 2</label><input class="form-control" name="column_caption_2" value="{{ template.column_caption_2|default:'Result' }}"></div>
+          <div class="col-md-3"><label class="form-label">Column caption 3</label><input class="form-control" name="column_caption_3" value="{{ template.column_caption_3|default:'Units' }}"></div>
+          <div class="col-md-3"><label class="form-label">Column caption 4</label><input class="form-control" name="column_caption_4" value="{{ template.column_caption_4|default:'Biological Reference Interval' }}"></div>
+          <div class="col-12"><label class="form-label">Interpretation</label><textarea class="form-control" name="interpretation" rows="2">{{ template.interpretation|default:'' }}</textarea></div>
+          <div class="col-md-6"><label class="form-label">Report header</label><textarea class="form-control" name="report_header" rows="2">{{ template.report_header|default:'' }}</textarea></div>
+          <div class="col-md-6"><label class="form-label">Report footer</label><textarea class="form-control" name="report_footer" rows="2">{{ template.report_footer|default:'' }}</textarea></div>
+          <div class="col-12 d-flex gap-3">
+            <label class="form-check"><input class="form-check-input" type="checkbox" name="is_default_male" {% if not template or template.is_default_male %}checked{% endif %}>Default format, male</label>
+            <label class="form-check"><input class="form-check-input" type="checkbox" name="is_default_female" {% if not template or template.is_default_female %}checked{% endif %}>Default format, female</label>
+          </div>
+        </div>
+
+        <h3 class="h6 mt-4">Parameters on this result</h3>
+        <p class="small muted">Sequence is the order on the printed result. Add parameters from this test. Create them first on Test parameters if the list is empty.</p>
+        {% if not selected_test %}
+        <p class="muted">Select a test to arrange its parameters.</p>
+        {% else %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead><tr><th>Parameter</th><th>Sequence</th><th>Sub title</th><th>Gross</th><th>Remove</th></tr></thead>
+            <tbody>
+              {% for field in fields %}
+              <tr>
+                <td>{{ field.parameter.name }} <span class="muted small">{{ field.parameter.code }}</span></td>
+                <td style="width:6rem"><input class="form-control form-control-sm" name="sequence-{{ field.pk }}" value="{{ field.display_order }}"></td>
+                <td><input class="form-control form-control-sm" name="subtitle-{{ field.pk }}" value="{{ field.section_label }}"></td>
+                <td><input class="form-check-input" type="checkbox" name="gross-{{ field.pk }}" {% if field.is_gross %}checked{% endif %}></td>
+                <td><input class="form-check-input" type="checkbox" name="remove-{{ field.pk }}"></td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="muted">No parameters on this format yet.</td></tr>
+              {% endfor %}
+              <tr class="table-warning">
+                <td>
+                  <select class="form-select form-select-sm" name="add_parameter">
+                    <option value="">Add a parameter…</option>
+                    {% for param in available_parameters %}<option value="{{ param.pk }}">{{ param.name }} ({{ param.code }})</option>{% endfor %}
+                  </select>
+                </td>
+                <td><input class="form-control form-control-sm" name="add_sequence" placeholder="Seq"></td>
+                <td><input class="form-control form-control-sm" name="add_subtitle" placeholder="Sub title"></td>
+                <td><input class="form-check-input" type="checkbox" name="add_gross"></td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary" type="submit">Save and map to test</button>
+          <a class="btn btn-outline-dark" href="{% url 'catalog-parameters' %}?test={{ selected_test.pk }}">Test parameters</a>
+        </div>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+  <div class="col-xl-5">
+    <div class="card p-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h6 mb-0">Formats</h2>
+        <form method="get"><input class="form-control form-control-sm" name="q" value="{{ query }}" placeholder="Code or test"></form>
+      </div>
+      <div class="table-responsive" style="max-height:36rem;overflow:auto">
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr><th>Format</th><th>Test</th><th>Fields</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for row in directory %}
+            <tr>
+              <td><a class="fw-semibold" href="?test={{ row.test_id }}&format={{ row.pk }}">{{ row.format_code }}</a></td>
+              <td class="small">{{ row.test.code }} — {{ row.test.name }}</td>
+              <td>{{ row.field_count }}</td>
+              <td class="small">{{ row.get_status_display }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="muted">No formats yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="mt-2">{% include "includes/pagination.html" with page=directory %}</div>
+    </div>
+  </div>
+</div>
+{% endblock %}

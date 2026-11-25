@@ -198,7 +198,10 @@ def patient_result(request, result_id):
     if patient is None:
         return redirect('portal-patient-login')
     result = _released_lab_result(patient, result_id)
-    return render(request, 'portals/patient_result.html', {'patient': patient, 'result': result})
+    from laboratory.reports import result_table
+    return render(request, 'portals/patient_result.html', {
+        'patient': patient, 'result': result, 'table': result_table(result),
+    })
 
 
 def patient_result_pdf(request, result_id):

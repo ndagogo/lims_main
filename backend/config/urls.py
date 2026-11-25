@@ -19,7 +19,7 @@ from core.views import (
     phlebotomy_workspace, radiology_workspace, radiology_performance, radiology_templates, radiology_template_builder, healthz,
     login_page, logout_page, password_change, account_profile, account_signature, download_patient_document, download_settlement_proof,
     user_management, role_management, catalog_hub, catalog_tariffs, catalog_tariff_detail,
-    catalog_tests, catalog_service_groups, catalog_doctors, catalog_imaging, catalog_centres,
+    catalog_tests, catalog_parameters, catalog_formats, catalog_service_groups, catalog_doctors, catalog_imaging, catalog_centres,
     catalog_clients,
 )
 from core.enterprise_clients import (
@@ -107,6 +107,8 @@ urlpatterns=[
     path('catalog/tariffs/', catalog_tariffs, name='catalog-tariffs'),
     path('catalog/tariffs/<int:pk>/', catalog_tariff_detail, name='catalog-tariff-detail'),
     path('catalog/tests/', catalog_tests, name='catalog-tests'),
+    path('catalog/parameters/', catalog_parameters, name='catalog-parameters'),
+    path('catalog/formats/', catalog_formats, name='catalog-formats'),
     path('catalog/service-groups/', catalog_service_groups, name='catalog-service-groups'),
     path('catalog/doctors/', catalog_doctors, name='catalog-doctors'),
     path('catalog/imaging/', catalog_imaging, name='catalog-imaging'),

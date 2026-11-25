@@ -110,6 +110,8 @@ def build_hub_context(request):
     counts = {
         'tariffs': Tariff.objects.count(),
         'tests': Test.objects.count(),
+        'parameters': TestParameter.objects.count(),
+        'formats': ResultTemplate.objects.count(),
         'service_groups': ServiceGroup.objects.count(),
         'doctors': ReferralDoctor.objects.count(),
         'procedures': ImagingProcedure.objects.count(),
@@ -127,7 +129,9 @@ def build_hub_context(request):
         ('Channels', 'enterprise-channels', 'channels', 'bi-signpost-2', 'Self, doctors, credit & on-payment channel tariffs'),
         ('Client types', 'enterprise-client-types', 'client_types', 'bi-diagram-2', 'Credit, On Payment, Default, and custom types'),
         ('Patient titles', 'enterprise-patient-titles', 'patient_titles', 'bi-person-vcard', 'Mr, Mrs, Chief, Alhaji, and country-specific honorifics'),
-        ('Laboratory tests', 'catalog-tests', 'tests', 'bi-droplet', 'Auto codes, departments, and parameters'),
+        ('Laboratory tests', 'catalog-tests', 'tests', 'bi-droplet', 'Code, specimen, workflow, TAT, and outsourcing'),
+        ('Test parameters', 'catalog-parameters', 'parameters', 'bi-sliders', 'Units, format types, decimals, and analyser codes'),
+        ('Test formats', 'catalog-formats', 'formats', 'bi-layout-text-window', 'How each test is arranged on the patient result'),
         ('Service groups', 'catalog-service-groups', 'service_groups', 'bi-diagram-3', 'Sample ID group digits'),
         ('Referral business', 'enterprise-referrals', 'doctors', 'bi-people', 'Commission due, visits, payouts, and exports'),
         ('Referral doctors', 'catalog-doctors', 'doctors', 'bi-person-badge', 'Doctor master data and institutions'),
@@ -366,7 +370,7 @@ def build_tests_context(request):
         'result_types': TestParameter.RESULT_TYPES,
         'sex_choices': ReferenceRange.SEX,
         'templates': (
-            ResultTemplate.objects.filter(test=selected, is_active=True).order_by('name', '-version')
+            ResultTemplate.objects.filter(test=selected).order_by('-version', 'name')
             if selected else ResultTemplate.objects.none()
         ),
         'published_workflows': _published_workflows(),

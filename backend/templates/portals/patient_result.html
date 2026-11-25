@@ -4,19 +4,28 @@
 <p class="mb-3"><a class="pp-back" href="{% url 'portal-patient-home' %}">Back to your record</a></p>
 <article class="pp-sheet">
   <div class="eyebrow">Laboratory report</div>
-  <h1>{{ result.sample.order.test.name }}</h1>
+  <h1>{{ table.title }}</h1>
   <p class="muted">Sample {{ result.sample.sample_id }} · visit {{ result.sample.order.visit.visit_id }}{% if result.released_at %} · released {{ result.released_at|date:"d M Y" }}{% endif %}</p>
+  {% if table.header %}<p>{{ table.header }}</p>{% endif %}
   {% if result.narrative %}<p>{{ result.narrative }}</p>{% endif %}
   <div class="table-responsive">
     <table class="table mb-0">
-      <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+      <thead><tr>{% for caption in table.captions %}<th>{{ caption }}</th>{% endfor %}</tr></thead>
       <tbody>
-        {% for row in result.values.all %}
-        <tr><td>{{ row.parameter.name }}</td><td>{{ row.value }}</td></tr>
-        {% empty %}<tr><td colspan="2" class="muted">No parameter values on this report.</td></tr>{% endfor %}
+        {% for row in table.rows %}
+        {% if row.subtitle %}<tr><td colspan="4" class="fw-semibold">{{ row.subtitle }}</td></tr>{% endif %}
+        <tr>
+          <td {% if row.bold %}class="fw-semibold"{% endif %}>{{ row.name }}</td>
+          <td>{{ row.value }}{% if row.flag %} {{ row.flag }}{% endif %}</td>
+          <td>{{ row.unit }}</td>
+          <td>{{ row.reference }}</td>
+        </tr>
+        {% empty %}<tr><td colspan="4" class="muted">No parameter values on this report.</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
+  {% if table.interpretation %}<p class="mt-3">{{ table.interpretation }}</p>{% endif %}
+  {% if table.footer %}<p class="small muted">{{ table.footer }}</p>{% endif %}
   <a class="btn btn-dark mt-3" href="{% url 'portal-patient-result-pdf' result.pk %}">Download report</a>
 </article>
 {% endblock %}

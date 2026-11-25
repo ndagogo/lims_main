@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block title %}Test parameters | {{ org_short_name }}{% endblock %}
+{% block content %}
+{% include "catalog/_page_header.html" with eyebrow="LABORATORY" title="Test parameters" subtitle="Create the result fields for a test. The parameter code is generated automatically and is the code used when mapping an analyser." %}
+<div class="row g-4">
+  <div class="col-xl-7">
+    <div class="card p-4 mb-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h5 mb-0">{% if editing %}Edit parameter{% else %}Parameter setup{% endif %}</h2>
+        {% if editing %}<a class="btn btn-outline-dark btn-sm" href="?test={{ editing.test_id }}">New parameter</a>{% endif %}
+      </div>
+      {% with source=editing|default:copy_from %}
+      <form method="post" class="row g-2">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="save_parameter">
+        {% if editing %}<input type="hidden" name="parameter" value="{{ editing.pk }}">{% endif %}
+        <div class="col-md-6">
+          <label class="form-label">Test</label>
+          <select class="form-select" name="test" required onchange="window.location='?test='+this.value">
+            <option value="">Select a test</option>
+            {% for test in tests %}<option value="{{ test.pk }}" {% if selected_test and selected_test.pk == test.pk %}selected{% elif source and source.test_id == test.pk %}selected{% endif %}>{{ test.code }} — {{ test.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Parameter code</label>
+          <input class="form-control" value="{% if editing %}{{ editing.code }}{% else %}{{ preview_code|default:'Select a test' }}{% endif %}" readonly>
+          <div class="form-text">LP + first two letters of the test name + day, month, and year. Extra parameters the same day add 02, 03…</div>
+        </div>
+        <div class="col-md-8">
+          <label class="form-label">Parameter display name</label>
+          <input class="form-control" name="param_name" required value="{{ source.name|default:'' }}" placeholder="Haemoglobin">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Copy from parameter</label>
+          <select class="form-select" onchange="if(this.value){ window.location='?test={{ selected_test.pk|default:'' }}&copy='+this.value }">
+            <option value="">—</option>
+            {% for row in copy_choices %}<option value="{{ row.pk }}">{{ row.test.code }} · {{ row.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Format type</label>
+          <select class="form-select" name="result_type">
+            {% for value, label in result_types %}<option value="{{ value }}" {% if source and source.result_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Unit of measurement</label>
+          <select class="form-select" name="unit_of_measure">
+            <option value="">—</option>
+            {% for unit in units %}<option value="{{ unit.pk }}" {% if source and source.unit_of_measure_id == unit.pk %}selected{% endif %}>{{ unit.symbol }} — {{ unit.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">No. of decimals</label>
+          <input class="form-control" name="decimal_places" type="number" min="0" max="6" value="{{ source.decimal_places|default_if_none:'' }}">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">Sequence</label>
+          <input class="form-control" name="display_order" type="number" min="0" value="{{ source.display_order|default:0 }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Text box size</label>
+          <div>
+            {% for value, label in text_sizes %}
+            <label class="form-check form-check-inline"><input class="form-check-input" type="radio" name="text_size" value="{{ value }}" {% if source and source.text_size == value %}checked{% elif not source and value == 'SAME' %}checked{% endif %}>{{ label }}</label>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Show result</label>
+          <div>
+            {% for value, label in result_positions %}
+            <label class="form-check form-check-inline"><input class="form-check-input" type="radio" name="result_position" value="{{ value }}" {% if source and source.result_position == value %}checked{% elif not source and value == 'BENEATH' %}checked{% endif %}>{{ label }}</label>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Method</label>
+          <input class="form-control" name="method_name" value="{{ source.method_name|default:'' }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Choices (qualitative / multi-select)</label>
+          <input class="form-control" name="choices" value="{% if source %}{{ source.choices|join:', ' }}{% endif %}" placeholder="Positive, Negative">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Calculation</label>
+          <input class="form-control" name="calculation" value="{{ source.calculation|default:'' }}" placeholder="WBC * NEUT_PCT / 100">
+        </div>
+        <div class="col-md-3"><label class="form-label">Normal low</label><input class="form-control" name="low" value="{% if editing and editing.reference_ranges.first %}{{ editing.reference_ranges.first.low|default_if_none:'' }}{% endif %}"></div>
+        <div class="col-md-3"><label class="form-label">Normal high</label><input class="form-control" name="high" value="{% if editing and editing.reference_ranges.first %}{{ editing.reference_ranges.first.high|default_if_none:'' }}{% endif %}"></div>
+        <div class="col-md-3"><label class="form-label">Critical low</label><input class="form-control" name="critical_low" value="{% if editing and editing.reference_ranges.first %}{{ editing.reference_ranges.first.critical_low|default_if_none:'' }}{% endif %}"></div>
+        <div class="col-md-3"><label class="form-label">Critical high</label><input class="form-control" name="critical_high" value="{% if editing and editing.reference_ranges.first %}{{ editing.reference_ranges.first.critical_high|default_if_none:'' }}{% endif %}"></div>
+        <div class="col-md-4"><label class="form-label">Population</label><input class="form-control" name="population_label" value="{% if editing and editing.reference_ranges.first %}{{ editing.reference_ranges.first.population_label }}{% endif %}" placeholder="Adult"></div>
+        <div class="col-md-4"><label class="form-label">Barcode suffix</label><input class="form-control" name="barcode_suffix" value="{{ source.barcode_suffix|default:'' }}"></div>
+        <div class="col-md-4"><label class="form-label">Section</label><input class="form-control" name="section_code" value="{{ source.section_code|default:'' }}" placeholder="DIFF"></div>
+        <div class="col-12"><label class="form-label">Parameter note</label><textarea class="form-control" name="note" rows="2">{{ source.note|default:'' }}</textarea></div>
+        <div class="col-12 d-flex flex-wrap gap-3">
+          <label class="form-check"><input class="form-check-input" type="checkbox" name="is_required" {% if not source or source.is_required %}checked{% endif %}>Required</label>
+          <label class="form-check"><input class="form-check-input" type="checkbox" name="show_in_report" {% if not source or source.show_in_report %}checked{% endif %}>Show in report</label>
+          <label class="form-check"><input class="form-check-input" type="checkbox" name="parameter_in_bold" {% if source and source.parameter_in_bold %}checked{% endif %}>Bold</label>
+          <label class="form-check"><input class="form-check-input" type="checkbox" name="require_comment_if_abnormal" {% if source and source.require_comment_if_abnormal %}checked{% endif %}>Comment if abnormal</label>
+          <label class="form-check"><input class="form-check-input" type="checkbox" name="critical_comment_required" {% if source and source.critical_comment_required %}checked{% endif %}>Comment if critical</label>
+        </div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Save</button></div>
+      </form>
+      {% endwith %}
+    </div>
+
+    <div class="card p-4">
+      <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+        <h2 class="h5 mb-0">Parameters list</h2>
+        <form method="get" class="d-flex gap-2">
+          {% if selected_test %}<input type="hidden" name="test" value="{{ selected_test.pk }}">{% endif %}
+          <input class="form-control form-control-sm" name="q" value="{{ query }}" placeholder="Code or name">
+          <button class="btn btn-sm btn-outline-dark" type="submit">Search</button>
+        </form>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr><th>Code</th><th>Parameter</th><th>Test</th><th>Type</th><th>Unit</th><th>Decimals</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for row in directory %}
+            <tr>
+              <td class="fw-semibold font-monospace">{{ row.code }}</td>
+              <td><a href="?test={{ row.test_id }}&parameter={{ row.pk }}">{{ row.name }}</a></td>
+              <td class="small">{{ row.test.code }}</td>
+              <td class="small">{{ row.get_result_type_display }}</td>
+              <td>{{ row.unit|default:"—" }}</td>
+              <td>{{ row.decimal_places|default_if_none:"—" }}</td>
+              <td>
+                <form method="post" class="m-0" onsubmit="return confirm('Remove {{ row.code }}?');">{% csrf_token %}
+                  <input type="hidden" name="action" value="delete_parameter">
+                  <input type="hidden" name="parameter" value="{{ row.pk }}">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Remove</button>
+                </form>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" class="muted">No parameters yet. Select a test and save the first field.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="mt-2">{% include "includes/pagination.html" with page=directory %}</div>
+    </div>
+  </div>
+  <div class="col-xl-5">
+    <div class="card p-4">
+      <h2 class="h5">Units of measurement</h2>
+      <p class="small muted">Standard laboratory units are already on this list. Add any other unit the laboratory uses.</p>
+      <form method="post" class="row g-2 mb-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="save_unit">
+        <div class="col-md-4"><label class="form-label">Symbol</label><input class="form-control" name="symbol" required placeholder="g/dL"></div>
+        <div class="col-md-5"><label class="form-label">Name</label><input class="form-control" name="name" placeholder="Grams per decilitre"></div>
+        <div class="col-md-3 d-flex align-items-end"><button class="btn btn-primary w-100" type="submit">Add</button></div>
+      </form>
+      <div class="table-responsive" style="max-height:28rem;overflow:auto">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Symbol</th><th>Name</th><th></th></tr></thead>
+          <tbody>
+            {% for unit in all_units %}
+            <tr>
+              <td class="fw-semibold">{{ unit.symbol }}</td>
+              <td>{{ unit.name }}{% if not unit.is_active %} <span class="muted">inactive</span>{% endif %}</td>
+              <td>
+                {% if unit.is_active %}
+                <form method="post" class="m-0">{% csrf_token %}<input type="hidden" name="action" value="deactivate_unit"><input type="hidden" name="unit" value="{{ unit.pk }}"><button class="btn btn-link btn-sm p-0" type="submit">Hide</button></form>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

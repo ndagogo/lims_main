@@ -405,7 +405,23 @@ class SampleProcessing(TimeStampedModel):
     started_at=models.DateTimeField(default=timezone.now)
     completed_at=models.DateTimeField(null=True,blank=True)
 
+class UnitOfMeasure(TimeStampedModel):
+    """Laboratory unit of measurement. Parameters pick one; the symbol is copied onto the parameter."""
+    code = models.CharField(max_length=20, unique=True)
+    name = models.CharField(max_length=80)
+    symbol = models.CharField(max_length=40)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return f'{self.symbol} — {self.name}'
+
+
 class TestParameter(TimeStampedModel):
+    TEXT_SIZES = [('BIG', 'Big'), ('SMALL', 'Small'), ('SAME', 'Same')]
+    RESULT_POSITIONS = [('BENEATH', 'Beneath'), ('BESIDE', 'Beside')]
     RESULT_TYPES = [
         ('NUMBER', 'Numeric with unit'),
         ('TEXT', 'Free-text interpretation'),
@@ -422,7 +438,17 @@ class TestParameter(TimeStampedModel):
     code = models.CharField(max_length=40)
     name = models.CharField(max_length=100)
     result_type = models.CharField(max_length=12, choices=RESULT_TYPES, default='NUMBER')
+    unit_of_measure = models.ForeignKey(
+        UnitOfMeasure, null=True, blank=True, on_delete=models.PROTECT, related_name='parameters',
+    )
     unit = models.CharField(max_length=40, blank=True)
+    text_size = models.CharField(max_length=8, choices=TEXT_SIZES, default='SAME')
+    result_position = models.CharField(max_length=8, choices=RESULT_POSITIONS, default='BENEATH')
+    note = models.CharField(max_length=255, blank=True, default='')
+    barcode_suffix = models.CharField(max_length=20, blank=True, default='')
+    method_name = models.CharField(max_length=120, blank=True, default='')
+    show_in_report = models.BooleanField(default=True)
+    parameter_in_bold = models.BooleanField(default=False)
     decimal_places = models.PositiveSmallIntegerField(
         null=True, blank=True,
         help_text='Decimal precision for numeric results. Empty = no forced rounding.',
@@ -470,6 +496,15 @@ class ResultTemplate(TimeStampedModel):
     version = models.PositiveIntegerField(default=1)
     status = models.CharField(max_length=12, choices=STATUS, default='DRAFT')
     instructions = models.TextField(blank=True)
+    format_code = models.CharField(max_length=20, unique=True, blank=True, default='')
+    report_title = models.CharField(max_length=160, blank=True, default='')
+    column_caption_1 = models.CharField(max_length=80, blank=True, default='Test')
+    column_caption_2 = models.CharField(max_length=80, blank=True, default='Result')
+    column_caption_3 = models.CharField(max_length=80, blank=True, default='Units')
+    column_caption_4 = models.CharField(max_length=80, blank=True, default='Biological Reference Interval')
+    interpretation = models.TextField(blank=True, default='')
+    is_default_male = models.BooleanField(default=True)
+    is_default_female = models.BooleanField(default=True)
     report_header = models.TextField(blank=True, help_text='Approved header section for clinical reports.')
     report_footer = models.TextField(blank=True, help_text='Approved footer / disclaimer section.')
     is_active = models.BooleanField(default=True)
@@ -489,7 +524,17 @@ class ResultTemplate(TimeStampedModel):
         ordering = ['test__code', 'name', '-version']
 
     def __str__(self):
-        return f'{self.test.code} / {self.name} v{self.version}'
+        return f'{self.format_code or self.name} / {self.test.code} v{self.version}'
+
+    def save(self, *args, **kwargs):
+        if not self.format_code:
+            from core.models import SequenceCounter
+            with transaction.atomic():
+                counter, _ = SequenceCounter.objects.select_for_update().get_or_create(key='test-format')
+                counter.value += 1
+                counter.save(update_fields=['value'])
+                self.format_code = f'FMT{counter.value:04d}'
+        super().save(*args, **kwargs)
 
 
 class ResultTemplateField(TimeStampedModel):
@@ -504,6 +549,7 @@ class ResultTemplateField(TimeStampedModel):
     show_reference_range = models.BooleanField(default=True)
     include_in_report = models.BooleanField(default=True)
     section_label = models.CharField(max_length=120, blank=True)
+    is_gross = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['display_order', 'parameter__name']
