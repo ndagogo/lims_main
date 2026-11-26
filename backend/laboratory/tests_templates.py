@@ -114,6 +114,14 @@ class TemplateRequirementsTests(TestCase):
         live = next(p for p in snap2['parameters'] if p['code'] == 'HGB')
         self.assertEqual(live['unit'], 'g/L')
         self.assertEqual(hgb_snap['unit'], 'g/dL')
+        self.assertIn('method_name', hgb_snap)
+        from laboratory.reports import build_result_pdf
+        result.status = 'AUTHENTICATED'
+        result.authenticated_by = self.user
+        plain = build_result_pdf(result, letterhead=False)
+        headed = build_result_pdf(result, letterhead=True)
+        self.assertTrue(plain.startswith(b'%PDF'))
+        self.assertTrue(headed.startswith(b'%PDF'))
         self.assertEqual(result.configuration_snapshot['parameters'][
             next(i for i, p in enumerate(result.configuration_snapshot['parameters']) if p['code'] == 'HGB')
         ]['unit'], 'g/dL')

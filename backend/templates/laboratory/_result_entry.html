@@ -1,0 +1,255 @@
+<style>
+  .re-shell { display: grid; grid-template-columns: minmax(280px, 34%) 1fr; gap: .75rem; align-items: start; }
+  .re-card { background: #fff; border: 1px solid #d7e3ea; border-radius: 6px; }
+  .re-filters { display: grid; grid-template-columns: 88px 1fr 72px 1fr; gap: .35rem .45rem; align-items: center; padding: .65rem .75rem .4rem; }
+  .re-filters label { margin: 0; font-size: .72rem; color: #5c6b76; }
+  .re-filters .form-control, .re-filters .form-select { font-size: .78rem; padding: .15rem .4rem; height: 28px; }
+  .re-chips { display: flex; gap: .35rem; flex-wrap: wrap; padding: 0 .75rem .55rem; }
+  .re-chips a { font-size: .72rem; border: 1px solid #c5d4de; border-radius: 4px; padding: .1rem .45rem; text-decoration: none; color: #245066; background: #f4f8fb; }
+  .re-chips a.is-on { background: #1f6f8b; color: #fff; border-color: #1f6f8b; }
+  .re-tests { width: 100%; border-collapse: collapse; font-size: .78rem; }
+  .re-tests th { background: #eef5f8; text-align: left; font-weight: 650; padding: .35rem .4rem; border-bottom: 1px solid #d7e3ea; }
+  .re-tests td { padding: .35rem .4rem; border-bottom: 1px solid #eef2f4; vertical-align: middle; }
+  .re-tests tr.is-selected { background: #e7f3f8; }
+  .re-tests a { color: inherit; text-decoration: none; }
+  .re-scroll { max-height: 280px; overflow: auto; }
+  .re-foot { display: grid; grid-template-columns: 110px 1fr; gap: .35rem .5rem; align-items: center; padding: .65rem .75rem .8rem; border-top: 1px solid #e6eef2; }
+  .re-foot label { margin: 0; font-size: .72rem; color: #5c6b76; }
+  .re-banner { background: #d9ecf6; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .15rem .8rem; padding: .55rem .75rem; font-size: .78rem; }
+  .re-banner b { font-weight: 650; }
+  .re-toolbar { display: flex; justify-content: flex-end; gap: .4rem; padding: .4rem .5rem; border-bottom: 1px solid #e6eef2; }
+  .re-grid-wrap { overflow: auto; }
+  .re-grid { width: 100%; border-collapse: collapse; font-size: .78rem; min-width: 860px; }
+  .re-grid th { background: #f3f7f9; text-align: left; font-weight: 650; padding: .35rem .4rem; border-bottom: 1px solid #d7e3ea; white-space: nowrap; }
+  .re-grid td { padding: .28rem .35rem; border-bottom: 1px solid #eef2f4; vertical-align: middle; }
+  .re-grid .form-control, .re-grid .form-select { font-size: .75rem; padding: .12rem .3rem; height: 26px; }
+  .re-grid textarea.form-control, .re-grid select[multiple] { height: auto; min-height: 44px; }
+  .re-section { background: #e7f2fb; font-weight: 650; color: #1d4e89; }
+  .re-calc { background: #f7f7f7; }
+  .re-alarm { color: #b42318; font-weight: 650; }
+  @media (max-width: 1100px) { .re-shell { grid-template-columns: 1fr; } .re-banner { grid-template-columns: 1fr 1fr; } }
+</style>
+<div class="re-shell">
+  <section class="re-card">
+    <form method="get" class="re-filters">
+      <input type="hidden" name="stage" value="entry">
+      <input type="hidden" name="elist" value="{{ entry_filters.elist }}">
+      {% if entry_work %}<input type="hidden" name="esel" value="{{ entry_work.sample.pk }}">{% endif %}
+      <label>VID</label>
+      <input class="form-control" name="evid" value="{{ entry_filters.evid }}">
+      <label>Sample ID</label>
+      <input class="form-control" name="esid" value="{{ entry_filters.esid }}">
+      <label>Srv group</label>
+      <select class="form-select" name="egroup">
+        <option value="">All</option>
+        {% for group in entry_groups %}
+        <option value="{{ group.pk }}" {% if entry_filters.egroup == group.pk|stringformat:"s" %}selected{% endif %}>{{ group.name }}</option>
+        {% endfor %}
+      </select>
+      <label>Test name</label>
+      <input class="form-control" name="etest" value="{{ entry_filters.etest }}">
+      <label>From</label>
+      <input class="form-control" type="date" name="efrom" value="{{ entry_filters.efrom }}">
+      <label>To</label>
+      <input class="form-control" type="date" name="eto" value="{{ entry_filters.eto }}">
+      <label>Location</label>
+      <select class="form-select" name="eloc">
+        <option value="">All</option>
+        {% for centre in entry_centres %}
+        <option value="{{ centre.pk }}" {% if entry_filters.eloc == centre.pk|stringformat:"s" %}selected{% endif %}>{{ centre.code }}</option>
+        {% endfor %}
+      </select>
+      <label>Channel</label>
+      <select class="form-select" name="echannel">
+        <option value="">All</option>
+        {% for value, label in entry_channels %}
+        <option value="{{ value }}" {% if entry_filters.echannel == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <div></div>
+      <button class="btn btn-sm btn-outline-primary" type="submit">Search</button>
+    </form>
+    <div class="re-chips">
+      <a class="{% if entry_filters.elist == 'stat' %}is-on{% endif %}" href="?stage=entry&elist=stat&evid={{ entry_filters.evid }}&esid={{ entry_filters.esid }}&egroup={{ entry_filters.egroup }}&etest={{ entry_filters.etest }}&efrom={{ entry_filters.efrom }}&eto={{ entry_filters.eto }}&eloc={{ entry_filters.eloc }}&echannel={{ entry_filters.echannel }}">STAT</a>
+      <a class="{% if entry_filters.elist == 'retest' %}is-on{% endif %}" href="?stage=entry&elist=retest&evid={{ entry_filters.evid }}&esid={{ entry_filters.esid }}&egroup={{ entry_filters.egroup }}&etest={{ entry_filters.etest }}&efrom={{ entry_filters.efrom }}&eto={{ entry_filters.eto }}&eloc={{ entry_filters.eloc }}&echannel={{ entry_filters.echannel }}">ReTest</a>
+      <a class="{% if entry_filters.elist == 'outsourced' %}is-on{% endif %}" href="?stage=entry&elist=outsourced&evid={{ entry_filters.evid }}&esid={{ entry_filters.esid }}&egroup={{ entry_filters.egroup }}&etest={{ entry_filters.etest }}&efrom={{ entry_filters.efrom }}&eto={{ entry_filters.eto }}&eloc={{ entry_filters.eloc }}&echannel={{ entry_filters.echannel }}">OutSourced</a>
+      <a class="{% if entry_filters.elist == 'completed' %}is-on{% endif %}" href="?stage=entry&elist=completed&evid={{ entry_filters.evid }}&esid={{ entry_filters.esid }}&egroup={{ entry_filters.egroup }}&etest={{ entry_filters.etest }}&efrom={{ entry_filters.efrom }}&eto={{ entry_filters.eto }}&eloc={{ entry_filters.eloc }}&echannel={{ entry_filters.echannel }}">Process Completed</a>
+    </div>
+    <div class="re-scroll">
+      <table class="re-tests">
+        <thead><tr><th></th><th>Test name</th><th>Sample type</th><th>Sample ID</th><th>TAT</th></tr></thead>
+        <tbody>
+          {% for sample in entry_samples %}
+          <tr class="{% if entry_work and entry_work.sample.pk == sample.pk %}is-selected{% endif %}">
+            <td><input type="radio" {% if entry_work and entry_work.sample.pk == sample.pk %}checked{% endif %} aria-label="Select {{ sample.sample_id }}" onclick="window.location=this.dataset.href" data-href="?stage=entry&esel={{ sample.pk }}&elist={{ entry_filters.elist }}&evid={{ entry_filters.evid }}&esid={{ entry_filters.esid }}&egroup={{ entry_filters.egroup }}&etest={{ entry_filters.etest }}&efrom={{ entry_filters.efrom }}&eto={{ entry_filters.eto }}&eloc={{ entry_filters.eloc }}&echannel={{ entry_filters.echannel }}"></td>
+            <td><a href="?stage=entry&esel={{ sample.pk }}&elist={{ entry_filters.elist }}&evid={{ entry_filters.evid }}&esid={{ entry_filters.esid }}&egroup={{ entry_filters.egroup }}&etest={{ entry_filters.etest }}&efrom={{ entry_filters.efrom }}&eto={{ entry_filters.eto }}&eloc={{ entry_filters.eloc }}&echannel={{ entry_filters.echannel }}">{{ sample.order.test.name }}</a></td>
+            <td>{{ sample.specimen_type|default:sample.order.test.specimen }}</td>
+            <td class="font-monospace">{{ sample.sample_id }}</td>
+            <td>{{ sample.tat_label }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="text-muted">No samples ready for result entry.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "includes/pagination.html" with page=entry_samples %}
+    {% if entry_work %}
+    <div class="re-foot">
+      <label>Machine name</label>
+      <select class="form-select form-select-sm" form="result-entry-form" name="instrument_name">
+        <option value="">—</option>
+        {% for analyzer in entry_work.analyzers %}
+        <option value="{{ analyzer.name }}" {% if entry_work.instrument_name == analyzer.name %}selected{% endif %}>{{ analyzer.name }}</option>
+        {% endfor %}
+      </select>
+      <label>Format</label>
+      <input class="form-control form-control-sm" readonly value="{% if entry_work.template %}{{ entry_work.template.format_code }} {{ entry_work.template.report_title }}{% endif %}">
+      <label>Template</label>
+      <select class="form-select form-select-sm" onchange="window.location='?stage=entry&esel={{ entry_work.sample.pk }}&elist={{ entry_filters.elist }}&evid={{ entry_filters.evid }}&esid={{ entry_filters.esid }}&egroup={{ entry_filters.egroup }}&etest={{ entry_filters.etest }}&efrom={{ entry_filters.efrom }}&eto={{ entry_filters.eto }}&eloc={{ entry_filters.eloc }}&echannel={{ entry_filters.echannel }}&etemplate='+this.value">
+        {% for template in entry_work.templates %}
+        <option value="{{ template.pk }}" {% if entry_work.template and entry_work.template.pk == template.pk %}selected{% endif %}>{{ template.name }} v{{ template.version }}</option>
+        {% empty %}<option value="">No template</option>{% endfor %}
+      </select>
+      <label>Referring doctor</label>
+      <input class="form-control form-control-sm" readonly value="{{ entry_work.patient.doctor }}">
+      <label>Comments</label>
+      <input class="form-control form-control-sm" form="result-entry-form" name="narrative" value="{{ entry_work.narrative }}">
+      <label>Remarks</label>
+      <input class="form-control form-control-sm" form="result-entry-form" name="remarks" value="{{ entry_work.remarks }}">
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="re-card" id="result-grid">
+    {% if entry_work %}
+    <form method="post" id="result-entry-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="enter_result">
+      <input type="hidden" name="stage" value="entry">
+      <input type="hidden" name="sample" value="{{ entry_work.sample.pk }}">
+      <input type="hidden" name="esel" value="{{ entry_work.sample.pk }}">
+      <input type="hidden" name="elist" value="{{ entry_filters.elist }}">
+      <input type="hidden" name="evid" value="{{ entry_filters.evid }}">
+      <input type="hidden" name="esid" value="{{ entry_filters.esid }}">
+      <input type="hidden" name="egroup" value="{{ entry_filters.egroup }}">
+      <input type="hidden" name="etest" value="{{ entry_filters.etest }}">
+      <input type="hidden" name="efrom" value="{{ entry_filters.efrom }}">
+      <input type="hidden" name="eto" value="{{ entry_filters.eto }}">
+      <input type="hidden" name="eloc" value="{{ entry_filters.eloc }}">
+      <input type="hidden" name="echannel" value="{{ entry_filters.echannel }}">
+      {% if entry_work.template %}<input type="hidden" name="template" value="{{ entry_work.template.pk }}"><input type="hidden" name="etemplate" value="{{ entry_work.template.pk }}">{% endif %}
+      <div class="re-toolbar">
+        <span class="small text-muted me-auto ps-2 align-self-center">Required parameters are marked *</span>
+        <button class="btn btn-sm btn-primary" type="submit">Save</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" id="result-entry-clear">Clear</button>
+      </div>
+      <div class="re-banner">
+        <div><b>UHID</b> : {{ entry_work.patient.uhid }}</div>
+        <div><b>Name</b> : {{ entry_work.patient.name }}</div>
+        <div><b>Gender / Age</b> : {{ entry_work.patient.sex }}{% if entry_work.patient.age %} / {{ entry_work.patient.age }}{% endif %}</div>
+        <div><b>VID</b> : {{ entry_work.patient.visit_id }}</div>
+        <div><b>Mobile</b> : {{ entry_work.patient.mobile }}</div>
+        <div><b>Visit date</b> : {{ entry_work.patient.visit_date|date:"d-M-Y H:i" }}</div>
+        <div><b>Client</b> : {{ entry_work.patient.client }}</div>
+        <div><b>Channel</b> : {{ entry_work.patient.channel }}</div>
+        <div><b>Ref. Dr</b> : {{ entry_work.patient.doctor }}</div>
+        <div><b>Reg. centre</b> : {{ entry_work.patient.centre }}</div>
+        <div><b>Client phone</b> : {{ entry_work.patient.client_phone }}</div>
+        <div><b>Sample</b> : {{ entry_work.sample.sample_id }}</div>
+      </div>
+      <div class="px-2 py-1" style="background:#e7f2fb;font-weight:650;color:#1d4e89;">Test name : {{ entry_work.sample.order.test.name }}</div>
+      <div class="re-grid-wrap">
+        <table class="re-grid">
+          <thead>
+            <tr>
+              <th>Param name</th><th>Result value</th><th>Units</th><th>Normal value</th>
+              <th>Method</th><th>Param note</th><th>L/H/N</th><th>Alarm</th><th>Is show report</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for field in entry_work.fields %}
+              {% if field.widget == 'section' %}
+              <tr class="re-section"><td colspan="9">{{ field.section_label|default:field.parameter.name }}</td></tr>
+              {% else %}
+              <tr class="{% if field.widget == 'calculated' %}re-calc{% endif %}">
+                <td>{{ field.parameter.name }}{% if field.is_required %} *{% endif %}</td>
+                <td>
+                  {% if field.widget == 'calculated' %}
+                    <input class="form-control" value="{% if field.saved_value %}{{ field.saved_value }}{% else %}Calculated{% endif %}" readonly>
+                  {% elif field.widget == 'select' %}
+                    <select class="form-select" name="param-{{ field.parameter.pk }}" {% if field.is_required %}required{% endif %}>
+                      <option value="">—</option>
+                      {% if field.choices %}
+                        {% for choice in field.choices %}<option value="{{ choice }}" {% if field.saved_value == choice %}selected{% endif %}>{{ choice }}</option>{% endfor %}
+                      {% elif field.result_type == 'BOOLEAN' %}
+                        <option {% if field.saved_value == 'Yes' %}selected{% endif %}>Yes</option>
+                        <option {% if field.saved_value == 'No' %}selected{% endif %}>No</option>
+                      {% endif %}
+                    </select>
+                  {% elif field.widget == 'multiselect' %}
+                    <select class="form-select" name="param-{{ field.parameter.pk }}" multiple size="3">
+                      {% for choice in field.choices %}
+                      <option value="{{ choice }}" {% if choice in field.saved_choices %}selected{% endif %}>{{ choice }}</option>
+                      {% endfor %}
+                    </select>
+                  {% elif field.widget == 'textarea' %}
+                    <textarea class="form-control" name="param-{{ field.parameter.pk }}" rows="2" {% if field.is_required %}required{% endif %}>{{ field.saved_value }}</textarea>
+                  {% else %}
+                    <input class="form-control" name="param-{{ field.parameter.pk }}" value="{{ field.saved_value }}" {% if field.widget == 'number' %}inputmode="decimal"{% endif %} {% if field.is_required %}required{% endif %}>
+                  {% endif %}
+                </td>
+                <td>{{ field.unit }}</td>
+                <td>{% if field.show_reference_range %}{{ field.reference_display }}{% endif %}</td>
+                <td>{{ field.parameter.method_name }}</td>
+                <td><input class="form-control" name="comment-{{ field.parameter.pk }}" value="{{ field.saved_comment }}"></td>
+                <td>
+                  <select class="form-select" name="flag-{{ field.parameter.pk }}">
+                    {% for value, label in entry_flags %}
+                    <option value="{{ value }}" {% if field.saved_flag == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td>
+                  <select class="form-select {% if field.alarm %}re-alarm{% endif %}" name="alarm-{{ field.parameter.pk }}">
+                    <option value="">—</option>
+                    <option value="CRITICAL" {% if field.alarm == 'CRITICAL' %}selected{% endif %}>Critical</option>
+                  </select>
+                </td>
+                <td>
+                  <select class="form-select" name="show-{{ field.parameter.pk }}">
+                    <option value="1" {% if field.saved_show %}selected{% endif %}>Yes</option>
+                    <option value="0" {% if not field.saved_show %}selected{% endif %}>No</option>
+                  </select>
+                </td>
+              </tr>
+              {% endif %}
+            {% empty %}
+              <tr><td colspan="9" class="text-muted">No catalogue parameters. Configure them under Catalog → Test parameters, then map a test format.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </form>
+    {% else %}
+    <div class="p-4 text-muted">Select a completed sample to enter its result.</div>
+    {% endif %}
+  </section>
+</div>
+<script>
+(function () {
+  var button = document.getElementById('result-entry-clear');
+  if (!button) return;
+  button.addEventListener('click', function () {
+    var form = document.getElementById('result-entry-form');
+    form.querySelectorAll('input[name^="param-"], textarea[name^="param-"], input[name^="comment-"]').forEach(function (el) {
+      if (el.readOnly) return;
+      el.value = '';
+    });
+    form.querySelectorAll('select[name^="param-"], select[name^="flag-"], select[name^="alarm-"]').forEach(function (el) {
+      el.selectedIndex = 0;
+    });
+    form.querySelectorAll('select[name^="show-"]').forEach(function (el) { el.value = '1'; });
+  });
+})();
+</script>

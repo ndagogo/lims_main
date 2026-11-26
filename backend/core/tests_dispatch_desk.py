@@ -116,6 +116,8 @@ class DispatchDeskPaymentAndComposeTests(TestCase):
         self.assertContains(desk, 'Hygeia HMO')
         self.assertContains(desk, 'Results for this visit')
         self.assertContains(desk, 'Complete Blood Count')
+        self.assertContains(desk, 'Without header and footer')
+        self.assertContains(desk, 'With centre letterhead')
 
         sent = self.web.post('/results/dispatch/', {
             'action': 'compose_dispatch',

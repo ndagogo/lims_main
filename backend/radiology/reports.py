@@ -171,7 +171,7 @@ def build_radiology_report_pdf(report, *, watermark_text=None):
         story.append(Spacer(1, 6))
         story.append(extra_table)
 
-    if fmt.get('show_authenticator_signature', True) and auth:
+    if auth:
         # Left-stacked: label → name → signature image → credentials.
         # ReportLab Image defaults to hAlign=CENTER, which places the mark beside the name.
         sign_bits = [Spacer(1, 16), HRFlowable(width='100%', thickness=0.4, color=rule, spaceBefore=2, spaceAfter=10)]

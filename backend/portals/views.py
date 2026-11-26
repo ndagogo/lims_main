@@ -210,7 +210,8 @@ def patient_result_pdf(request, result_id):
         return redirect('portal-patient-login')
     result = _released_lab_result(patient, result_id)
     from laboratory.reports import build_result_pdf
-    payload = build_result_pdf(result)
+    letterhead = request.GET.get('letterhead', '1') != '0'
+    payload = build_result_pdf(result, letterhead=letterhead)
     response = HttpResponse(payload, content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="{result.sample.sample_id}.pdf"'
     return response

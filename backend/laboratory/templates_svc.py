@@ -180,6 +180,7 @@ def build_configuration_snapshot(result) -> dict:
             'parameter_id': parameter.pk,
             'code': parameter.code,
             'name': parameter.name,
+            'method_name': parameter.method_name,
             'result_type': parameter.result_type,
             'unit': parameter.unit,
             'decimal_places': parameter.decimal_places,
@@ -189,7 +190,10 @@ def build_configuration_snapshot(result) -> dict:
             'legacy_reference_range': parameter.reference_range,
             'is_required': field.is_required if field and field.is_required is not None else parameter.is_required,
             'show_reference_range': field.show_reference_range if field else True,
-            'include_in_report': field.include_in_report if field else True,
+            'include_in_report': (
+                False if value_row is not None and value_row.show_on_report is False
+                else (field.include_in_report if field else True)
+            ),
             'section_label': field.section_label if field else '',
             'display_order': field.display_order if field else parameter.display_order,
             'is_gross': bool(field.is_gross) if field else False,

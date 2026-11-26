@@ -15,7 +15,7 @@
         {% for row in table.rows %}
         {% if row.subtitle %}<tr><td colspan="4" class="fw-semibold">{{ row.subtitle }}</td></tr>{% endif %}
         <tr>
-          <td {% if row.bold %}class="fw-semibold"{% endif %}>{{ row.name }}</td>
+          <td {% if row.bold %}class="fw-semibold"{% endif %}>{{ row.name }}{% if row.method %}<div class="small text-muted">Method : {{ row.method }}</div>{% endif %}</td>
           <td>{{ row.value }}{% if row.flag %} {{ row.flag }}{% endif %}</td>
           <td>{{ row.unit }}</td>
           <td>{{ row.reference }}</td>

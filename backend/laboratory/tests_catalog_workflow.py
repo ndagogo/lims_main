@@ -70,7 +70,7 @@ class CatalogWorkflowAndLetterheadTests(TestCase):
         )
 
     def test_centre_header_upload_is_stored_for_result_preview(self):
-        saved = self.client.post('/catalog/centres/', {
+        saved = self.client.post('/catalog/lab-result-templates/', {
             'action': 'save_report_format',
             'centre': str(self.centre.pk),
             'title_lab': 'Laboratory Report',
@@ -80,19 +80,40 @@ class CatalogWorkflowAndLetterheadTests(TestCase):
             'margin_mm': '18',
             'primary_color': '#102033',
             'accent_color': '#0f766e',
-            'show_authenticator_signature': 'on',
+            'header_mode': 'COMPOSED',
+            'logo_align': 'RIGHT',
+            'address_align': 'LEFT',
+            'contact_align': 'CENTER',
+            'placement_submitted': '1',
+            'show_logo': 'on',
+            'show_centre_address': 'on',
+            'show_centre_contact': 'on',
             'signature_label': 'Authenticated by',
+            'footer_text': 'Centre letter footer line',
             'header_file': _png(),
         })
         self.assertEqual(saved.status_code, 302)
         fmt = get_report_format(self.centre)
         self.assertTrue(fmt.header_file.name.lower().endswith('.png'))
+        self.assertEqual(fmt.header_mode, 'COMPOSED')
+        self.assertEqual(fmt.logo_align, 'RIGHT')
+        self.assertTrue(fmt.show_authenticator_signature)
         snap = format_snapshot(self.centre)
         self.assertEqual(snap['header_file'], fmt.header_file.name)
+        self.assertEqual(snap['logo_align'], 'RIGHT')
         self.assertTrue(snap['show_authenticator_signature'])
-        page = self.client.get(f'/catalog/centres/?centre={self.centre.pk}')
-        self.assertContains(page, 'Header artwork')
-        self.assertContains(page, 'Final authentication stamps the signature')
+        page = self.client.get(f'/catalog/lab-result-templates/?centre={self.centre.pk}')
+        self.assertContains(page, 'Letter heading')
+        self.assertContains(page, 'printed on every authenticated result')
+        preview = self.client.get(f'/catalog/lab-result-templates/preview/?centre={self.centre.pk}')
+        self.assertContains(preview, 'TEST DESCRIPTION')
+        self.assertContains(preview, 'BIOLOGICAL REFERENCE INTERVAL')
+        self.assertContains(preview, 'Lab Manager')
+        self.assertContains(preview, 'Centre letter footer line')
+        plain = self.client.get(f'/catalog/lab-result-templates/preview/?centre={self.centre.pk}&plain=1')
+        self.assertContains(plain, 'TEST DESCRIPTION')
+        self.assertNotContains(plain, 'Centre letter footer line')
+        self.assertContains(plain, 'Lab Manager')
 
     def test_workflow_guide_downloads_as_pdf(self):
         response = self.client.get('/platform/workflows/guide.pdf')

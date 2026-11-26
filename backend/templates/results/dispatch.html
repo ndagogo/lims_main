@@ -87,7 +87,7 @@
           <div class="small muted">{{ selected.visit_id }} · {{ patient_panel.payer }} · {{ patient_panel.approved_label }}</div>
         </div>
         {% if preview_url %}
-        <a class="btn btn-outline-dark btn-sm" target="_blank" href="{{ preview_url }}">Preview report</a>
+        <a class="btn btn-outline-dark btn-sm" target="_blank" href="{{ preview_url }}" {% if selected.service == 'LABORATORY' %}data-lab-preview{% endif %}>Preview report</a>
         {% elif preview_blocked %}
         <button class="btn btn-outline-dark btn-sm" type="button" data-preview-blocked="{{ preview_blocked_message|escape }}">Preview report</button>
         {% endif %}
@@ -116,7 +116,7 @@
                 <span class="small muted">{{ row.service|title }} · {{ row.status_label }}</span>
               </span>
               {% if row.ready and row.preview_url %}
-              <a class="btn btn-outline-dark btn-sm" target="_blank" href="{{ row.preview_url }}" onclick="event.stopPropagation()">Preview</a>
+              <a class="btn btn-outline-dark btn-sm" target="_blank" href="{{ row.preview_url }}" {% if row.service == 'LABORATORY' %}data-lab-preview{% endif %} onclick="event.stopPropagation()">Preview</a>
               {% elif row.preview_blocked %}
               <button class="btn btn-outline-dark btn-sm" type="button" data-preview-blocked="{{ row.preview_blocked_message|escape }}" onclick="event.preventDefault(); event.stopPropagation();">Preview</button>
               {% endif %}
@@ -279,8 +279,12 @@
                 <select class="form-select form-select-sm" id="msg-template" name="template"><option value="result-ready" selected>Results ready</option></select>
               </div>
               <div class="col-md-4">
-                <label class="form-label" for="report-format">Report format</label>
-                <select class="form-select form-select-sm" id="report-format" name="report_format"><option value="pdf-letterhead" selected>PDF with letterhead</option></select>
+                <label class="form-label" for="report-format">Print style</label>
+                <select class="form-select form-select-sm" id="report-format" name="report_format">
+                  <option value="letterhead" selected>With centre letterhead</option>
+                  <option value="plain">Without header and footer</option>
+                </select>
+                <div class="form-text">Without header and footer is for centres that already print on letter-headed paper. The authenticator’s signature still appears on an authenticated result.</div>
               </div>
               <div class="col-md-4">
                 <label class="form-label" for="link-expiry">Link expiry</label>
@@ -301,7 +305,7 @@
 
         <div class="dispatch-actions">
           {% if preview_url %}
-          <a class="btn btn-outline-dark" target="_blank" href="{{ preview_url }}">Preview report</a>
+          <a class="btn btn-outline-dark" target="_blank" href="{{ preview_url }}" {% if selected.service == 'LABORATORY' %}data-lab-preview{% endif %}>Preview report</a>
           {% elif preview_blocked %}
           <button class="btn btn-outline-dark" type="button" data-preview-blocked="{{ preview_blocked_message|escape }}">Preview report</button>
           {% endif %}
@@ -616,6 +620,20 @@
     event.preventDefault();
     alert(btn.getAttribute('data-preview-blocked') || 'Contact the admin, there maybe pending issues. Thanks');
   });
+
+  var printStyle = document.getElementById('report-format');
+  function syncPrintStyle() {
+    var plain = printStyle && printStyle.value === 'plain';
+    document.querySelectorAll('[data-lab-preview]').forEach(function (link) {
+      var href = link.getAttribute('href') || '';
+      if (href.indexOf('letterhead=') === -1) return;
+      link.href = href.replace(/letterhead=\d/, plain ? 'letterhead=0' : 'letterhead=1');
+    });
+  }
+  if (printStyle) {
+    printStyle.addEventListener('change', syncPrintStyle);
+    syncPrintStyle();
+  }
 
   form.addEventListener('submit', function (event) {
     var selected = form.querySelectorAll('input[name="items"]:checked');

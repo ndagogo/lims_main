@@ -190,7 +190,16 @@ class CentreReportFormat(TimeStampedModel):
         ('Times-Roman', 'Times (serif)'),
         ('Courier', 'Courier (mono)'),
     ]
+    HEADER_MODES = [
+        ('LETTERHEAD', 'Centre letter heading'),
+        ('COMPOSED', 'Logo, address, and phone'),
+    ]
+    ALIGNS = [('LEFT', 'Left'), ('CENTER', 'Centre'), ('RIGHT', 'Right')]
     centre = models.OneToOneField(Centre, on_delete=models.CASCADE, related_name='report_format')
+    header_mode = models.CharField(max_length=12, choices=HEADER_MODES, default='COMPOSED')
+    logo_align = models.CharField(max_length=8, choices=ALIGNS, default='LEFT')
+    address_align = models.CharField(max_length=8, choices=ALIGNS, default='CENTER')
+    contact_align = models.CharField(max_length=8, choices=ALIGNS, default='CENTER')
     title_lab = models.CharField(max_length=120, default='Laboratory Report')
     title_radiology = models.CharField(max_length=120, default='Radiology Report')
     header_text = models.TextField(blank=True, help_text='Optional line under the centre name.')
@@ -332,6 +341,10 @@ class ResultLedger(TimeStampedModel):
     collector_id = models.FileField(
         upload_to='collector-ids/%Y/%m/', blank=True,
         help_text='Copy of the identification shown by a third party who collected the result.',
+    )
+    print_style = models.CharField(
+        max_length=20, blank=True, default='',
+        help_text='letterhead or plain. Plain omits the centre header and footer for pre-printed paper.',
     )
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,

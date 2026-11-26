@@ -132,6 +132,7 @@ def build_hub_context(request):
         ('Laboratory tests', 'catalog-tests', 'tests', 'bi-droplet', 'Code, specimen, workflow, TAT, and outsourcing'),
         ('Test parameters', 'catalog-parameters', 'parameters', 'bi-sliders', 'Units, format types, decimals, and analyser codes'),
         ('Test formats', 'catalog-formats', 'formats', 'bi-layout-text-window', 'How each test is arranged on the patient result'),
+        ('Lab result templates', 'catalog-lab-templates', 'centres', 'bi-file-earmark-richtext', 'Centre letterhead, logo placement, and result preview'),
         ('Service groups', 'catalog-service-groups', 'service_groups', 'bi-diagram-3', 'Sample ID group digits'),
         ('Referral business', 'enterprise-referrals', 'doctors', 'bi-people', 'Commission due, visits, payouts, and exports'),
         ('Referral doctors', 'catalog-doctors', 'doctors', 'bi-person-badge', 'Doctor master data and institutions'),
@@ -1365,10 +1366,20 @@ def _save_report_format(request, centre):
     elif _checked(request.POST, 'clear_footer_file') and fmt.footer_file:
         fmt.footer_file.delete(save=False)
         fmt.footer_file = None
-    fmt.show_logo = _checked(request.POST, 'show_logo')
-    fmt.show_centre_address = _checked(request.POST, 'show_centre_address')
-    fmt.show_centre_contact = _checked(request.POST, 'show_centre_contact')
-    fmt.show_authenticator_signature = _checked(request.POST, 'show_authenticator_signature')
+    header_mode = _text(request.POST, 'header_mode').upper() or fmt.header_mode or 'COMPOSED'
+    if header_mode not in dict(CentreReportFormat.HEADER_MODES):
+        header_mode = 'COMPOSED'
+    fmt.header_mode = header_mode
+    for field_name in ('logo_align', 'address_align', 'contact_align'):
+        align = _text(request.POST, field_name).upper() or getattr(fmt, field_name)
+        if align not in dict(CentreReportFormat.ALIGNS):
+            align = 'CENTER'
+        setattr(fmt, field_name, align)
+    if request.POST.get('placement_submitted'):
+        fmt.show_logo = _checked(request.POST, 'show_logo')
+        fmt.show_centre_address = _checked(request.POST, 'show_centre_address')
+        fmt.show_centre_contact = _checked(request.POST, 'show_centre_contact')
+    fmt.show_authenticator_signature = True
     fmt.signature_label = _text(request.POST, 'signature_label') or 'Authenticated by'
     from core.access import can_set_result_watermark
     if can_set_result_watermark(request.user):
@@ -1384,5 +1395,39 @@ def _save_report_format(request, centre):
         'layout': layout, 'font': font, 'title_lab': fmt.title_lab, 'title_radiology': fmt.title_radiology,
     }, centre=centre)
     messages.success(request, f'Result formatting for {centre.code} was saved.')
-    return redirect(f'/catalog/centres/?centre={centre.pk}#report-format')
+    return redirect(f'/catalog/lab-result-templates/?centre={centre.pk}')
+
+
+def build_lab_template_context(request):
+    centres = Centre.objects.filter(is_active=True).order_by('name')
+    centre_id = request.GET.get('centre') or request.POST.get('centre')
+    selected = centres.filter(pk=centre_id).first() if centre_id else centres.first()
+    from core.access import can_set_result_watermark
+    from core.models import CentreReportFormat
+    from core.report_format import get_report_format
+    fmt = get_report_format(selected) if selected else None
+    return {
+        'centres': centres,
+        'selected': selected,
+        'report_format': fmt,
+        'header_modes': CentreReportFormat.HEADER_MODES,
+        'aligns': CentreReportFormat.ALIGNS,
+        'layout_choices': CentreReportFormat.LAYOUTS,
+        'font_choices': CentreReportFormat.FONTS,
+        'can_set_result_watermark': can_set_result_watermark(request.user),
+    }
+
+
+def build_lab_template_preview_context(request):
+    context = build_lab_template_context(request)
+    fmt = context.get('report_format')
+    context['ink'] = fmt.primary_color if fmt else '#102033'
+    context['accent'] = fmt.accent_color if fmt else '#0f766e'
+    context['plain'] = request.GET.get('plain') == '1'
+    context['sample_rows'] = [
+        {'name': 'Haemoglobin', 'method': 'Cyanmethaemoglobin', 'value': '13.2', 'unit': 'g/dL', 'reference': '12.0 – 16.0'},
+        {'name': 'WBC', 'method': '', 'value': '6.4', 'unit': '10^9/L', 'reference': '4.0 – 11.0'},
+        {'name': 'Platelets', 'method': '', 'value': '210', 'unit': '10^9/L', 'reference': '150 – 400'},
+    ]
+    return context
 

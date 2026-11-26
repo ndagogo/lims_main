@@ -408,6 +408,8 @@ class SampleViewSet(viewsets.ReadOnlyModelViewSet):
             template = resolve_entry_template(sample.order.test)
         values=list(data.get('values') or [])
         narrative=(data.get('narrative') or '').strip()
+        remarks=(data.get('remarks') or '').strip()
+        instrument_name=(data.get('instrument_name') or '').strip()[:120]
         if sample.order.test.comments_required and not narrative:
             raise ValidationError({'narrative': 'This test requires a clinical comment / narrative.'})
         catalogue = list(sample.order.test.parameters.all())
@@ -419,10 +421,19 @@ class SampleViewSet(viewsets.ReadOnlyModelViewSet):
             if not existing_result:
                 enforce_workflow(sample.order, 'enter_result', user=request.user, payload={'narrative_or_values': True})
             if existing_result:
-                result=existing_result; result.template=template; result.narrative=narrative; result.entered_by=request.user; result.save(update_fields=['template','narrative','entered_by','updated_at'])
+                result=existing_result
+                result.template=template
+                result.narrative=narrative
+                result.remarks=remarks
+                result.instrument_name=instrument_name
+                result.entered_by=request.user
+                result.save(update_fields=['template','narrative','remarks','instrument_name','entered_by','updated_at'])
                 result.values.all().delete()
             else:
-                result=LabResult.objects.create(sample=sample,template=template,narrative=narrative,entered_by=request.user,status='DRAFT')
+                result=LabResult.objects.create(
+                    sample=sample, template=template, narrative=narrative, remarks=remarks,
+                    instrument_name=instrument_name, entered_by=request.user, status='DRAFT',
+                )
             for row in values:
                 try: parameter=TestParameter.objects.get(pk=row['parameter'],test=sample.order.test)
                 except (TestParameter.DoesNotExist,KeyError,TypeError,ValueError): raise ValidationError({'values':'Each parameter must belong to the sample test.'})
@@ -458,6 +469,8 @@ class SampleViewSet(viewsets.ReadOnlyModelViewSet):
                     raise ValidationError({'values': f'A comment is required for critical {parameter.code}.'})
                 if raw_flag in ('LOW', 'HIGH', 'CRITICAL_LOW', 'CRITICAL_HIGH') and parameter.require_comment_if_abnormal and not comment:
                     raise ValidationError({'values': f'A comment is required for abnormal {parameter.code}.'})
+                show_raw = row.get('show_on_report', True)
+                show_on_report = str(show_raw).strip().lower() not in ('0', 'false', 'no', 'off')
                 ResultValue.objects.update_or_create(
                     result=result, parameter=parameter,
                     defaults={
@@ -465,6 +478,7 @@ class SampleViewSet(viewsets.ReadOnlyModelViewSet):
                         'flag': raw_flag[:20],
                         'comment': comment,
                         'reference_display': (row.get('reference_display') or range_text or parameter.reference_range or '')[:120],
+                        'show_on_report': show_on_report,
                     },
                 )
             # Required set from published template fields when available.
@@ -758,11 +772,12 @@ class LabResultViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=['get'])
     def pdf(self, request, pk=None):
         result=self.get_object()
-        if result.status not in ('RELEASED', 'AMENDED'):
-            raise ValidationError('Only a released result can be printed.')
+        if result.status not in ('AUTHENTICATED', 'RELEASED', 'AMENDED'):
+            raise ValidationError('Only an authenticated result can be printed.')
         from django.http import HttpResponse
         from .reports import build_result_pdf
-        payload=build_result_pdf(result)
+        letterhead = request.query_params.get('letterhead', '1') != '0'
+        payload=build_result_pdf(result, letterhead=letterhead)
         response=HttpResponse(payload, content_type='application/pdf')
         response['Content-Disposition']=f'inline; filename="{result.sample.sample_id}.pdf"'
         return response

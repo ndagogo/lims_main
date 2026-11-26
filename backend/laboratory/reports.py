@@ -5,7 +5,7 @@ import os
 from django.conf import settings
 
 
-def build_result_pdf(result):
+def build_result_pdf(result, *, letterhead=True):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.utils import ImageReader
     from reportlab.pdfgen import canvas
@@ -41,62 +41,63 @@ def build_result_pdf(result):
     from core.report_stationery import draw_fitted_image, image_file
 
     bold = _bold_font(font)
-    header_image = image_file(fmt, 'header_file')
-    if header_image and draw_fitted_image(pdf, header_image, margin, y - 64, width - (2 * margin), 64):
-        y -= 72
-        pdf.setFillColorRGB(*_hex_rgb(fmt.get('primary_color') or '#102033'))
-        pdf.setFont(bold, 12)
-        pdf.drawCentredString(width / 2, y, title)
-        y -= 16
-    else:
-        header_image = ''
+    mode = (fmt.get('header_mode') or '').upper()
+    if not mode:
+        mode = 'LETTERHEAD' if fmt.get('header_file') else 'COMPOSED'
+    header_image = ''
+    if letterhead and mode == 'LETTERHEAD':
+        header_image = image_file(fmt, 'header_file')
+        if header_image and draw_fitted_image(pdf, header_image, margin, y - 64, width - (2 * margin), 64):
+            y -= 72
+            pdf.setFillColorRGB(*_hex_rgb(fmt.get('primary_color') or '#102033'))
+            pdf.setFont(bold, 12)
+            pdf.drawCentredString(width / 2, y, title)
+            y -= 16
+        else:
+            header_image = ''
+    if letterhead and not header_image:
         if layout == 'MODERN':
             pdf.setFillColorRGB(*_hex_rgb(fmt.get('accent_color') or '#0f766e'))
             pdf.rect(0, height - 18, width, 18, fill=1, stroke=0)
 
-        logo_drawn = False
         logo_path = fmt.get('logo_path') or ''
         if fmt.get('show_logo') and logo_path:
             abs_logo = os.path.join(settings.MEDIA_ROOT, logo_path)
             if os.path.isfile(abs_logo):
                 try:
-                    pdf.drawImage(ImageReader(abs_logo), margin, y - 42, width=90, height=42, preserveAspectRatio=True, mask='auto')
-                    logo_drawn = True
+                    pdf.drawImage(
+                        ImageReader(abs_logo),
+                        _aligned_x(fmt.get('logo_align'), margin, width, 90),
+                        y - 42, width=90, height=42, preserveAspectRatio=True, mask='auto',
+                    )
+                    y -= 48
                 except Exception:
-                    logo_drawn = False
+                    pass
 
-        text_x = margin + (100 if logo_drawn else 0)
         pdf.setFillColorRGB(*_hex_rgb(fmt.get('primary_color') or '#102033'))
         centre_name = fmt.get('centre_name') or sample.centre.name
-        if layout == 'CLASSIC':
-            pdf.setFont(bold, 14)
-            pdf.drawCentredString(width / 2, y, centre_name)
-            y -= 16
-            pdf.setFont(font, size)
-            pdf.drawCentredString(width / 2, y, title)
-            y -= 14
-        else:
-            pdf.setFont(bold, 13)
-            pdf.drawString(text_x, y, centre_name)
-            y -= 14
-            pdf.setFont(font, size)
-            pdf.drawString(text_x, y, title)
-            y -= 12
-
-    if fmt.get('header_text') and not header_image:
-        pdf.setFont(font, max(8, size - 1))
-        for chunk in _wrap(fmt['header_text'], 95):
-            pdf.drawString(margin, y, chunk)
+        name_align = 'CENTER' if layout == 'CLASSIC' else 'LEFT'
+        _draw_aligned(pdf, name_align, margin, width, y, centre_name, bold, 14 if layout == 'CLASSIC' else 13)
+        y -= 16
+        _draw_aligned(pdf, name_align, margin, width, y, title, font, size)
+        y -= 14
+        if fmt.get('header_text'):
+            for chunk in _wrap(fmt['header_text'], 95):
+                _draw_aligned(pdf, 'CENTER', margin, width, y, chunk, font, max(8, size - 1))
+                y -= 11
+        if fmt.get('centre_address'):
+            _draw_aligned(
+                pdf, fmt.get('address_align') or 'CENTER', margin, width, y,
+                fmt['centre_address'][:110], font, max(8, size - 1),
+            )
             y -= 11
-    if fmt.get('centre_address'):
-        pdf.setFont(font, max(8, size - 1))
-        pdf.drawString(margin, y, fmt['centre_address'][:110])
-        y -= 11
-    contact = ' · '.join(p for p in [fmt.get('centre_phone'), fmt.get('centre_email')] if p)
-    if contact:
-        pdf.setFont(font, max(8, size - 1))
-        pdf.drawString(margin, y, contact[:110])
-        y -= 11
+        contact = ' · '.join(p for p in [fmt.get('centre_phone'), fmt.get('centre_email')] if p)
+        if contact:
+            _draw_aligned(
+                pdf, fmt.get('contact_align') or 'CENTER', margin, width, y,
+                contact[:110], font, max(8, size - 1),
+            )
+            y -= 11
     y -= 6
 
     pdf.setFillColorRGB(0, 0, 0)
@@ -159,6 +160,8 @@ def build_result_pdf(result):
     for row_snap, row in _ordered_result_rows(result, snap):
         if row_snap.get('include_in_report') is False:
             continue
+        if row is not None and row.show_on_report is False:
+            continue
         if y < margin + 72:
             pdf.showPage()
             y = height - margin
@@ -185,7 +188,17 @@ def build_result_pdf(result):
         pdf.drawString(value_x, y, shown[:18])
         pdf.drawString(unit_x, y, (unit or '')[:12])
         pdf.drawString(range_x, y, range_text[:28])
-        y -= 14
+        y -= 12
+        method = (row_snap.get('method_name') or '').strip()
+        if not method and row is not None:
+            method = (getattr(row.parameter, 'method_name', '') or '').strip()
+        if method:
+            pdf.setFont(font, max(7, size - 2))
+            pdf.drawString(margin, y, f'Method : {method}'[:48])
+            y -= 11
+            pdf.setFont(font, size)
+        else:
+            y -= 2
     interpretation = (tpl.get('interpretation') or '').strip()
     if interpretation:
         y -= 8
@@ -206,7 +219,11 @@ def build_result_pdf(result):
             pdf.drawString(margin, y, chunk)
             y -= 13
 
-    if fmt.get('show_authenticator_signature', True) and auth:
+    if result.status in ('AUTHENTICATED', 'RELEASED', 'AMENDED'):
+        if not auth and getattr(result, 'authenticated_by_id', None):
+            from core.report_format import signature_snapshot
+            auth = signature_snapshot(result.authenticated_by)
+    if auth and result.status in ('AUTHENTICATED', 'RELEASED', 'AMENDED'):
         if y < margin + 110:
             pdf.showPage()
             y = height - margin
@@ -238,16 +255,20 @@ def build_result_pdf(result):
             pdf.setFont(font, max(8, size - 1))
             pdf.drawString(margin, y, f"Reg. No: {auth['license_number']}"[:90])
 
-    footer = (fmt.get('footer_text') or '').strip() or 'Released copies are the copies authorised for clinical use. Analyzer import never releases a result.'
-    footer_image = image_file(fmt, 'footer_file')
-    text_y = 28
-    if footer_image and draw_fitted_image(pdf, footer_image, margin, 22, width - (2 * margin), 36):
-        text_y = 62
-    pdf.setFont(font, 8)
-    pdf.drawString(margin, text_y, footer[:120])
+    if letterhead:
+        footer = (fmt.get('footer_text') or '').strip() or 'Released copies are the copies authorised for clinical use. Analyzer import never releases a result.'
+        footer_image = image_file(fmt, 'footer_file')
+        text_y = 28
+        if footer_image and draw_fitted_image(pdf, footer_image, margin, 22, width - (2 * margin), 36):
+            text_y = 62
+        pdf.setFont(font, 8)
+        pdf.drawString(margin, text_y, footer[:120])
     pdf.save()
+    raw = buffer.getvalue()
+    if not letterhead:
+        return raw
     from core.report_stationery import apply_pdf_stationery
-    return apply_pdf_stationery(buffer.getvalue(), fmt)
+    return apply_pdf_stationery(raw, fmt)
 
 
 def result_table(result):
@@ -259,6 +280,7 @@ def result_table(result):
         rows.append({
             'subtitle': (item.get('section_label') or '').strip(),
             'name': item.get('name') or (row.parameter.name if row else ''),
+            'method': (item.get('method_name') or (getattr(row.parameter, 'method_name', '') if row else '') or ''),
             'value': (row.value if row else item.get('value')) or '',
             'flag': (row.flag if row else item.get('flag')) or '',
             'unit': item.get('unit') or (row.parameter.unit if row else ''),
@@ -296,6 +318,26 @@ def _ordered_result_rows(result, snap):
         if row.parameter_id not in seen:
             ordered.append(({}, row))
     return ordered
+
+
+def _aligned_x(align, margin, width, block_width):
+    if (align or '').upper() == 'RIGHT':
+        return width - margin - block_width
+    if (align or '').upper() == 'CENTER':
+        return max(margin, (width - block_width) / 2)
+    return margin
+
+
+def _draw_aligned(pdf, align, margin, width, y, text, font_name, size):
+    pdf.setFont(font_name, size)
+    shown = (text or '')[:110]
+    align = (align or 'LEFT').upper()
+    if align == 'CENTER':
+        pdf.drawCentredString(width / 2, y, shown)
+    elif align == 'RIGHT':
+        pdf.drawRightString(width - margin, y, shown)
+    else:
+        pdf.drawString(margin, y, shown)
 
 
 def _bold_font(font):

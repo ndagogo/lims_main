@@ -574,6 +574,8 @@ class LabResult(TimeStampedModel):
     )
     status=models.CharField(max_length=20,choices=STATUS_CHOICES,default='DRAFT')
     narrative=models.TextField(blank=True)
+    remarks=models.TextField(blank=True, default='')
+    instrument_name=models.CharField(max_length=120, blank=True, default='')
     entered_by=models.ForeignKey(settings.AUTH_USER_MODEL,null=True,on_delete=models.SET_NULL,related_name='lab_results_entered')
     reviewed_by=models.ForeignKey(settings.AUTH_USER_MODEL,null=True,blank=True,on_delete=models.SET_NULL,related_name='lab_results_reviewed')
     authenticated_by=models.ForeignKey(settings.AUTH_USER_MODEL,null=True,blank=True,on_delete=models.SET_NULL,related_name='lab_results_authenticated')
@@ -600,6 +602,7 @@ class ResultValue(TimeStampedModel):
     flag=models.CharField(max_length=20,blank=True)
     comment=models.TextField(blank=True)
     reference_display=models.CharField(max_length=120,blank=True)
+    show_on_report=models.BooleanField(default=True)
     class Meta: constraints=[models.UniqueConstraint(fields=['result','parameter'],name='uniq_result_parameter')]
 
 class ReferenceRange(TimeStampedModel):

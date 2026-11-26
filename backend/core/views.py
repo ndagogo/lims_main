@@ -309,6 +309,23 @@ def catalog_formats(request):
 
 
 @login_required
+def catalog_lab_templates(request):
+    platform_admin_only(request)
+    from core.catalog import _save_report_format, build_lab_template_context
+    if request.method == 'POST':
+        centre = get_object_or_404(Centre, pk=request.POST.get('centre'))
+        return _save_report_format(request, centre)
+    return render(request, 'catalog/lab_result_templates.html', build_lab_template_context(request))
+
+
+@login_required
+def catalog_lab_template_preview(request):
+    platform_admin_only(request)
+    from core.catalog import build_lab_template_preview_context
+    return render(request, 'catalog/lab_result_template_preview.html', build_lab_template_preview_context(request))
+
+
+@login_required
 def catalog_service_groups(request):
     platform_admin_only(request)
     if request.method == 'POST':
@@ -1063,6 +1080,13 @@ def _lab_flash(request, handler, redirect_name, *, stage_param='stage'):
         batch = (request.POST.get('batch') or request.GET.get('batch') or '').strip()
         if batch and stage == 'receive':
             params['batch'] = batch
+        if stage == 'entry':
+            for key in ('esel', 'evid', 'esid', 'egroup', 'etest', 'efrom', 'eto', 'eloc', 'echannel', 'elist', 'etemplate'):
+                value = (request.POST.get(key) or '').strip()
+                if value:
+                    params[key] = value
+            if request.POST.get('sample') and 'esel' not in params:
+                params['esel'] = request.POST.get('sample')
         return redirect(f"{reverse(redirect_name)}?{urlencode(params)}")
     return redirect(redirect_name)
 

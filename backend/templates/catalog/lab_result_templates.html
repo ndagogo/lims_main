@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Lab result templates | {{ org_short_name }}{% endblock %}
+{% block content %}
+{% include "catalog/_page_header.html" with eyebrow="LABORATORY" title="Lab result templates" subtitle="The centre stationery around a laboratory result. Test formats still decide the column captions, parameter order, and interpretation." %}
+<div class="row g-4">
+  <div class="col-xl-8">
+    {% if selected and report_format %}
+    <form method="post" enctype="multipart/form-data" class="card p-4">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="save_report_format">
+      <input type="hidden" name="centre" value="{{ selected.pk }}">
+      <input type="hidden" name="placement_submitted" value="1">
+      <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+        <div>
+          <h2 class="h5 mb-1">{{ selected.code }} — {{ selected.name }}</h2>
+          <p class="small muted mb-0">Choose a letter heading, or place the logo, address, and phone yourself. The footer is the centre’s letter footer.</p>
+        </div>
+        <a class="btn btn-outline-primary btn-sm" href="{% url 'catalog-lab-template-preview' %}?centre={{ selected.pk }}" target="_blank" rel="noopener">Preview</a>
+      </div>
+      <div class="row g-2">
+        <div class="col-md-6">
+          <label class="form-label">Centre</label>
+          <select class="form-select" onchange="window.location='?centre='+this.value">
+            {% for centre in centres %}
+            <option value="{{ centre.pk }}" {% if centre.pk == selected.pk %}selected{% endif %}>{{ centre.code }} — {{ centre.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Header</label>
+          <select class="form-select" name="header_mode" id="header-mode">
+            {% for value, label in header_modes %}
+            <option value="{{ value }}" {% if report_format.header_mode == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Letter heading</label>
+          <input class="form-control" type="file" name="header_file" accept=".png,.jpg,.jpeg,.pdf,image/png,image/jpeg,application/pdf">
+          <div class="form-text">PNG, JPG, or a one-page PDF. Used when the header is the centre letter heading.</div>
+          {% if report_format.header_file %}
+          <div class="mt-2">
+            {% if report_format.header_is_pdf %}
+            <a href="{{ report_format.header_file.url }}" target="_blank" rel="noopener">Current letter heading</a>
+            {% else %}
+            <img src="{{ report_format.header_file.url }}" alt="Letter heading" style="max-width:100%;max-height:72px;object-fit:contain;background:#fff;border:1px solid #e7e2d9;border-radius:8px;">
+            {% endif %}
+          </div>
+          <div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="clear_header_file" id="clear-header"><label class="form-check-label" for="clear-header">Remove letter heading</label></div>
+          {% endif %}
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Letter footer</label>
+          <input class="form-control" type="file" name="footer_file" accept=".png,.jpg,.jpeg,.pdf,image/png,image/jpeg,application/pdf">
+          <div class="form-text">PNG, JPG, or a one-page PDF. Printed at the bottom of the result.</div>
+          {% if report_format.footer_file %}
+          <div class="mt-2">
+            {% if report_format.footer_is_pdf %}
+            <a href="{{ report_format.footer_file.url }}" target="_blank" rel="noopener">Current letter footer</a>
+            {% else %}
+            <img src="{{ report_format.footer_file.url }}" alt="Letter footer" style="max-width:100%;max-height:72px;object-fit:contain;background:#fff;border:1px solid #e7e2d9;border-radius:8px;">
+            {% endif %}
+          </div>
+          <div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="clear_footer_file" id="clear-footer"><label class="form-check-label" for="clear-footer">Remove letter footer</label></div>
+          {% endif %}
+        </div>
+        <div class="col-12" data-composed-only>
+          <div class="row g-2">
+            <div class="col-md-4">
+              <label class="form-label">Logo position</label>
+              <select class="form-select" name="logo_align">{% for value, label in aligns %}<option value="{{ value }}" {% if report_format.logo_align == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Address position</label>
+              <select class="form-select" name="address_align">{% for value, label in aligns %}<option value="{{ value }}" {% if report_format.address_align == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Phone position</label>
+              <select class="form-select" name="contact_align">{% for value, label in aligns %}<option value="{{ value }}" {% if report_format.contact_align == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+            </div>
+            <div class="col-12">
+              <div class="form-check"><input class="form-check-input" type="checkbox" name="show_logo" id="fmt-logo" {% if report_format.show_logo %}checked{% endif %}><label class="form-check-label" for="fmt-logo">Show centre logo</label></div>
+              <div class="form-check"><input class="form-check-input" type="checkbox" name="show_centre_address" id="fmt-addr" {% if report_format.show_centre_address %}checked{% endif %}><label class="form-check-label" for="fmt-addr">Show address</label></div>
+              <div class="form-check"><input class="form-check-input" type="checkbox" name="show_centre_contact" id="fmt-contact" {% if report_format.show_centre_contact %}checked{% endif %}><label class="form-check-label" for="fmt-contact">Show phone and email</label></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6"><label class="form-label">Lab report title</label><input class="form-control" name="title_lab" value="{{ report_format.title_lab }}"></div>
+        <div class="col-md-6"><label class="form-label">Radiology report title</label><input class="form-control" name="title_radiology" value="{{ report_format.title_radiology }}"></div>
+        <div class="col-12"><label class="form-label">Line under the header</label><textarea class="form-control" name="header_text" rows="2">{{ report_format.header_text }}</textarea></div>
+        <div class="col-12"><label class="form-label">Footer text</label><textarea class="form-control" name="footer_text" rows="2">{{ report_format.footer_text }}</textarea></div>
+        <div class="col-md-6"><label class="form-label">Layout</label>
+          <select class="form-select" name="layout_style">{% for value, label in layout_choices %}<option value="{{ value }}" {% if report_format.layout_style == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        </div>
+        <div class="col-md-6"><label class="form-label">Font</label>
+          <select class="form-select" name="font_family">{% for value, label in font_choices %}<option value="{{ value }}" {% if report_format.font_family == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        </div>
+        <div class="col-md-4"><label class="form-label">Body font size</label><input class="form-control" type="number" min="8" max="14" name="body_font_size" value="{{ report_format.body_font_size }}"></div>
+        <div class="col-md-4"><label class="form-label">Margin (mm)</label><input class="form-control" type="number" min="10" max="30" name="margin_mm" value="{{ report_format.margin_mm }}"></div>
+        <div class="col-md-4"><label class="form-label">Signature label</label><input class="form-control" name="signature_label" value="{{ report_format.signature_label }}"></div>
+        {% if can_set_result_watermark %}
+        <div class="col-md-6"><label class="form-label">Unverified watermark</label><input class="form-control" name="watermark_text" value="{{ report_format.watermark_text }}" maxlength="80"></div>
+        {% endif %}
+        <div class="col-md-3"><label class="form-label">Primary colour</label><input class="form-control" type="color" name="primary_color" value="{{ report_format.primary_color }}"></div>
+        <div class="col-md-3"><label class="form-label">Accent colour</label><input class="form-control" type="color" name="accent_color" value="{{ report_format.accent_color }}"></div>
+        <div class="col-12">
+          <p class="form-text mb-0">The Lab Manager’s signature, or the signature of whichever authorised user authenticates the result, is printed on every authenticated result. Final authentication stamps the signature, name, title, qualifications, and registration number. That person uploads the image under Account → Signature. The copy is frozen at authentication.</p>
+        </div>
+        <div class="col-12 d-flex gap-2">
+          <button class="btn btn-primary" type="submit">Save template</button>
+          <a class="btn btn-outline-secondary" href="{% url 'catalog-lab-template-preview' %}?centre={{ selected.pk }}&plain=1" target="_blank" rel="noopener">Preview without header and footer</a>
+        </div>
+      </div>
+    </form>
+    {% else %}
+    <div class="card p-4"><h2 class="h5">No centre yet</h2><p class="muted mb-0">Add a centre before configuring its laboratory result template.</p></div>
+    {% endif %}
+  </div>
+  <div class="col-xl-4">
+    <div class="card p-4">
+      <h2 class="h6">What this page controls</h2>
+      <p class="small mb-2">Letter heading or a composed header (logo, address, phone), the letter footer, colours, and the signature label.</p>
+      <p class="small mb-0">Test formats, on their own page, still set TEST DESCRIPTION, RESULT, UNITS, and BIOLOGICAL REFERENCE INTERVAL for each test.</p>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var mode = document.getElementById('header-mode');
+  function sync() {
+    var composed = !mode || mode.value === 'COMPOSED';
+    document.querySelectorAll('[data-composed-only]').forEach(function (el) { el.hidden = !composed; });
+  }
+  if (mode) mode.addEventListener('change', sync);
+  sync();
+})();
+</script>
+{% endblock %}

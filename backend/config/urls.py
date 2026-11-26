@@ -19,7 +19,8 @@ from core.views import (
     phlebotomy_workspace, radiology_workspace, radiology_performance, radiology_templates, radiology_template_builder, healthz,
     login_page, logout_page, password_change, account_profile, account_signature, download_patient_document, download_settlement_proof,
     user_management, role_management, catalog_hub,
-    catalog_tests, catalog_parameters, catalog_formats, catalog_service_groups, catalog_doctors, catalog_imaging, catalog_centres,
+    catalog_tests, catalog_parameters, catalog_formats, catalog_lab_templates, catalog_lab_template_preview,
+    catalog_service_groups, catalog_doctors, catalog_imaging, catalog_centres,
 )
 from core.enterprise_clients import (
     clients_master as enterprise_clients_master,
@@ -106,6 +107,8 @@ urlpatterns=[
     path('catalog/tests/', catalog_tests, name='catalog-tests'),
     path('catalog/parameters/', catalog_parameters, name='catalog-parameters'),
     path('catalog/formats/', catalog_formats, name='catalog-formats'),
+    path('catalog/lab-result-templates/', catalog_lab_templates, name='catalog-lab-templates'),
+    path('catalog/lab-result-templates/preview/', catalog_lab_template_preview, name='catalog-lab-template-preview'),
     path('catalog/service-groups/', catalog_service_groups, name='catalog-service-groups'),
     path('catalog/doctors/', catalog_doctors, name='catalog-doctors'),
     path('catalog/imaging/', catalog_imaging, name='catalog-imaging'),

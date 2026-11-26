@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Result template preview | {{ org_short_name }}{% endblock %}
+{% block content %}
+<style>
+  .sheet { max-width: 820px; margin: 0 auto; background: #fff; border: 1px solid #e7e2d9; padding: 28px 32px 36px; color: #1c2430; }
+  .sheet-banner { font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; color: #6b6256; margin-bottom: 12px; }
+  .letterhead img, .letterfoot img { width: 100%; max-height: 110px; object-fit: contain; }
+  .align-LEFT { text-align: left; }
+  .align-CENTER { text-align: center; }
+  .align-RIGHT { text-align: right; }
+  .patient-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; font-size: .86rem; border-top: 1px solid #d9d3c8; border-bottom: 1px solid #d9d3c8; padding: 8px 0; margin: 12px 0; }
+  .result-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  .result-table th { text-align: left; font-size: .72rem; letter-spacing: .04em; border-bottom: 1.5px solid var(--ink, #102033); padding: 6px 4px; }
+  .result-table td { border-bottom: 1px solid #eee8df; padding: 6px 4px; vertical-align: top; }
+  .method { display: block; color: #6b6256; font-size: .75rem; }
+  .signature { margin-top: 28px; width: 240px; margin-left: auto; text-align: center; font-size: .84rem; }
+  .signature img { max-height: 54px; }
+  .sig-line { border-top: 1px solid #1c2430; margin-top: 8px; padding-top: 4px; }
+  .section-title { color: var(--accent, #0f766e); }
+</style>
+{% if report_format %}
+<style>:root { --ink: {{ report_format.primary_color }}; --accent: {{ report_format.accent_color }}; }</style>
+{% endif %}
+<p class="sheet-banner">{% if plain %}Preview without header and footer — for centres that print on letter-headed paper.{% else %}Preview with the centre template.{% endif %}
+  {% if selected %}<a href="?centre={{ selected.pk }}{% if not plain %}&plain=1{% endif %}">{% if plain %}Show with header and footer{% else %}Show without header and footer{% endif %}</a>{% endif %}
+</p>
+<article class="sheet">
+  {% if not plain and report_format %}
+    {% if report_format.header_mode == 'LETTERHEAD' and report_format.header_file and not report_format.header_is_pdf %}
+      <div class="letterhead"><img src="{{ report_format.header_file.url }}" alt="Letter heading"></div>
+    {% elif report_format.header_mode == 'LETTERHEAD' %}
+      <div class="align-CENTER" style="border-bottom:3px solid var(--ink, #102033);padding-bottom:8px;">
+        <strong>{{ selected.name }}</strong>
+        <div class="small muted">Upload a letter heading to replace this line.</div>
+      </div>
+    {% else %}
+      {% if report_format.show_logo and selected.logo %}
+        <div class="align-{{ report_format.logo_align }}"><img src="{{ selected.logo.url }}" alt="Logo" style="max-height:64px;"></div>
+      {% endif %}
+      <div class="align-CENTER"><strong style="color:{{ report_format.primary_color }}">{{ selected.name }}</strong></div>
+      {% if report_format.show_centre_address %}<div class="align-{{ report_format.address_align }} small">{{ selected.address }}</div>{% endif %}
+      {% if report_format.show_centre_contact %}<div class="align-{{ report_format.contact_align }} small">{{ selected.phone }}{% if selected.email %} · {{ selected.email }}{% endif %}</div>{% endif %}
+    {% endif %}
+    {% if report_format.header_text %}<p class="small text-center mb-0">{{ report_format.header_text }}</p>{% endif %}
+  {% endif %}
+  <div class="patient-grid">
+    <div><strong>Name</strong> Sample Patient</div>
+    <div><strong>Age / Gender</strong> 34 Years / Female</div>
+    <div><strong>Sample type</strong> Blood</div>
+    <div><strong>Ref. doctor</strong> Dr Example</div>
+  </div>
+  <h2 class="h6 section-title">CLINICAL BIOCHEMISTRY</h2>
+  <table class="result-table">
+    <thead>
+      <tr>
+        <th>TEST DESCRIPTION</th><th>RESULT</th><th>UNITS</th><th>BIOLOGICAL REFERENCE INTERVAL</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in sample_rows %}
+      <tr>
+        <td>{{ row.name }}{% if row.method %}<span class="method">Method : {{ row.method }}</span>{% endif %}</td>
+        <td>{{ row.value }}</td>
+        <td>{{ row.unit }}</td>
+        <td>{{ row.reference }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="small mt-3 mb-0"><strong>Interpretation</strong><br>Results are within the biological reference interval.</p>
+  <div class="signature">
+    <div style="height:48px;"></div>
+    <div class="sig-line"><strong>Lab Manager</strong><br><span class="small">Authorised authenticator</span></div>
+  </div>
+  {% if not plain and report_format %}
+    {% if report_format.footer_file and not report_format.footer_is_pdf %}
+      <div class="letterfoot mt-4"><img src="{{ report_format.footer_file.url }}" alt="Letter footer"></div>
+    {% endif %}
+    {% if report_format.footer_text %}<p class="small text-center mt-3 mb-0">{{ report_format.footer_text }}</p>{% endif %}
+  {% endif %}
+</article>
+{% endblock %}

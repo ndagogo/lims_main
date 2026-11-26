@@ -86,10 +86,16 @@ def _values(post, prefix):
         if not parts:
             continue
         comment = (post.get(f'comment-{param_id}') or '').strip()
+        flag = (post.get(f'flag-{param_id}') or '').strip()
+        if (post.get(f'alarm-{param_id}') or '').strip() == 'CRITICAL' and flag in ('', 'NORMAL'):
+            flag = 'CRITICAL_HIGH'
+        show = post.get(f'show-{param_id}')
         rows.append({
             'parameter': param_id,
             'value': ', '.join(parts),
             'comment': comment,
+            'flag': flag,
+            'show_on_report': show not in ('0', 'no', 'No', 'false'),
         })
     return rows
 
@@ -141,7 +147,12 @@ def handle_laboratory_post(request):
     if action == 'complete_processing':
         return _finish(*call_action(SampleViewSet, 'complete_processing', user, post.get('sample'), {'notes': post.get('notes', '')}), 'Processing completed.')
     if action == 'enter_result':
-        payload = {'narrative': post.get('narrative', ''), 'values': _values(post, 'param-')}
+        payload = {
+            'narrative': post.get('narrative', ''),
+            'remarks': post.get('remarks', ''),
+            'instrument_name': post.get('instrument_name', ''),
+            'values': _values(post, 'param-'),
+        }
         if post.get('template'):
             payload['template'] = post.get('template')
         return _finish(*call_action(SampleViewSet, 'enter_result', user, post.get('sample'), payload), 'Draft result saved.')
@@ -630,6 +641,169 @@ def _annotate_samples(queryset, *, with_entry_fields=False):
     return rows
 
 
+def _age_label(patient):
+    dob = getattr(patient, 'date_of_birth', None)
+    if not dob:
+        return ''
+    from django.utils import timezone
+    today = timezone.localdate()
+    years = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    return f'{years} Yrs'
+
+
+def _tat_label(sample):
+    minutes = getattr(sample.order.test, 'tat_target_minutes', None)
+    if not minutes:
+        return '—'
+    return f'{minutes // 60}:{minutes % 60:02d}'
+
+
+def _entry_filters(request):
+    return {
+        'evid': (request.GET.get('evid') or '').strip(),
+        'esid': (request.GET.get('esid') or '').strip(),
+        'egroup': (request.GET.get('egroup') or '').strip(),
+        'etest': (request.GET.get('etest') or '').strip(),
+        'efrom': (request.GET.get('efrom') or '').strip(),
+        'eto': (request.GET.get('eto') or '').strip(),
+        'eloc': (request.GET.get('eloc') or '').strip(),
+        'echannel': (request.GET.get('echannel') or '').strip(),
+        'elist': (request.GET.get('elist') or 'completed').strip().lower(),
+        'esel': (request.GET.get('esel') or '').strip(),
+        'etemplate': (request.GET.get('etemplate') or '').strip(),
+    }
+
+
+def _build_entry_context(request, samples, centre_rows):
+    """Result-entry workbench: filtered worklist plus the selected sample's parameter grid."""
+    from django.db.models import Exists, OuterRef, Q
+    from django.utils.dateparse import parse_date
+
+    from integrations.models import Analyzer
+    from laboratory.models import ResultTemplate, SampleProcessing, ServiceGroup
+    from laboratory.templates_svc import entry_fields_for_sample
+    from patients.models import CHANNEL_CHOICES
+    from referrals.models import ReferralAttribution
+
+    filters = _entry_filters(request)
+    open_processing = SampleProcessing.objects.filter(sample_id=OuterRef('pk'), completed_at__isnull=True)
+    queue = samples.filter(status__in=['PROCESSING', 'RESULT_ENTERED']).annotate(
+        open_processing_exists=Exists(open_processing),
+    ).filter(open_processing_exists=False)
+    if filters['evid']:
+        queue = queue.filter(order__visit__visit_id__icontains=filters['evid'])
+    if filters['esid']:
+        queue = queue.filter(sample_id__icontains=filters['esid'])
+    if filters['egroup'].isdigit():
+        queue = queue.filter(order__test__service_group_id=int(filters['egroup']))
+    if filters['etest']:
+        queue = queue.filter(order__test__name__icontains=filters['etest'])
+    start = parse_date(filters['efrom'])
+    end = parse_date(filters['eto'])
+    if start:
+        queue = queue.filter(collected_at__date__gte=start)
+    if end:
+        queue = queue.filter(collected_at__date__lte=end)
+    if filters['eloc']:
+        queue = queue.filter(centre_id=filters['eloc'])
+    if filters['echannel']:
+        queue = queue.filter(order__visit__referral_source=filters['echannel'])
+    chip = filters['elist']
+    if chip == 'stat':
+        queue = queue.filter(order__stat__name__icontains='stat')
+    elif chip == 'retest':
+        queue = queue.filter(recollection_of__isnull=False)
+    elif chip == 'outsourced':
+        queue = queue.filter(Q(order__test__default_outsource=True) | Q(order__test__is_outsourceable=True))
+    queue = queue.order_by('-updated_at')
+    page = paginate(request, queue, 'spage')
+    for sample in page.object_list:
+        sample.tat_label = _tat_label(sample)
+        sample.result_row = _result_of(sample)
+    selected = None
+    if filters['esel']:
+        from django.core.exceptions import ValidationError
+        try:
+            selected = queue.filter(pk=filters['esel']).first()
+        except (ValidationError, ValueError):
+            selected = None
+    if selected is None:
+        selected = page.object_list[0] if page.object_list else None
+    work = None
+    if selected is not None:
+        selected.result_row = _result_of(selected)
+        selected.tat_label = _tat_label(selected)
+        preferred = None
+        if filters['etemplate'].isdigit():
+            preferred = ResultTemplate.objects.filter(
+                pk=int(filters['etemplate']), test=selected.order.test, is_active=True,
+            ).first()
+        template, fields = entry_fields_for_sample(selected, preferred)
+        saved = {}
+        if selected.result_row:
+            for row in selected.result_row.values.select_related('parameter'):
+                saved[row.parameter_id] = row
+        for field in fields:
+            row = saved.get(field['parameter'].pk)
+            field['saved_value'] = row.value if row else ''
+            field['saved_choices'] = [part.strip() for part in (row.value or '').split(',') if part.strip()] if row else []
+            field['saved_flag'] = row.flag if row else ''
+            field['saved_comment'] = row.comment if row else ''
+            field['saved_show'] = row.show_on_report if row else field['include_in_report']
+            field['alarm'] = 'CRITICAL' if (field['saved_flag'] or '').startswith('CRITICAL') else ''
+        visit = selected.order.visit
+        patient = visit.patient
+        doctor = ''
+        attribution = ReferralAttribution.objects.select_related('doctor').filter(visit=visit).first()
+        if attribution and attribution.doctor_id:
+            doctor = str(attribution.doctor)
+        templates = list(
+            ResultTemplate.objects.filter(test=selected.order.test, is_active=True)
+            .exclude(status='RETIRED')
+            .order_by('-version', 'name')
+        )
+        work = {
+            'sample': selected,
+            'template': template,
+            'fields': fields,
+            'templates': templates,
+            'analyzers': list(Analyzer.objects.filter(centre=selected.centre, is_active=True).order_by('name')),
+            'patient': {
+                'uhid': patient.uhid,
+                'name': f'{patient.first_name} {patient.last_name}'.strip(),
+                'sex': patient.get_sex_display() if patient.sex else '',
+                'age': _age_label(patient),
+                'mobile': f'{patient.phone_country_code} {patient.phone_number}'.strip(),
+                'visit_id': visit.visit_id,
+                'visit_date': visit.created_at,
+                'client': (visit.client.name if visit.client_id else visit.client_name) or '',
+                'channel': visit.get_referral_source_display(),
+                'centre': visit.centre.name,
+                'doctor': doctor,
+                'client_phone': (visit.client.phone if visit.client_id else '') or '',
+            },
+            'narrative': selected.result_row.narrative if selected.result_row else '',
+            'remarks': selected.result_row.remarks if selected.result_row else '',
+            'instrument_name': selected.result_row.instrument_name if selected.result_row else '',
+        }
+    return {
+        'entry_samples': page,
+        'entry_filters': filters,
+        'entry_work': work,
+        'entry_groups': ServiceGroup.objects.order_by('name'),
+        'entry_centres': centre_rows,
+        'entry_channels': CHANNEL_CHOICES,
+        'entry_flags': [
+            ('', '—'),
+            ('NORMAL', 'N'),
+            ('LOW', 'L'),
+            ('HIGH', 'H'),
+            ('CRITICAL_LOW', 'CL'),
+            ('CRITICAL_HIGH', 'CH'),
+        ],
+    }
+
+
 def build_laboratory_context(request):
     user = request.user
     stage = (request.GET.get('stage') or 'batch').strip().lower()
@@ -722,19 +896,7 @@ def build_laboratory_context(request):
         page.object_list = _annotate_samples(page.object_list)
         ctx['process_samples'] = page
     elif stage == 'entry':
-        queue = samples.filter(status__in=['PROCESSING', 'RESULT_ENTERED']).order_by('-updated_at')
-        page = paginate(request, queue, 'spage')
-        annotated = _annotate_samples(page.object_list, with_entry_fields=True)
-        # Ready for entry: processing finished, or an existing draft to correct.
-        ready = []
-        for sample in annotated:
-            if sample.open_processing:
-                continue
-            if sample.status == 'PROCESSING' or (sample.result_row and sample.result_row.status == 'DRAFT'):
-                ready.append(sample)
-        page.object_list = ready or [s for s in annotated if not s.open_processing]
-        ctx['entry_samples'] = page
-        ctx['draft_results'] = results.filter(status='DRAFT').order_by('-updated_at')[:40]
+        ctx.update(_build_entry_context(request, samples, centre_rows))
     elif stage == 'review':
         ctx['review_results'] = paginate(
             request,

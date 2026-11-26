@@ -222,7 +222,10 @@ def _ready_laboratory(user, centre_ids):
             'already_sent': sent_before,
             'blockers': blockers,
             'when': result.released_at or result.authenticated_at,
-            'preview_url': '',
+            'preview_url': (
+                reverse('lab-result-pdf', kwargs={'pk': result.pk}) + '?letterhead=1'
+                if ready else ''
+            ),
             'preview_blocked': not ready,
             'preview_blocked_message': PREVIEW_BLOCKED_MESSAGE if not ready else '',
             'object': result,
@@ -461,7 +464,7 @@ def _resolve_organisation_client(post, kind):
     }
 
 
-def _stamp_collector(service, object_id, note, upload=None, extra_reason='', summary=''):
+def _stamp_collector(service, object_id, note, upload=None, extra_reason='', summary='', print_style=''):
     row = ResultLedger.objects.filter(
         kind='DISPATCH', service=service, object_id=str(object_id),
     ).order_by('-created_at').first()
@@ -478,6 +481,9 @@ def _stamp_collector(service, object_id, note, upload=None, extra_reason='', sum
     if upload:
         row.collector_id = upload
         fields.append('collector_id')
+    if print_style in ('letterhead', 'plain'):
+        row.print_style = print_style
+        fields.append('print_style')
     if fields:
         row.save(update_fields=fields)
 
@@ -553,6 +559,11 @@ def compose_dispatch(user, post, request=None, files=None):
         post, require=(recipient_mode == 'third_party' and third_party_kind == 'family'), upload=uploaded,
     )
     comment = (post.get('comment') or '').strip()
+    print_style = (post.get('report_format') or 'letterhead').strip().lower()
+    if print_style in ('plain', 'without', 'pdf-plain'):
+        print_style = 'plain'
+    else:
+        print_style = 'letterhead'
     hours = int(post.get('link_expiry') or '7')
     selection_summary = ', '.join(row['label'] for row in loaded)
     recipient_desc = 'Self'
@@ -580,7 +591,7 @@ def compose_dispatch(user, post, request=None, files=None):
             ledger_summary = f"{visit.visit_id} · {row['label']} → {recipient_desc}"
             _stamp_collector(
                 row['service'], row['object_id'], collector_note, collector_file,
-                extra_reason=audit_note, summary=ledger_summary,
+                extra_reason=audit_note, summary=ledger_summary, print_style=print_style,
             )
             dispatched.append(row)
 
@@ -624,6 +635,7 @@ def compose_dispatch(user, post, request=None, files=None):
             'recipient_mode': recipient_mode,
             'third_party_kind': third_party_kind,
             'organisation_client': organisation_client,
+            'print_style': print_style,
             'items': [row['key'] for row in dispatched],
             'tests': [row['label'] for row in dispatched],
             'channels': [{'chip': t[0], 'label': t[1], 'channel': t[2], 'recipient': t[3]} for t in targets],
