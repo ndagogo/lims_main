@@ -27,8 +27,10 @@ WEB_CONCURRENCY=2
 GUNICORN_TIMEOUT=120
 DB_CONN_MAX_AGE=60
 
-# First boot only (then set back to false): seed roles/templates/workflows
+# Roles and privileges are seeded on every container start (RUN_SEED_ROLES defaults to true).
+# Optional extra seeds (notification templates and workflows):
 # RUN_SEED_ON_START=true
+# RUN_SEED_ROLES=false
 
 # Notifications + critical error alerts (recommended)
 NOTIFICATION_LOG_PROVIDER=false

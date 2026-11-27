@@ -1,13 +1,18 @@
 from django.contrib.auth.models import Group, Permission
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
-# Canonical role → privilege matrix. Kept in sync with local SuperAdmin roles.
-# Running this command on Railway creates/updates these Groups and sets permissions.
+# Canonical role → privilege matrix.
+# Platform Administrator is granted every privilege that exists after migrations.
+# The list below is the minimum that must exist; a missing codename fails the seed
+# so a customer deploy cannot ship a half-built catalogue.
+PLATFORM_ROLE = 'Platform Administrator'
+
 ROLE_PERMISSIONS = {
-    'Platform Administrator': [
+    PLATFORM_ROLE: [
         'view_user', 'add_user', 'change_user', 'view_group', 'add_group', 'change_group',
         'view_centre', 'add_centre', 'change_centre', 'view_usercentreaccess',
-        'add_usercentreaccess', 'change_usercentreaccess', 'view_auditevent',
+        'add_usercentreaccess', 'change_usercentreaccess', 'manage_centre_users',
+        'view_auditevent', 'view_sensitive_audit_details',
         'access_platform_controls', 'set_result_water_mark', 'approve_discount',
         'cancel_invoice', 'reprint_invoice', 'reverse_payment', 'issue_refund',
         'payment_refund', 'bill_edit', 'bill_modify', 'can_modify_patient_data',
@@ -17,6 +22,8 @@ ROLE_PERMISSIONS = {
         'approve_result', 'authenticate_result', 'dispatch_result', 'modify_result',
         'override_report', 'add_report_addendum', 'authorize_reporting_substitute',
         'perform_exam', 'patient_support', 'manage_support_types',
+        'upload_tariff', 'clone_tariff', 'approve_tariff', 'delete_tariff_confirmed',
+        'manage_registration_channels', 'manage_clients', 'topup_credit_wallet', 'approve_client',
     ],
     'Centre Administrator': [
         'view_user', 'view_centre', 'view_usercentreaccess', 'add_usercentreaccess',
@@ -61,15 +68,17 @@ ROLE_PERMISSIONS = {
     ],
     'Referral Doctor': [],
     'Auditor': [
-        'view_auditevent', 'view_patient', 'view_visit', 'view_invoice', 'view_payment',
+        'view_auditevent', 'view_sensitive_audit_details', 'view_patient', 'view_visit',
+        'view_invoice', 'view_payment',
     ],
 }
 
 
 class Command(BaseCommand):
     help = (
-        'Create/update baseline HFDN role groups and attach matching Django permissions. '
-        'Safe to re-run on Railway; does not delete custom roles created in the UI.'
+        'Create or refresh the baseline role groups and their privileges on every deploy. '
+        'Platform Administrator receives every privilege in the database. '
+        'Custom roles created in the UI are left unchanged.'
     )
 
     def add_arguments(self, parser):
@@ -87,13 +96,25 @@ class Command(BaseCommand):
             for p in Permission.objects.filter(codename__in=all_codenames)
         }
         missing = sorted(all_codenames - set(found))
+        if missing and not dry_run:
+            raise CommandError(
+                'Privilege catalogue is incomplete. Run migrations, then seed_roles again. '
+                f'Missing: {", ".join(missing)}'
+            )
         if missing:
             self.stdout.write(self.style.WARNING(
-                f'{len(missing)} permission codename(s) not in DB yet (skipped): {", ".join(missing)}'
+                f'{len(missing)} permission codename(s) not in DB yet: {", ".join(missing)}'
             ))
 
+        catalogue = list(Permission.objects.all())
+        if not catalogue and not dry_run:
+            raise CommandError('No privileges exist yet. Run migrations before seed_roles.')
+
         for role, codenames in ROLE_PERMISSIONS.items():
-            permissions = [found[c] for c in codenames if c in found]
+            if role == PLATFORM_ROLE:
+                permissions = catalogue
+            else:
+                permissions = [found[c] for c in codenames if c in found]
             if dry_run:
                 exists = Group.objects.filter(name=role).exists()
                 self.stdout.write(

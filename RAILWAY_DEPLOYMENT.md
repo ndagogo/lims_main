@@ -115,7 +115,7 @@ Runtime chain:
 2. **Pre-deploy:** `python manage.py migrate --noinput`
 3. **Start:** gunicorn on `0.0.0.0:$PORT`
 
-Roles & privileges: `seed_roles` runs automatically in `preDeployCommand` after migrations, so every GitHub → Railway deploy syncs the same role matrix as local (`Platform Administrator`, `Front Desk`, lab/radiology roles, etc.). Custom roles created in the UI are not deleted.
+Roles & privileges: every container start runs `seed_roles` after migrations (`RUN_SEED_ROLES` defaults to true; `preDeployCommand` runs it as well). That creates the full baseline (`Platform Administrator` with every privilege, plus Front Desk, lab, radiology, accounts, and the other product roles). Roles created in the UI are not deleted. Extra ticks added later on a baseline role are replaced by the product matrix on the next deploy.
 
 ### Client-safe errors + vendor email alerts
 
