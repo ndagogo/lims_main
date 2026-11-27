@@ -1,0 +1,382 @@
+{% comment %}Department receiving desk — accept, missing, reject, or hold tubes on a dispatched batch.{% endcomment %}
+<style>
+  .dr-desk { background: #fff; border: 1px solid #e7e5e4; border-radius: 12px; overflow: hidden; }
+  .dr-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; padding: .7rem .9rem; border-bottom: 1px solid #e7e5e4; background: #fff; }
+  .dr-title { font-size: 1.15rem; font-weight: 700; margin: 0; letter-spacing: -.01em; }
+  .dr-counts { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
+  .dr-count { display: inline-flex; align-items: center; gap: .4rem; font-size: .82rem; font-weight: 650; color: #44403c; }
+  .dr-badge { min-width: 1.7rem; height: 1.45rem; padding: 0 .4rem; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 750; font-size: .82rem; }
+  .dr-badge-hold { background: #dc2626; }
+  .dr-badge-pending { background: #ea580c; }
+  .dr-badge-scanned { background: #16a34a; }
+  .dr-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+  .dr-body { padding: .75rem .9rem 1rem; }
+  .dr-meta { display: grid; grid-template-columns: 1.1fr 1.3fr 1fr .7fr 1fr 1fr; gap: .45rem .65rem; align-items: end; }
+  .dr-field label { display: block; font-size: .7rem; font-weight: 650; color: #57534e; margin-bottom: .12rem; }
+  .dr-field .form-control, .dr-field .form-select { height: 2rem; min-height: 2rem; font-size: .84rem; }
+  .dr-field textarea.form-control { height: 2rem; min-height: 2rem; }
+  .dr-readonly { background: #fafaf9; }
+  .dr-search { display: flex; gap: .3rem; }
+  .dr-search .form-control { flex: 1 1 auto; min-width: 0; }
+  .dr-tests { margin-top: .85rem; }
+  .dr-tests h2 { font-size: .92rem; margin: 0 0 .35rem; }
+  .dr-grid { font-size: .78rem; min-width: 1680px; }
+  .dr-grid th { white-space: nowrap; font-size: .7rem; background: #fafaf9; position: sticky; top: 0; z-index: 1; }
+  .dr-grid td { vertical-align: middle; }
+  .dr-sample { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 700; }
+  .dr-vac { font-weight: 700; padding: .12rem .4rem; border-radius: 4px; display: inline-block; }
+  .dr-vac-yellow { background: #fde047; color: #422006; }
+  .dr-vac-lavender { background: #c4b5fd; color: #4c1d95; }
+  .dr-vac-blue { background: #93c5fd; color: #1e3a8a; }
+  .dr-vac-green { background: #86efac; color: #14532d; }
+  .dr-vac-red { background: #fca5a5; color: #7f1d1d; }
+  .dr-vac-grey { background: #d6d3d1; color: #1c1917; }
+  .dr-row-scanned { background: #f0fdf4; }
+  .dr-row-missing { background: #fff7ed; }
+  .dr-row-reject { background: #fef2f2; }
+  .dr-row-hold { background: #fef9c3; }
+  .dr-filter { width: 100%; min-width: 4.2rem; height: 1.6rem; min-height: 1.6rem; font-size: .68rem; margin-top: .15rem; }
+  .dr-bill { font-size: .68rem; font-weight: 700; color: #b45309; }
+  .dr-desk.dr-gridmode .dr-meta { display: none; }
+  @media (max-width: 1100px) {
+    .dr-meta { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+
+<section class="dr-desk {% if dept_view == 'grid' %}dr-gridmode{% endif %}" data-dept-receiving>
+  <div class="dr-top">
+    <div class="d-flex flex-wrap align-items-center gap-3">
+      <h1 class="dr-title">Department Receiving</h1>
+      <div class="dr-counts">
+        <span class="dr-count"><span class="dr-badge dr-badge-hold" data-hold-count>{{ dept_hold_count }}</span> Hold Count</span>
+        <span class="dr-count"><span class="dr-badge dr-badge-pending" data-pending-count>{{ dept_pending_count }}</span> Pending Vacutainer Count</span>
+        <span class="dr-count"><span class="dr-badge dr-badge-scanned" data-scanned-count>{{ dept_scanned_count }}</span> Scanned Vacutainer Count</span>
+      </div>
+      <form method="get" class="d-inline">
+        <input type="hidden" name="stage" value="process">
+        {% if dept_selected_batch %}<input type="hidden" name="batch" value="{{ dept_selected_batch.pk }}">{% endif %}
+        {% if dept_query %}<input type="hidden" name="q" value="{{ dept_query }}">{% endif %}
+        {% if dept_date_from %}<input type="hidden" name="from" value="{{ dept_date_from }}">{% endif %}
+        {% if dept_date_to %}<input type="hidden" name="to" value="{{ dept_date_to }}">{% endif %}
+        {% if dept_service_group %}<input type="hidden" name="service_group" value="{{ dept_service_group }}">{% endif %}
+        {% if dept_view %}<input type="hidden" name="view" value="{{ dept_view }}">{% endif %}
+        <label class="form-check m-0 small">
+          <input class="form-check-input" type="checkbox" name="hold_bills" value="1" {% if dept_hold_bills %}checked{% endif %} onchange="this.form.submit()">
+          Hold bills
+        </label>
+      </form>
+    </div>
+    <div class="dr-actions">
+      {% if dept_editable %}
+      <button class="btn btn-sm btn-primary" type="submit" form="dr-receive">Save</button>
+      {% endif %}
+      <a class="btn btn-sm btn-outline-secondary" href="{{ dept_clear_href }}">Clear</a>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ dept_grid_href }}">Gridview</a>
+    </div>
+  </div>
+
+  <div class="dr-body">
+    <form id="dr-filters" method="get" class="dr-meta">
+      <input type="hidden" name="stage" value="process">
+      {% if dept_hold_bills %}<input type="hidden" name="hold_bills" value="1">{% endif %}
+      {% if dept_view %}<input type="hidden" name="view" value="{{ dept_view }}">{% endif %}
+      <div class="dr-field">
+        <label for="dr-scan">Sample Id</label>
+        <input id="dr-scan" class="form-control" type="text" autocomplete="off" placeholder="Scan or type sample ID" {% if not dept_editable %}disabled{% endif %} aria-label="Scan sample ID">
+      </div>
+      <div class="dr-field">
+        <label for="dr-batch">Batch No</label>
+        <div class="dr-search">
+          <input id="dr-batch" class="form-control font-monospace" name="batch" value="{% if dept_selected_batch %}{{ dept_selected_batch.batch_code }}{% endif %}" placeholder="Batch code" aria-label="Batch number">
+          <button class="btn btn-outline-secondary btn-sm" type="submit" aria-label="Find batch">Search</button>
+        </div>
+      </div>
+      <div class="dr-field">
+        <label for="dr-when">Batch Date</label>
+        <input id="dr-when" class="form-control dr-readonly" value="{% if dept_selected_batch %}{% if dept_selected_batch.dispatched_at %}{{ dept_selected_batch.dispatched_at|date:'d-M-Y H:i' }}{% else %}{{ dept_selected_batch.created_at|date:'d-M-Y H:i' }}{% endif %}{% endif %}" readonly>
+      </div>
+      <div class="dr-field">
+        <label for="dr-count">Sample Count</label>
+        <input id="dr-count" class="form-control dr-readonly" value="{{ dept_rows|length }}" readonly>
+      </div>
+      <div class="dr-field">
+        <label for="dr-from">From Date</label>
+        <input id="dr-from" class="form-control" type="date" name="from" value="{{ dept_date_from }}">
+      </div>
+      <div class="dr-field">
+        <label for="dr-to">To Date</label>
+        <input id="dr-to" class="form-control" type="date" name="to" value="{{ dept_date_to }}">
+      </div>
+      <div class="dr-field">
+        <label for="dr-centre">Collection center</label>
+        <input id="dr-centre" class="form-control dr-readonly" value="{% if dept_selected_batch %}{{ dept_selected_batch.centre.name }}{% endif %}" readonly>
+      </div>
+      <div class="dr-field">
+        <label for="dr-temp">Rec.Temp(C)</label>
+        <input id="dr-temp" class="form-control" name="receive_temperature" form="dr-receive" value="{% if dept_selected_batch %}{{ dept_selected_batch.receive_temperature|default_if_none:'' }}{% endif %}" {% if not dept_editable %}readonly{% endif %} placeholder="e.g. 4.0">
+      </div>
+      <div class="dr-field">
+        <label for="dr-group">Service Group</label>
+        <select id="dr-group" class="form-select" name="service_group" onchange="this.form.submit()">
+          <option value="">All groups</option>
+          {% for name in dept_service_groups %}
+          <option value="{{ name }}" {% if dept_service_group == name %}selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="dr-field" style="grid-column: span 3;">
+        <label for="dr-comments">Comments</label>
+        <textarea id="dr-comments" class="form-control" name="receive_comments" form="dr-receive" rows="1" {% if not dept_editable %}readonly{% endif %}>{% if dept_selected_batch %}{{ dept_selected_batch.receive_comments }}{% endif %}</textarea>
+      </div>
+    </form>
+
+    <form id="dr-receive" method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="receive_desk">
+      <input type="hidden" name="stage" value="process">
+      {% if dept_selected_batch %}<input type="hidden" name="batch" value="{{ dept_selected_batch.pk }}">{% endif %}
+    </form>
+
+    <div class="dr-tests">
+      <h2>Test Details</h2>
+      <div class="table-responsive" style="max-height: 32rem;">
+        <table class="table table-sm table-hover dr-grid mb-0">
+          <thead>
+            <tr>
+              <th>Accept</th>
+              <th>Missing</th>
+              <th>Reject</th>
+              <th>Hold</th>
+              <th>Remarks</th>
+              <th>Sample ID</th>
+              <th>VID#</th>
+              <th>Collected Date</th>
+              <th>Customer Name</th>
+              <th>Age</th>
+              <th>Gender</th>
+              <th>Test Name</th>
+              <th>Service Group</th>
+              <th>Batch Code</th>
+              <th>Vacc. Name</th>
+              <th>UHID#</th>
+              <th>Test Cd</th>
+              <th>Batch Received By</th>
+              <th>Batch Received On</th>
+              <th>Loc Name</th>
+              <th>Specimen Name</th>
+              <th>Processing</th>
+            </tr>
+            <tr>
+              <th></th><th></th><th></th><th></th>
+              <th><input class="form-control dr-filter" data-col="4" placeholder="Search" aria-label="Filter remarks"></th>
+              <th><input class="form-control dr-filter" data-col="5" placeholder="Search" aria-label="Filter sample"></th>
+              <th><input class="form-control dr-filter" data-col="6" placeholder="Search" aria-label="Filter visit"></th>
+              <th><input class="form-control dr-filter" data-col="7" placeholder="Search" aria-label="Filter collected"></th>
+              <th><input class="form-control dr-filter" data-col="8" placeholder="Search" aria-label="Filter customer"></th>
+              <th><input class="form-control dr-filter" data-col="9" placeholder="Search" aria-label="Filter age"></th>
+              <th><input class="form-control dr-filter" data-col="10" placeholder="Search" aria-label="Filter gender"></th>
+              <th><input class="form-control dr-filter" data-col="11" placeholder="Search" aria-label="Filter test"></th>
+              <th><input class="form-control dr-filter" data-col="12" placeholder="Search" aria-label="Filter group"></th>
+              <th><input class="form-control dr-filter" data-col="13" placeholder="Search" aria-label="Filter batch"></th>
+              <th><input class="form-control dr-filter" data-col="14" placeholder="Search" aria-label="Filter vacutainer"></th>
+              <th><input class="form-control dr-filter" data-col="15" placeholder="Search" aria-label="Filter UHID"></th>
+              <th><input class="form-control dr-filter" data-col="16" placeholder="Search" aria-label="Filter test code"></th>
+              <th></th><th></th><th></th><th></th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in dept_rows %}
+            <tr class="{% if row.disposition == 'ACCEPTED' or row.disposition == 'SCANNED' %}dr-row-scanned{% elif row.disposition == 'MISSING' %}dr-row-missing{% elif row.disposition == 'REJECTED' %}dr-row-reject{% elif row.disposition == 'HOLD' or row.accept_locked %}dr-row-hold{% endif %}"
+                data-sample-id="{{ row.sample.sample_id }}" data-row>
+              <td>
+                {% if row.editable %}
+                <input class="form-check-input dr-accept" type="checkbox" name="accept" value="{{ row.sample.sample_id }}" form="dr-receive" {% if row.disposition == 'ACCEPTED' or row.disposition == 'SCANNED' %}checked{% endif %} aria-label="Accept {{ row.sample.sample_id }}">
+                {% elif row.accept_locked %}
+                <span class="dr-bill">Bill</span>
+                {% else %}
+                <span class="small text-muted">{% if row.disposition == 'ACCEPTED' %}Yes{% else %}—{% endif %}</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if row.editable or row.accept_locked %}
+                <input class="form-check-input dr-missing" type="checkbox" name="missing" value="{{ row.sample.sample_id }}" form="dr-receive" {% if row.disposition == 'MISSING' %}checked{% endif %} aria-label="Missing {{ row.sample.sample_id }}">
+                {% endif %}
+              </td>
+              <td>
+                {% if row.editable or row.accept_locked %}
+                <input class="form-check-input dr-reject" type="checkbox" name="reject" value="{{ row.sample.sample_id }}" form="dr-receive" {% if row.disposition == 'REJECTED' %}checked{% endif %} aria-label="Reject {{ row.sample.sample_id }}">
+                {% endif %}
+              </td>
+              <td>
+                {% if row.editable or row.accept_locked %}
+                <input class="form-check-input dr-hold" type="checkbox" name="hold" value="{{ row.sample.sample_id }}" form="dr-receive" {% if row.disposition == 'HOLD' or row.accept_locked %}checked{% endif %} aria-label="Hold {{ row.sample.sample_id }}">
+                {% elif row.disposition == 'HOLD' %}Yes{% endif %}
+              </td>
+              <td>
+                {% if row.editable or row.accept_locked %}
+                <input class="form-control form-control-sm" name="remarks-{{ row.sample.sample_id }}" form="dr-receive" value="{{ row.item.remarks }}" maxlength="255" aria-label="Remarks {{ row.sample.sample_id }}">
+                {% else %}{{ row.item.remarks|default:"—" }}{% endif %}
+              </td>
+              <td><span class="dr-sample">{{ row.sample.sample_id }}</span></td>
+              <td class="font-monospace">{{ row.visit_id }}</td>
+              <td>{% if row.collected_at %}{{ row.collected_at|date:"d-M-Y H:i" }}{% else %}—{% endif %}</td>
+              <td class="fw-semibold">{{ row.patient_name }}</td>
+              <td>{{ row.age|default:"—" }}</td>
+              <td>{{ row.sex|default:"—" }}</td>
+              <td>{{ row.order.test.name }}</td>
+              <td>{{ row.group|default:"—" }}</td>
+              <td class="font-monospace">{% if dept_selected_batch %}{{ dept_selected_batch.batch_code }}{% endif %}</td>
+              <td>{% if row.vacutainer %}<span class="dr-vac {% if row.vac_tone %}dr-vac-{{ row.vac_tone }}{% endif %}">{{ row.vacutainer }}</span>{% else %}—{% endif %}</td>
+              <td class="font-monospace">{{ row.uhid|default:"—" }}</td>
+              <td class="font-monospace">{{ row.order.test.code }}</td>
+              <td>{{ row.received_by|default:"—" }}</td>
+              <td>{% if row.received_on %}{{ row.received_on|date:"d-M-Y H:i" }}{% else %}—{% endif %}</td>
+              <td>{{ row.location }}</td>
+              <td>{{ row.specimen|default:"—" }}</td>
+              <td>
+                {% if row.can_start %}
+                <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="start_processing"><input type="hidden" name="stage" value="process"><input type="hidden" name="sample" value="{{ row.sample.pk }}">{% if dept_selected_batch %}<input type="hidden" name="batch" value="{{ dept_selected_batch.pk }}">{% endif %}<button class="btn btn-sm btn-outline-primary" type="submit">Start</button></form>
+                {% elif row.can_complete %}
+                <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="complete_processing"><input type="hidden" name="stage" value="process"><input type="hidden" name="sample" value="{{ row.sample.pk }}">{% if dept_selected_batch %}<input type="hidden" name="batch" value="{{ dept_selected_batch.pk }}">{% endif %}<button class="btn btn-sm btn-outline-success" type="submit">Complete</button></form>
+                {% elif row.sample.status == 'PROCESSING' %}
+                <span class="small text-success">Ready for entry</span>
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="22" class="text-muted py-4">No tubes are waiting on this batch. Dispatch a batch, then open it here.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if dept_pending_batches %}
+    <div class="mt-3">
+      <h2 class="h6">Dispatched batches</h2>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Batch No</th><th>Collection center</th><th>Service group</th><th>Samples</th><th>Dispatched</th><th></th></tr></thead>
+          <tbody>
+            {% for batch in dept_pending_batches %}
+            <tr>
+              <td class="font-monospace fw-semibold">{{ batch.batch_code }}</td>
+              <td>{{ batch.centre.name }}</td>
+              <td>{{ batch.department|default:"—" }}</td>
+              <td>{{ batch.sample_count }}</td>
+              <td>{% if batch.dispatched_at %}{{ batch.dispatched_at|date:"d-M-Y H:i" }}{% else %}—{% endif %}</td>
+              <td class="text-end"><a class="btn btn-sm btn-outline-dark" href="?stage=process&amp;batch={{ batch.pk }}{% if dept_filter_qs %}&amp;{{ dept_filter_qs }}{% endif %}">Open</a></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-muted">No dispatched batches are waiting.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<script>
+(function () {
+  var root = document.querySelector('[data-dept-receiving]');
+  if (!root) return;
+  var scan = document.getElementById('dr-scan');
+  var form = document.getElementById('dr-receive');
+
+  function count(selector) {
+    return root.querySelectorAll(selector + ':checked').length;
+  }
+
+  function refreshCounts() {
+    var hold = count('.dr-hold');
+    var scanned = count('.dr-accept');
+    var pending = 0;
+    root.querySelectorAll('tr[data-row]').forEach(function (row) {
+      var boxes = row.querySelectorAll('.dr-accept, .dr-missing, .dr-reject, .dr-hold');
+      var any = false;
+      boxes.forEach(function (box) { if (box.checked) any = true; });
+      if (boxes.length && !any) pending += 1;
+    });
+    var holdEl = root.querySelector('[data-hold-count]');
+    var scanEl = root.querySelector('[data-scanned-count]');
+    var pendEl = root.querySelector('[data-pending-count]');
+    if (holdEl) holdEl.textContent = String(hold);
+    if (scanEl) scanEl.textContent = String(scanned);
+    if (pendEl) pendEl.textContent = String(pending);
+  }
+
+  function exclusive(row, kind) {
+    ['accept', 'missing', 'reject', 'hold'].forEach(function (name) {
+      var box = row.querySelector('.dr-' + name);
+      if (box && name !== kind) box.checked = false;
+    });
+    row.classList.remove('dr-row-scanned', 'dr-row-missing', 'dr-row-reject', 'dr-row-hold');
+    if (kind === 'accept') row.classList.add('dr-row-scanned');
+    if (kind === 'missing') row.classList.add('dr-row-missing');
+    if (kind === 'reject') row.classList.add('dr-row-reject');
+    if (kind === 'hold') row.classList.add('dr-row-hold');
+    refreshCounts();
+  }
+
+  root.querySelectorAll('tr[data-row]').forEach(function (row) {
+    ['accept', 'missing', 'reject', 'hold'].forEach(function (name) {
+      var box = row.querySelector('.dr-' + name);
+      if (!box) return;
+      box.addEventListener('change', function () {
+        if (box.checked) exclusive(row, name);
+        else {
+          row.classList.remove('dr-row-scanned', 'dr-row-missing', 'dr-row-reject', 'dr-row-hold');
+          refreshCounts();
+        }
+      });
+    });
+  });
+
+  if (scan) {
+    scan.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      var value = (scan.value || '').trim();
+      if (!value) return;
+      var row = root.querySelector('tr[data-sample-id="' + CSS.escape(value) + '"]');
+      var accept = row && row.querySelector('.dr-accept');
+      if (!accept) {
+        scan.setAttribute('aria-invalid', 'true');
+        return;
+      }
+      accept.checked = true;
+      exclusive(row, 'accept');
+      scan.value = '';
+      scan.removeAttribute('aria-invalid');
+      row.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  root.querySelectorAll('.dr-filter').forEach(function (input) {
+    input.addEventListener('input', function () {
+      var filters = Array.from(root.querySelectorAll('.dr-filter')).map(function (el) {
+        return { col: Number(el.getAttribute('data-col')), q: (el.value || '').trim().toLowerCase() };
+      });
+      root.querySelectorAll('tbody tr[data-row]').forEach(function (row) {
+        var show = filters.every(function (f) {
+          if (!f.q) return true;
+          var cell = row.children[f.col];
+          return cell && (cell.textContent || '').toLowerCase().indexOf(f.q) !== -1;
+        });
+        row.style.display = show ? '' : 'none';
+      });
+    });
+  });
+
+  if (form) {
+    form.addEventListener('submit', function (event) {
+      if (!count('.dr-accept') && !count('.dr-missing') && !count('.dr-reject') && !count('.dr-hold')) {
+        event.preventDefault();
+        window.alert('Select at least one sample to accept, mark missing, reject, or hold.');
+      }
+    });
+  }
+})();
+</script>

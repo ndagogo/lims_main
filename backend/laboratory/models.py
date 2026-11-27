@@ -384,6 +384,7 @@ class BatchSample(TimeStampedModel):
         ('ACCEPTED','Accepted'),
         ('MISSING','Missing'),
         ('REJECTED','Rejected'),
+        ('HOLD','Hold'),
     ]
     batch=models.ForeignKey(SampleBatch,on_delete=models.PROTECT,related_name='items')
     sample=models.ForeignKey(Sample,on_delete=models.PROTECT,related_name='batch_memberships')

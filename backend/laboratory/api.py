@@ -558,6 +558,7 @@ class SampleBatchViewSet(viewsets.ModelViewSet):
         - accept_sample_ids: list of sample_id to accept (default: all remaining BATCHED)
         - missing_sample_ids: list of sample_id marked missing (stay BATCHED)
         - reject_lines: [{sample_id, reason}] rejected at receiving
+        - hold_sample_ids: list of sample_id kept on hold (stay batched)
         """
         require_workspace(request.user, 'laboratory')
         batch=self.get_object(); require(request.user,batch.centre,'can_edit')
@@ -565,6 +566,7 @@ class SampleBatchViewSet(viewsets.ModelViewSet):
         data = request.data if hasattr(request, 'data') else {}
         accept_ids = data.get('accept_sample_ids')
         missing_ids = {str(v).strip() for v in (data.get('missing_sample_ids') or []) if str(v).strip()}
+        hold_ids = {str(v).strip() for v in (data.get('hold_sample_ids') or []) if str(v).strip()}
         reject_rows = data.get('reject_lines') or []
         reject_map = {}
         for row in reject_rows:
@@ -588,14 +590,19 @@ class SampleBatchViewSet(viewsets.ModelViewSet):
                 if item.sample.status == 'BATCHED'
                 and item.sample.sample_id not in missing_ids
                 and item.sample.sample_id not in reject_map
+                and item.sample.sample_id not in hold_ids
             }
         else:
             accept_set = {str(v).strip() for v in accept_ids if str(v).strip()}
-        overlap = (accept_set & missing_ids) | (accept_set & set(reject_map)) | (missing_ids & set(reject_map))
+        chosen = [accept_set, missing_ids, set(reject_map), hold_ids]
+        overlap = set()
+        for left in range(len(chosen)):
+            for right in range(left + 1, len(chosen)):
+                overlap |= chosen[left] & chosen[right]
         if overlap:
-            raise ValidationError('A sample cannot be accepted, missing, and rejected at the same time.')
-        if not accept_set and not missing_ids and not reject_map:
-            raise ValidationError('Select at least one sample to accept, mark missing, or reject.')
+            raise ValidationError('A sample cannot be accepted, missing, rejected, and held at the same time.')
+        if not accept_set and not missing_ids and not reject_map and not hold_ids:
+            raise ValidationError('Select at least one sample to accept, mark missing, reject, or hold.')
         from decimal import Decimal, InvalidOperation
         temp_value = None
         if temperature not in (None, ''):
@@ -604,14 +611,18 @@ class SampleBatchViewSet(viewsets.ModelViewSet):
             except (InvalidOperation, ValueError, TypeError) as exc:
                 raise ValidationError({'receive_temperature': 'Enter a valid temperature in °C.'}) from exc
         with transaction.atomic():
-            batch.status = 'RECEIVED'
-            batch.received_at = timezone.now()
-            batch.received_by = request.user
+            close_batch = bool(accept_set or missing_ids or reject_map)
             batch.receive_temperature = temp_value
             batch.receive_comments = comments
-            batch.save(update_fields=[
-                'status', 'received_at', 'received_by', 'receive_temperature', 'receive_comments', 'updated_at',
-            ])
+            update_fields = ['receive_temperature', 'receive_comments', 'updated_at']
+            if close_batch:
+                batch.status = 'RECEIVED'
+                batch.received_at = timezone.now()
+                batch.received_by = request.user
+                update_fields = [
+                    'status', 'received_at', 'received_by', 'receive_temperature', 'receive_comments', 'updated_at',
+                ]
+            batch.save(update_fields=update_fields)
             for item in items:
                 sample = item.sample
                 sid = sample.sample_id
@@ -633,6 +644,12 @@ class SampleBatchViewSet(viewsets.ModelViewSet):
                     item.receive_disposition = 'REJECTED'
                     item.remarks = (note or reason)[:255]
                     item.save(update_fields=['receive_disposition', 'remarks', 'updated_at'])
+                    continue
+                if sid in hold_ids and sample.status == 'BATCHED':
+                    item.receive_disposition = 'HOLD'
+                    item.remarks = (note or 'Held at department receiving')[:255]
+                    item.save(update_fields=['receive_disposition', 'remarks', 'updated_at'])
+                    activity(sample, request, 'RECEIVE_HOLD', sample.status, item.remarks)
                     continue
                 if sid in missing_ids:
                     item.receive_disposition = 'MISSING'

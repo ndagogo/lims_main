@@ -99,7 +99,7 @@ class WithdrawalRequestViewSet(viewsets.ModelViewSet):
         obj=self.get_object()
         require_any_role(request.user, ACCOUNTS_ROLES, perm='referrals.approve_referral_settlement')
         if obj.status!='APPROVED': return Response({'detail':'Withdrawal must be approved before settlement.'},status=409)
-        if not obj.proof_of_payment: return Response({'detail':'Upload proof of payment in Django Admin before marking as settled.'},status=400)
+        if not obj.proof_of_payment: return Response({'detail':'Upload proof of payment in AuxaCare Access before marking as settled.'},status=400)
         obj.status='SETTLED'; obj.settled_at=timezone.now(); obj.save(update_fields=['status','settled_at','updated_at'])
         CommissionLedgerEntry.objects.create(doctor=obj.doctor,entry_type='SETTLEMENT',amount=-obj.amount,description=f'Settlement for withdrawal {obj.pk}',created_by=request.user)
         AuditEvent.objects.create(actor=request.user,action='REFERRAL_WITHDRAWAL_SETTLED',object_type='WithdrawalRequest',object_id=str(obj.pk),path=request.path,method=request.method,centre=obj.doctor.centre,detail={'amount':str(obj.amount)})

@@ -109,7 +109,7 @@
           <div class="form-text">Select one or more roles for this account. Manage roles at <a href="/roles/">Roles &amp; privileges</a>.</div>
         </div>
         <div class="col-12 d-flex flex-wrap gap-3">
-          <div class="form-check"><input class="form-check-input" type="checkbox" name="is_staff" id="create-staff"><label class="form-check-label" for="create-staff">Django admin access</label></div>
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="is_staff" id="create-staff"><label class="form-check-label" for="create-staff">AuxaCare Access</label></div>
           <div class="form-check"><input class="form-check-input" type="checkbox" name="is_superuser" id="create-super"><label class="form-check-label" for="create-super">Platform superuser</label></div>
         </div>
         <div class="col-12"><button class="btn btn-primary" type="submit">Create user</button></div>
@@ -167,7 +167,7 @@
           <div class="col-md-6"><label class="form-label">Job title</label><input class="form-control" name="job_title" value="{{ selected.job_title }}"></div>
           <div class="col-md-6"><label class="form-label">Address</label><input class="form-control" name="address" value="{{ selected.address }}"></div>
           <div class="col-12 d-flex flex-wrap gap-3">
-            <div class="form-check"><input class="form-check-input" type="checkbox" name="is_staff" id="staff-{{ selected.pk }}" {% if selected.is_staff %}checked{% endif %}><label class="form-check-label" for="staff-{{ selected.pk }}">Django admin access</label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="is_staff" id="staff-{{ selected.pk }}" {% if selected.is_staff %}checked{% endif %}><label class="form-check-label" for="staff-{{ selected.pk }}">AuxaCare Access</label></div>
             <div class="form-check"><input class="form-check-input" type="checkbox" name="is_superuser" id="super-{{ selected.pk }}" {% if selected.is_superuser %}checked{% endif %}><label class="form-check-label" for="super-{{ selected.pk }}">Platform superuser</label></div>
             <div class="form-check"><input class="form-check-input" type="checkbox" name="must_change_password" id="change-{{ selected.pk }}" {% if selected.must_change_password %}checked{% endif %}><label class="form-check-label" for="change-{{ selected.pk }}">Must change password</label></div>
           </div>

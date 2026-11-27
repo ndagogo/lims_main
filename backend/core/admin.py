@@ -15,9 +15,21 @@ class CentreBankInline(admin.TabularInline):
     fields = ('bank_name', 'account_name', 'account_number', 'is_active')
 
 
+admin.site.site_header = 'AuxaCare Access'
+admin.site.site_title = 'AuxaCare Access'
+admin.site.index_title = 'AuxaCare Access'
+
+
 @admin.register(User)
 class PlatformUserAdmin(UserAdmin):
     list_display=('username','email','display_name','is_active','is_staff','last_login')
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        formfield = super().formfield_for_dbfield(db_field, request, **kwargs)
+        if db_field.name == 'is_staff' and formfield is not None:
+            formfield.label = 'AuxaCare Access'
+            formfield.help_text = 'Allows this account to open AuxaCare Access configuration.'
+        return formfield
     fieldsets=UserAdmin.fieldsets + ((
         'HFDN profile',
         {'fields': (

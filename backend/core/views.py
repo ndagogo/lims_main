@@ -1078,7 +1078,7 @@ def _lab_flash(request, handler, redirect_name, *, stage_param='stage'):
         from urllib.parse import urlencode
         params = {'stage': stage}
         batch = (request.POST.get('batch') or request.GET.get('batch') or '').strip()
-        if batch and stage == 'receive':
+        if batch and stage in ('receive', 'process'):
             params['batch'] = batch
         if stage == 'entry':
             for key in ('esel', 'evid', 'esid', 'egroup', 'etest', 'efrom', 'eto', 'eloc', 'echannel', 'elist', 'etemplate'):

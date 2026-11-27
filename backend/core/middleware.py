@@ -47,6 +47,35 @@ class AuditContextMiddleware(MiddlewareMixin):
         return response
 
 
+class ProductBrandMiddleware:
+    """Replace framework branding on HTML pages with the product name."""
+
+    _swaps = (
+        (b'https://www.django-rest-framework.org/', b'/'),
+        (b'Django REST framework', b'AuxaCare Access'),
+        (b'Django administration', b'AuxaCare Access'),
+        (b'Django Admin', b'AuxaCare Access'),
+        (b'Django admin', b'AuxaCare Access'),
+    )
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if getattr(response, 'streaming', False):
+            return response
+        if 'text/html' not in response.get('Content-Type', ''):
+            return response
+        body = response.content
+        if b'Django' not in body and b'django-rest-framework.org' not in body:
+            return response
+        for old, new in self._swaps:
+            body = body.replace(old, new)
+        response.content = body
+        return response
+
+
 class MustChangePasswordMiddleware:
     """Block the app until a flagged account sets a new password."""
     ALLOWED = (

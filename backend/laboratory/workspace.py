@@ -14,7 +14,7 @@ from laboratory.models import LabOrder, LabResult, Sample, SampleActivity, Sampl
 LAB_STAGES = [
     ('batch', 'Batch Generation', 'Create and dispatch sample batches'),
     ('receive', 'Batch Receiving', 'Scan, accept, missing, or reject tubes at department receiving'),
-    ('process', 'Department Receiving', 'Processing and activity logging'),
+    ('process', 'Department Receiving', 'Accept, hold, mark missing, or reject tubes arriving at the department'),
     ('entry', 'Result Entry', 'Result entry'),
     ('review', 'First Review', 'First review / validation'),
     ('auth', 'Authenticate', 'Result authentication'),
@@ -38,8 +38,9 @@ def _receive_desk_save(request):
     accept = [v for v in post.getlist('accept') if v]
     missing = [v for v in post.getlist('missing') if v]
     reject = [v for v in post.getlist('reject') if v]
-    if not accept and not missing and not reject:
-        return False, 'Select at least one sample to accept, mark missing, or reject.'
+    hold = [v for v in post.getlist('hold') if v]
+    if not accept and not missing and not reject and not hold:
+        return False, 'Select at least one sample to accept, mark missing, reject, or hold.'
     remarks = {}
     for key in post.keys():
         if not key.startswith('remarks-'):
@@ -54,6 +55,7 @@ def _receive_desk_save(request):
         'accept_sample_ids': accept,
         'missing_sample_ids': missing,
         'reject_lines': reject_lines,
+        'hold_sample_ids': hold,
         'remarks': remarks,
         'receive_temperature': (post.get('receive_temperature') or '').strip(),
         'receive_comments': (post.get('receive_comments') or '').strip(),
@@ -67,7 +69,9 @@ def _receive_desk_save(request):
             parts.append(f'{len(missing)} missing')
         if reject:
             parts.append(f'{len(reject)} rejected')
-        return True, 'Batch receiving saved: ' + ', '.join(parts) + '.'
+        if hold:
+            parts.append(f'{len(hold)} held')
+        return True, 'Department receiving saved: ' + ', '.join(parts) + '.'
     return False, describe(body)
 
 
@@ -891,10 +895,7 @@ def build_laboratory_context(request):
     elif stage == 'receive':
         ctx.update(_build_batch_receiving_context(request, batches))
     elif stage == 'process':
-        queue = samples.filter(status__in=['RECEIVED', 'PROCESSING']).order_by('-updated_at')
-        page = paginate(request, queue, 'spage')
-        page.object_list = _annotate_samples(page.object_list)
-        ctx['process_samples'] = page
+        ctx.update(_build_department_receiving_context(request, batches, samples))
     elif stage == 'entry':
         ctx.update(_build_entry_context(request, samples, centre_rows))
     elif stage == 'review':
@@ -1210,4 +1211,176 @@ def _build_batch_receiving_context(request, batches):
         'clear_href': '?' + urlencode(clear_params),
         'grid_href': '?' + urlencode(grid_params),
         'receive_editable': bool(selected and selected.status == 'DISPATCHED'),
+    }
+
+
+def _sex_label(value):
+    text = (value or '').strip()
+    folded = text.upper()
+    if folded in ('M', 'MALE'):
+        return 'Male'
+    if folded in ('F', 'FEMALE'):
+        return 'Female'
+    return text
+
+
+def _age_short(patient):
+    text = _age_text(patient)
+    if text.endswith(' Year') or text.endswith(' Years'):
+        return f'{text.split()[0]} Y(s)'
+    return text
+
+
+def _build_department_receiving_context(request, batches, samples):
+    """Department receiving desk: accept, hold, missing, or reject tubes on a dispatched batch."""
+    from urllib.parse import urlencode
+
+    from django.db.models import Count, Q
+    from django.utils.dateparse import parse_date
+
+    from billing.models import InvoiceItem
+    from laboratory.models import ServiceGroup
+
+    query = (request.GET.get('q') or request.GET.get('sample_id') or '').strip()
+    date_from = (request.GET.get('from') or '').strip()
+    date_to = (request.GET.get('to') or '').strip()
+    service_group = (request.GET.get('service_group') or '').strip()
+    batch_key = (request.GET.get('batch') or request.GET.get('batch_code') or '').strip()
+    hold_bills = (request.GET.get('hold_bills') or '') in ('1', 'on', 'true')
+    browse = (request.GET.get('browse') or '') == '1'
+    view = (request.GET.get('view') or '').strip().lower()
+    if view not in ('', 'grid'):
+        view = ''
+    start = parse_date(date_from)
+    end = parse_date(date_to)
+
+    queue = batches.filter(status__in=['DISPATCHED', 'RECEIVED']).annotate(
+        sample_count=Count('items', distinct=True),
+    )
+    if start:
+        queue = queue.filter(Q(dispatched_at__date__gte=start) | Q(created_at__date__gte=start))
+    if end:
+        queue = queue.filter(Q(dispatched_at__date__lte=end) | Q(created_at__date__lte=end))
+    if service_group:
+        queue = queue.filter(
+            Q(items__sample__order__test__service_group__name__icontains=service_group)
+            | Q(department__icontains=service_group)
+        ).distinct()
+    if query:
+        queue = queue.filter(
+            Q(batch_code__icontains=query)
+            | Q(items__sample__sample_id__icontains=query)
+            | Q(items__sample__order__visit__visit_id__icontains=query)
+            | Q(items__sample__order__visit__patient__uhid__icontains=query)
+            | Q(items__sample__order__visit__patient__first_name__icontains=query)
+            | Q(items__sample__order__visit__patient__last_name__icontains=query)
+        ).distinct()
+
+    selected = None
+    if batch_key:
+        selected = queue.filter(Q(pk=batch_key) | Q(batch_code__iexact=batch_key)).first()
+        if selected is None:
+            selected = batches.filter(Q(pk=batch_key) | Q(batch_code__iexact=batch_key)).first()
+    elif not query and not browse:
+        selected = queue.filter(status='DISPATCHED').order_by('-dispatched_at', '-created_at').first()
+
+    desk_rows = []
+    pending_count = 0
+    scanned_count = 0
+    hold_count = 0
+    if selected is not None:
+        items = list(
+            selected.items.select_related(
+                'sample__centre',
+                'sample__order__test__service_group',
+                'sample__order__visit__patient',
+                'sample__order__visit__centre',
+                'sample__collected_by',
+            ).prefetch_related('sample__processing_records').order_by('sample__sample_id')
+        )
+        order_ids = [item.sample.order_id for item in items]
+        unpaid_orders = set(
+            InvoiceItem.objects.filter(lab_order_id__in=order_ids)
+            .exclude(invoice__status='PAID')
+            .values_list('lab_order_id', flat=True)
+        ) if order_ids else set()
+        for item in items:
+            sample = item.sample
+            order = sample.order
+            _decorate_order(order)
+            patient = order.visit.patient
+            disposition = item.receive_disposition or 'PENDING'
+            bill_held = order.pk in unpaid_orders
+            is_pending = sample.status == 'BATCHED' and disposition in ('PENDING', 'SCANNED', '')
+            is_scanned = bool(item.scanned_at) or disposition in ('SCANNED', 'ACCEPTED')
+            if disposition == 'HOLD' or (hold_bills and bill_held and sample.status == 'BATCHED'):
+                hold_count += 1
+            elif is_pending:
+                pending_count += 1
+            if is_scanned or disposition == 'ACCEPTED':
+                scanned_count += 1
+            open_processing = any(row.completed_at is None for row in sample.processing_records.all())
+            receiver = selected.received_by
+            desk_rows.append({
+                'item': item,
+                'sample': sample,
+                'order': order,
+                'patient_name': f'{patient.first_name} {patient.last_name}'.strip().upper(),
+                'age': _age_short(patient),
+                'sex': _sex_label(patient.sex),
+                'uhid': patient.uhid or '',
+                'visit_id': order.visit.visit_id,
+                'vacutainer': order.desk_vacutainer,
+                'vac_tone': _vacutainer_tone(order.desk_vacutainer),
+                'specimen': sample.specimen_type or order.desk_specimen or '',
+                'group': order.desk_group or selected.department or '',
+                'disposition': disposition,
+                'bill_held': bill_held,
+                'editable': sample.status == 'BATCHED' and selected.status == 'DISPATCHED' and not (hold_bills and bill_held),
+                'accept_locked': bool(hold_bills and bill_held and sample.status == 'BATCHED'),
+                'collected_at': sample.collected_at,
+                'open_processing': open_processing,
+                'can_start': sample.status == 'RECEIVED',
+                'can_complete': sample.status == 'PROCESSING' and open_processing,
+                'received_by': (getattr(receiver, 'staff_id', '') or getattr(receiver, 'username', '') or '') if receiver else '',
+                'received_on': selected.received_at,
+                'location': sample.centre.name if sample.centre_id else selected.centre.name,
+            })
+
+    filters = {'stage': 'process'}
+    if query:
+        filters['q'] = query
+    if date_from:
+        filters['from'] = date_from
+    if date_to:
+        filters['to'] = date_to
+    if service_group:
+        filters['service_group'] = service_group
+    if hold_bills:
+        filters['hold_bills'] = '1'
+    if selected is not None:
+        filters['batch'] = str(selected.pk)
+    clear_href = '?stage=process&browse=1'
+    grid_filters = dict(filters)
+    grid_filters['view'] = '' if view == 'grid' else 'grid'
+    service_groups = list(ServiceGroup.objects.filter(is_active=True).order_by('name').values_list('name', flat=True))
+    pending_batches = queue.filter(status='DISPATCHED').order_by('-dispatched_at', '-created_at')
+    return {
+        'dept_selected_batch': selected,
+        'dept_rows': desk_rows,
+        'dept_pending_count': pending_count if selected else pending_batches.count(),
+        'dept_scanned_count': scanned_count,
+        'dept_hold_count': hold_count,
+        'dept_hold_bills': hold_bills,
+        'dept_query': query,
+        'dept_date_from': date_from,
+        'dept_date_to': date_to,
+        'dept_service_group': service_group,
+        'dept_service_groups': service_groups,
+        'dept_view': view,
+        'dept_clear_href': clear_href,
+        'dept_grid_href': '?' + urlencode(grid_filters),
+        'dept_editable': bool(selected and selected.status == 'DISPATCHED'),
+        'dept_pending_batches': paginate(request, pending_batches, 'ppage'),
+        'dept_filter_qs': urlencode({k: v for k, v in filters.items() if k not in ('stage', 'batch')}),
     }

@@ -41,64 +41,7 @@
 {% include "laboratory/_batch_receiving.html" %}
 
 {% elif active_stage == 'process' %}
-<div class="card p-4">
-  <h2 class="h5">6 · Department Receiving</h2>
-  <p class="muted small">Start and complete processing. Each action is logged with user, time, and IP.</p>
-  {% for sample in process_samples %}
-    <div class="border-top py-3">
-      <div class="fw-semibold font-monospace">{{ sample.sample_id }} — {{ sample.order.test.name }} {% include "includes/stat_badge.html" with stat=sample.order.stat %}</div>
-      <div class="small muted mb-2">{{ sample.order.visit.patient.first_name }} {{ sample.order.visit.patient.last_name }} · {{ sample.get_status_display }} · {{ sample.centre.code }}
-        · <a class="open-link" href="{% url 'sample-label' sample.pk %}">barcode</a>
-      </div>
-      {% if sample.status == 'RECEIVED' %}
-        <form method="post" class="row g-2 align-items-end">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="start_processing">
-          <input type="hidden" name="stage" value="process">
-          <input type="hidden" name="sample" value="{{ sample.pk }}">
-          <div class="col-md-8"><input class="form-control form-control-sm" name="notes" placeholder="Processing notes (optional)"></div>
-          <div class="col-md-4"><button class="btn btn-sm btn-primary" type="submit">Start processing</button></div>
-        </form>
-      {% elif sample.status == 'PROCESSING' and sample.open_processing %}
-        <form method="post" class="row g-2 align-items-end">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="complete_processing">
-          <input type="hidden" name="stage" value="process">
-          <input type="hidden" name="sample" value="{{ sample.pk }}">
-          <div class="col-md-8"><input class="form-control form-control-sm" name="notes" placeholder="Completion notes"></div>
-          <div class="col-md-4"><button class="btn btn-sm btn-primary" type="submit">Complete processing</button></div>
-        </form>
-      {% elif sample.status == 'PROCESSING' %}
-        <div class="alert alert-success py-2 mb-2">Processing complete — continue on the Result Entry stage.</div>
-      {% endif %}
-      {% if sample.recent_activities %}
-        <div class="activity-log mt-2">
-          {% for row in sample.recent_activities %}
-            <div>{{ row.created_at|date:"Y-m-d H:i" }} · {{ row.action }}{% if row.performed_by %} · {{ row.performed_by.get_username }}{% endif %}{% if row.note %} — {{ row.note }}{% endif %}</div>
-          {% endfor %}
-        </div>
-      {% endif %}
-      {% if sample.status != 'RELEASED' and sample.status != 'CANCELLED' and sample.status != 'REJECTED' and sample.status != 'SUPERSEDED' %}
-        <form method="post" class="row g-2 mt-2">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="reject">
-          <input type="hidden" name="stage" value="process">
-          <input type="hidden" name="sample" value="{{ sample.pk }}">
-          <div class="col-md-4"><input name="reason" class="form-control form-control-sm" placeholder="Rejection reason" required></div>
-          <div class="col-md-3">
-            <select name="disposition" class="form-select form-select-sm">
-              <option value="REJECTED">Rejected</option>
-              <option value="UNSUITABLE">Unsuitable</option>
-            </select>
-          </div>
-          <div class="col-md-3"><input name="corrective_action" class="form-control form-control-sm" placeholder="Corrective action"></div>
-          <div class="col-md-2"><button class="btn btn-sm btn-outline-danger w-100" type="submit">Reject</button></div>
-        </form>
-      {% endif %}
-    </div>
-  {% empty %}<p class="muted mb-0">No samples awaiting processing.</p>{% endfor %}
-  {% include "includes/pagination.html" with page=process_samples %}
-</div>
+{% include "laboratory/_department_receiving.html" %}
 
 {% elif active_stage == 'entry' %}
 {% include "laboratory/_result_entry.html" %}

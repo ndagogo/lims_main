@@ -96,3 +96,28 @@ class BatchReceivingDeskTests(TestCase):
         missing_line = BatchSample.objects.get(batch_id=self.batch_id, sample=self.sample_b)
         self.assertEqual(missing_line.receive_disposition, 'MISSING')
         self.assertIn('cool box', missing_line.remarks.lower())
+
+    def test_department_receiving_desk_accepts_and_can_hold(self):
+        page = self.screen.get('/laboratory/?stage=process')
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'Department Receiving')
+        self.assertContains(page, 'Pending Vacutainer Count')
+        self.assertContains(page, 'Hold Count')
+        self.assertContains(page, self.sample_a.sample_id)
+        self.assertContains(page, 'Yellow Gel Tube')
+
+        held = self.screen.post('/laboratory/', {
+            'action': 'receive_desk',
+            'stage': 'process',
+            'batch': self.batch_id,
+            'hold': [self.sample_b.sample_id],
+            'accept': [self.sample_a.sample_id],
+            'receive_temperature': '6.0',
+        })
+        self.assertEqual(held.status_code, 302)
+        self.sample_a.refresh_from_db()
+        self.sample_b.refresh_from_db()
+        self.assertEqual(self.sample_a.status, 'RECEIVED')
+        self.assertEqual(self.sample_b.status, 'BATCHED')
+        line = BatchSample.objects.get(batch_id=self.batch_id, sample=self.sample_b)
+        self.assertEqual(line.receive_disposition, 'HOLD')

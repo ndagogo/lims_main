@@ -98,7 +98,7 @@ class WorkflowStep(TimeStampedModel):
     department = models.CharField(max_length=80, blank=True, default='')
     allowed_roles = models.JSONField(
         default=list, blank=True,
-        help_text='Django group names allowed to perform transitions leaving this step. Empty = any lab role.',
+        help_text='AuxaCare Access role names allowed to perform transitions leaving this step. Empty = any lab role.',
     )
     required_fields = models.JSONField(
         default=list, blank=True,

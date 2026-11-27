@@ -59,6 +59,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "core.middleware.MustChangePasswordMiddleware",
     "core.middleware.AuditContextMiddleware",
+    "core.middleware.ProductBrandMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
